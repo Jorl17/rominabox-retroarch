@@ -3603,8 +3603,10 @@ static bool gl2_frame(void *data, const void *frame,
 
    gl->shader->use(gl, gl->shader_data, 1, true);
 
-#ifdef IOS
-   /* Apparently the viewport is lost each frame, thanks Apple. */
+#if defined(IOS) || defined(OSX)
+   /* On Apple drawables we lose the viewport each frame, and a Cocoa context
+    * update may come without another resize notification. Apply the core
+    * aspect again before drawing, instead of relying on cached GL state. */
    gl2_set_viewport(gl, width, height, false, true);
 #endif
 

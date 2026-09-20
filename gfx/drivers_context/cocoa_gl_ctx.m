@@ -34,6 +34,8 @@
 #include <GLKit/GLKit.h>
 #endif
 
+#include <stdlib.h>
+
 #include <retro_timers.h>
 #include <compat/apple_compat.h>
 #include <string/stdstring.h>
@@ -82,6 +84,44 @@ static GLKView *glk_view            = NULL;
 
 /* Forward declaration */
 CocoaView *cocoaview_get(void);
+
+#ifdef OSX
+static bool rominabox_title_active(void)
+{
+   const char *title = getenv("ROMINABOX_TITLE");
+   return title && title[0];
+}
+
+/* Show the window, when not fullscreen, at the first swap only. We clear
+ * this after showing it, and when going fullscreen, so that we never undo
+ * a later hide or minimize. */
+static bool rib_first_show_pending;
+static bool rib_window_prepared;
+static bool rib_initial_window_presented;
+
+static void rominabox_center_window_on_screen(NSWindow *window)
+{
+   NSScreen *screen;
+   NSRect visible;
+   NSRect frame;
+
+   if (!window)
+      return;
+
+   screen = [window screen];
+   if (!screen)
+      screen = [NSScreen mainScreen];
+   if (!screen)
+      return;
+
+   visible = [screen visibleFrame];
+   frame   = [window frame];
+   frame.origin.x = NSMidX(visible) - (frame.size.width  / 2.0);
+   frame.origin.y = NSMidY(visible) - (frame.size.height / 2.0);
+   frame = [window constrainFrameRect:frame toScreen:screen];
+   [window setFrameOrigin:frame.origin];
+}
+#endif
 
 static uint32_t cocoa_gl_gfx_ctx_get_flags(void *data)
 {
@@ -346,8 +386,40 @@ static void cocoa_gl_gfx_ctx_swap_interval(void *data, int i)
 static void cocoa_gl_gfx_ctx_swap_buffers(void *data)
 {
 #ifdef OSX
+   NSView *view = [g_ctx view];
+   NSWindow *window = [view window];
+
+   bool prepared_this_frame = false;
+
+   /* Attach the drawable invisibly, and show it after we have drawn the next
+    * frame into it. Never do this again on a later hide or resize. */
+   if (rib_first_show_pending && window
+         && ([window styleMask] & NSWindowStyleMaskTitled))
+   {
+      rominabox_center_window_on_screen(window);
+      [window setAlphaValue:0.0];
+      [window makeKeyAndOrderFront:nil];
+      rib_window_prepared = true;
+      prepared_this_frame = true;
+   }
+   rib_first_show_pending = false;
+
+   /* Refresh drawable geometry after window/view changes and avoid
+    * presenting while the context has no visible window attachment. */
+   if (!g_ctx || !view || !window || ![window isVisible])
+      return;
+   [g_ctx update];
    [g_ctx flushBuffer];
-   [g_hw_ctx  flushBuffer];
+   if (rib_window_prepared && !prepared_this_frame)
+   {
+      [window setAlphaValue:1.0];
+      rib_window_prepared = false;
+      rib_initial_window_presented = true;
+   }
+   /* The shared hardware context normally has no drawable. Flush it only
+    * when a caller has attached one. */
+   if (g_hw_ctx && [g_hw_ctx view])
+      [g_hw_ctx flushBuffer];
 #else
    cocoa_ctx_data_t *cocoa_ctx = (cocoa_ctx_data_t*)data;
    if (!(--cocoa_ctx->fast_forward_skips < 0))
@@ -519,6 +591,7 @@ static bool cocoa_gl_gfx_ctx_set_video_mode(void *data,
 
    if (fullscreen)
    {
+      rib_first_show_pending = false;
       if (!has_went_fullscreen)
       {
          NSScreen *screen        = (BRIDGE NSScreen *)cocoa_screen_get_chosen();
@@ -606,9 +679,14 @@ static bool cocoa_gl_gfx_ctx_set_video_mode(void *data,
       }
 
       [[g_view window] setContentSize:NSMakeSize(width, height)];
+      if (rominabox_title_active() && !rib_initial_window_presented
+            && !rib_window_prepared && ![[g_view window] isVisible])
+         rib_first_show_pending = true;
    }
 
    has_went_fullscreen = fullscreen;
+   /* The drawable geometry is stale after setContentSize or reparenting. */
+   [g_ctx update];
 #endif
 
    return true;

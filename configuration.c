@@ -3146,7 +3146,7 @@ void config_set_defaults(void *data)
 #endif
 #endif
 
-#if __APPLE__
+#if defined(HAVE_COCOA) || defined(HAVE_COCOATOUCH)
    configuration_set_bool(settings,
          settings->bools.accessibility_enable, RAIsVoiceOverRunning());
 #endif

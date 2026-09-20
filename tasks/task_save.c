@@ -49,6 +49,19 @@
 #include "../verbosity.h"
 #include "tasks_internal.h"
 
+#ifdef HAVE_RMLUI
+#include "../menu/drivers/rmlui_bridge.h"
+
+static void rib_rmlui_report_disk_save_failed(const char *path)
+{
+   settings_t *settings = config_get_ptr();
+
+   rib_rmlui_notify_state_task(path,
+         settings ? settings->ints.state_slot : -1,
+         true, false);
+}
+#endif
+
 #ifdef EMSCRIPTEN
 /* Filesystem is in-memory anyway, use huge chunks since each
    read/write is a possible suspend to JS code */
@@ -298,11 +311,25 @@ bool content_undo_load_state(void)
    return true;
 }
 
+static save_task_state_t *save_task_take_cb_state(retro_task_t *task,
+      void *task_data)
+{
+   save_task_state_t *state = (save_task_state_t*)task_data;
+
+   if (state)
+      return state;
+   if (!task || !task->state)
+      return NULL;
+   state       = (save_task_state_t*)task->state;
+   task->state = NULL;
+   return state;
+}
+
 static void undo_save_state_cb(retro_task_t *task,
       void *task_data,
       void *user_data, const char *error)
 {
-   save_task_state_t *state = (save_task_state_t*)task_data;
+   save_task_state_t *state = save_task_take_cb_state(task, task_data);
 
    /* Wipe the save file buffer as it's intended to be one use only */
    undo_save_buf.path[0] = '\0';
@@ -331,8 +358,12 @@ static void task_save_handler_finished(retro_task_t *task,
 
    task_set_flags(task, RETRO_TASK_FLG_FINISHED, true);
 
-   intfstream_close(state->file);
-   free(state->file);
+   if (state->file)
+   {
+      intfstream_close(state->file);
+      free(state->file);
+      state->file = NULL;
+   }
 
    flg = task_get_flags(task);
 
@@ -340,13 +371,10 @@ static void task_save_handler_finished(retro_task_t *task,
       task_set_error(task, strdup("Task canceled"));
 
    task_data = (save_task_state_t*)calloc(1, sizeof(*task_data));
-   /* NULL-check: the memcpy below NULL-derefs on OOM.  The
-    * completion callbacks save_state_cb / undo_save_state_cb
-    * used to assume task_data is non-NULL - both have been made
-    * NULL-tolerant to match this code path.  On OOM we leave
-    * task_data unset (NULL); task_set_data is skipped and the
-    * completion callback receives NULL for its task_data
-    * parameter. */
+   /* On OOM, leave task->state allocated. We have already marked the
+    * task FINISHED in the handler, so the worker does not use it again.
+    * The callback from retro_task_internal_gather runs on the main
+    * thread while that task pointer is still valid. */
    if (task_data)
    {
       memcpy(task_data, state, sizeof(*state));
@@ -360,9 +388,12 @@ static void task_save_handler_finished(retro_task_t *task,
          undo_save_buf.data = NULL;
       free(state->data);
       state->data = NULL;
+      if (task_data)
+         task_data->data = NULL;
    }
 
-   free(state);
+   if (task_data)
+      free(state);
 }
 
 /* Align to 8-byte boundary */
@@ -541,6 +572,32 @@ static void *content_get_serialized_data(size_t *serial_size)
    return data;
 }
 
+static void task_save_finish_failed(retro_task_t *task, save_task_state_t *state)
+{
+   char msg[128];
+
+   if (state->flags & SAVE_TASK_FLAG_UNDO_SAVE)
+   {
+      const char *failed_undo_str = msg_hash_to_str(
+            MSG_FAILED_TO_UNDO_SAVE_STATE);
+      RARCH_ERR("[State] %s \"%s\".\n", failed_undo_str,
+            undo_save_buf.path);
+      snprintf(msg, sizeof(msg), "%s \"RAM\".", failed_undo_str);
+   }
+   else
+   {
+      size_t _len = strlcpy(msg,
+            msg_hash_to_str(MSG_FAILED_TO_SAVE_STATE_TO),
+            sizeof(msg) - 2);
+      msg[  _len] = ' ';
+      msg[++_len] = '\0';
+      strlcpy(msg + _len, state->path, sizeof(msg) - _len);
+   }
+
+   task_set_error(task, strdup(msg));
+   task_save_handler_finished(task, state);
+}
+
 /**
  * task_save_handler:
  * @task : the task being worked on
@@ -565,7 +622,10 @@ static void task_save_handler(retro_task_t *task)
                RETRO_VFS_FILE_ACCESS_HINT_NONE);
 
       if (!state->file)
+      {
+         task_save_finish_failed(task, state);
          return;
+      }
    }
 
    if (!state->data)
@@ -589,30 +649,7 @@ static void task_save_handler(retro_task_t *task)
    flg = task_get_flags(task);
 
    if (((flg & RETRO_TASK_FLG_CANCELLED) > 0) || written != remaining)
-   {
-      char msg[128];
-
-      if (state->flags & SAVE_TASK_FLAG_UNDO_SAVE)
-      {
-         const char *failed_undo_str = msg_hash_to_str(
-               MSG_FAILED_TO_UNDO_SAVE_STATE);
-         RARCH_ERR("[State] %s \"%s\".\n", failed_undo_str,
-               undo_save_buf.path);
-         snprintf(msg, sizeof(msg), "%s \"RAM\".", failed_undo_str);
-      }
-      else
-      {
-         size_t _len = strlcpy(msg,
-               msg_hash_to_str(MSG_FAILED_TO_SAVE_STATE_TO),
-               sizeof(msg) - 2);
-         msg[  _len] = ' ';
-         msg[++_len] = '\0';
-         strlcpy(msg + _len, state->path, sizeof(msg) - _len);
-      }
-
-      task_set_error(task, strdup(msg));
-      task_save_handler_finished(task, state);
-   }
+      task_save_finish_failed(task, state);
    else if (state->written == state->size)
    {
       char       *msg      = NULL;
@@ -749,17 +786,8 @@ static void task_load_handler_finished(retro_task_t *task,
 
    if (!(task_data = (load_task_data_t*)calloc(1, sizeof(*task_data))))
    {
-      /* Pre-existing leak: old code early-returned without
-       * freeing state.  On OOM set a task error (so the user
-       * sees 'load state failed' rather than silent failure),
-       * free state properly, and return.  The completion
-       * callbacks handle NULL task_data via their own NULL-
-       * checks. */
-      if (!task_get_error(task))
-         task_set_error(task, strdup("Out of memory"));
-      if (state->data)
-         free(state->data);
-      free(state);
+      /* Leave task->state for the main-thread callback. The task
+       * is marked FINISHED, so the worker does not use it again. */
       return;
    }
 
@@ -1047,18 +1075,13 @@ static void content_load_state_cb(retro_task_t *task,
 {
    unsigned i;
    bool ret;
-   load_task_data_t *load_data = (load_task_data_t*)task_data;
+   load_task_data_t *load_data = save_task_take_cb_state(task, task_data);
    ssize_t _len;
    unsigned num_blocks         = 0;
    void *buf;
    struct sram_block *blocks   = NULL;
    struct string_list *savefile_list = (struct string_list*)savefile_ptr_get();
 
-   /* NULL-check load_data: task_load_handler_finished may fail
-    * to allocate the task_data copy on OOM and leave it NULL.
-    * Skip all processing - the emulator state is unchanged and
-    * the task error (set by the handler) surfaces the failure
-    * to the user. */
    if (!load_data)
       return;
 
@@ -1173,12 +1196,25 @@ static void content_load_state_cb(retro_task_t *task,
    if (!ret)
       goto error;
 
+#ifdef HAVE_RMLUI
+   if (!(load_data->flags & SAVE_TASK_FLAG_AUTOLOAD))
+      rib_rmlui_notify_state_task(load_data->path, load_data->state_slot,
+            false, true);
+#endif
+
    free(buf);
    free(load_data);
 
    return;
 
 error:
+#ifdef HAVE_RMLUI
+   if (load_data &&
+         !(load_data->flags & (SAVE_TASK_FLAG_LOAD_TO_BACKUP_BUFF |
+                               SAVE_TASK_FLAG_AUTOLOAD)))
+      rib_rmlui_notify_state_task(load_data->path, load_data->state_slot,
+            false, false);
+#endif
    RARCH_ERR("[State] %s \"%s\".\n",
          msg_hash_to_str(MSG_FAILED_TO_LOAD_STATE),
          load_data->path);
@@ -1196,13 +1232,14 @@ static void save_state_cb(retro_task_t *task,
       void *task_data,
       void *user_data, const char *error)
 {
-   save_task_state_t *state   = (save_task_state_t*)task_data;
-   /* NULL-check: task_save_handler_finished may fail to alloc
-    * the task_data copy on OOM and leave it NULL.  Skip the
-    * screenshot hook and free(state) on NULL - free(NULL) is a
-    * no-op but we can't read state->path / state->flags. */
+   save_task_state_t *state   = save_task_take_cb_state(task, task_data);
    if (!state)
       return;
+#ifdef HAVE_RMLUI
+   if (!(state->flags & (SAVE_TASK_FLAG_AUTOSAVE | SAVE_TASK_FLAG_UNDO_SAVE)))
+      rib_rmlui_notify_state_task(state->path, state->state_slot,
+            true, error == NULL);
+#endif
 #ifdef HAVE_SCREENSHOTS
    {
       char               *path   = strdup(state->path);
@@ -1279,6 +1316,10 @@ static void task_push_save_state(const char *path, void *data, size_t len, bool 
          task_free_title(task);
       free(task);
       free(state);
+#ifdef HAVE_RMLUI
+      if (!autosave)
+         rib_rmlui_report_disk_save_failed(path);
+#endif
    }
 
    return;
@@ -1294,6 +1335,10 @@ error:
          task_free_title(task);
       free(task);
    }
+#ifdef HAVE_RMLUI
+   if (!autosave)
+      rib_rmlui_report_disk_save_failed(path);
+#endif
 }
 
 /**
@@ -1306,20 +1351,15 @@ static void content_load_and_save_state_cb(retro_task_t *task,
       void *task_data,
       void *user_data, const char *error)
 {
-   load_task_data_t *load_data = (load_task_data_t*)task_data;
+   load_task_data_t *load_data = save_task_take_cb_state(task, task_data);
    char                  *path;
    void                  *data;
    size_t                 size;
    bool               autosave;
 
-   /* NULL-check load_data: task_load_handler_finished may have
-    * failed to allocate the task_data copy on OOM.  Delegate the
-    * NULL-safe no-op to content_load_state_cb (which already
-    * handles NULL via its own guard) and skip the subsequent
-    * save push which would NULL-deref ->path / ->undo_data. */
    if (!load_data)
    {
-      content_load_state_cb(task, task_data, user_data, error);
+      content_load_state_cb(task, NULL, user_data, error);
       return;
    }
 
@@ -1328,7 +1368,7 @@ static void content_load_and_save_state_cb(retro_task_t *task,
    size     = load_data->undo_size;
    autosave = (load_data->flags & SAVE_TASK_FLAG_AUTOSAVE) ? true : false;
 
-   content_load_state_cb(task, task_data, user_data, error);
+   content_load_state_cb(task, load_data, user_data, error);
 
    task_push_save_state(path, data, size, autosave);
 
@@ -1354,11 +1394,21 @@ static void task_push_load_and_save_state(const char *path, void *data,
       calloc(1, sizeof(*state));
 
    if (!state)
+   {
+#ifdef HAVE_RMLUI
+      if (!autosave)
+         rib_rmlui_report_disk_save_failed(path);
+#endif
       return;
+   }
 
    if (!(task = task_init()))
    {
       free(state);
+#ifdef HAVE_RMLUI
+      if (!autosave)
+         rib_rmlui_report_disk_save_failed(path);
+#endif
       return;
    }
 
@@ -1404,6 +1454,10 @@ static void task_push_load_and_save_state(const char *path, void *data,
          task_free_title(task);
       free(task);
       free(state);
+#ifdef HAVE_RMLUI
+      if (!autosave)
+         rib_rmlui_report_disk_save_failed(path);
+#endif
    }
 }
 
@@ -1497,12 +1551,22 @@ bool content_save_state(const char *path, bool save_to_disk)
    {
       RARCH_LOG("[State] %s\n",
             msg_hash_to_str(MSG_CORE_DOES_NOT_SUPPORT_SAVESTATES));
+#ifdef HAVE_RMLUI
+      if (save_to_disk)
+         rib_rmlui_report_disk_save_failed(path);
+#endif
       return false;
    }
 
    _len = core_serialize_size();
    if (_len == 0)
+   {
+#ifdef HAVE_RMLUI
+      if (save_to_disk)
+         rib_rmlui_report_disk_save_failed(path);
+#endif
       return false;
+   }
 
    if (!save_state_in_background)
    {
@@ -1511,6 +1575,10 @@ bool content_save_state(const char *path, bool save_to_disk)
          RARCH_ERR("[State] %s \"%s\".\n",
                msg_hash_to_str(MSG_FAILED_TO_SAVE_STATE_TO),
                path);
+#ifdef HAVE_RMLUI
+         if (save_to_disk)
+            rib_rmlui_report_disk_save_failed(path);
+#endif
          return false;
       }
 
@@ -1671,11 +1739,30 @@ bool content_load_state(const char *path,
    else
       task->flags               &= ~RETRO_TASK_FLG_MUTE;
 
-   task_queue_push(task);
+   if (!task_queue_push(task))
+   {
+#ifdef HAVE_RMLUI
+      if (!(state->flags & (SAVE_TASK_FLAG_LOAD_TO_BACKUP_BUFF |
+                            SAVE_TASK_FLAG_AUTOLOAD)))
+         rib_rmlui_notify_state_task(state->path, state->state_slot,
+               false, false);
+      if (task->title)
+         task_free_title(task);
+      free(task);
+      free(state);
+#endif
+      return true;
+   }
 
    return true;
 
 error:
+#ifdef HAVE_RMLUI
+   if (!load_to_backup_buffer && !autoload)
+      rib_rmlui_notify_state_task(path,
+            settings ? settings->ints.state_slot : -1,
+            false, false);
+#endif
    if (state)
       free(state);
    if (task)

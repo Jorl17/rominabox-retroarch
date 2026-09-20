@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -404,6 +405,8 @@ static void frontend_darwin_get_env(int *argc, char *argv[],
    char bundle_path_buf[PATH_MAX_LENGTH]   = {0};
    char documents_dir_buf[DIR_MAX_LENGTH]  = {0};
    char application_data[PATH_MAX_LENGTH]  = {0};
+   const char *data_root                    = getenv("ROMINABOX_DATA_DIR");
+   bool data_root_override                  = data_root && data_root[0] == '/';
    CFBundleRef bundle                      = CFBundleGetMainBundle();
 
    if (!bundle)
@@ -416,37 +419,45 @@ static void frontend_darwin_get_env(int *argc, char *argv[],
    CFRelease(bundle_url);
    path_resolve_realpath(bundle_path_buf, sizeof(bundle_path_buf), true);
 
-#if defined(OSX)
-   fill_pathname_application_data(application_data, sizeof(application_data));
-
-   BOOL portable; /* steam || RAPortableInstall || portable.txt */
-#if HAVE_STEAM
-   /* For Steam, we're going to put everything next to the .app */
-   portable = YES;
-#else
-   portable = [[[NSBundle mainBundle] objectForInfoDictionaryKey:@"RAPortableInstall"] boolValue];
-   if (!portable)
+   if (data_root_override)
    {
-      char portable_buf[PATH_MAX_LENGTH] = {0};
-      fill_pathname_join(portable_buf, application_data, "portable.txt", sizeof(portable_buf));
-      portable = path_is_valid(portable_buf);
+      strlcpy(application_data, data_root, sizeof(application_data));
+      strlcpy(documents_dir_buf, data_root, sizeof(documents_dir_buf));
    }
-#endif
-   if (portable)
-      strlcpy(documents_dir_buf, application_data, sizeof(documents_dir_buf));
    else
    {
+#if defined(OSX)
+      fill_pathname_application_data(application_data, sizeof(application_data));
+
+      BOOL portable; /* steam || RAPortableInstall || portable.txt */
+#if HAVE_STEAM
+      /* For Steam, we're going to put everything next to the .app */
+      portable = YES;
+#else
+      portable = [[[NSBundle mainBundle] objectForInfoDictionaryKey:@"RAPortableInstall"] boolValue];
+      if (!portable)
+      {
+         char portable_buf[PATH_MAX_LENGTH] = {0};
+         fill_pathname_join(portable_buf, application_data, "portable.txt", sizeof(portable_buf));
+         portable = path_is_valid(portable_buf);
+      }
+#endif
+      if (portable)
+         strlcpy(documents_dir_buf, application_data, sizeof(documents_dir_buf));
+      else
+      {
+         CFSearchPathForDirectoriesInDomains(documents_dir_buf, sizeof(documents_dir_buf));
+         path_resolve_realpath(documents_dir_buf, sizeof(documents_dir_buf), true);
+         strlcat(documents_dir_buf, "/RetroArch", sizeof(documents_dir_buf));
+      }
+#else
       CFSearchPathForDirectoriesInDomains(documents_dir_buf, sizeof(documents_dir_buf));
       path_resolve_realpath(documents_dir_buf, sizeof(documents_dir_buf), true);
       strlcat(documents_dir_buf, "/RetroArch", sizeof(documents_dir_buf));
-   }
-#else
-   CFSearchPathForDirectoriesInDomains(documents_dir_buf, sizeof(documents_dir_buf));
-   path_resolve_realpath(documents_dir_buf, sizeof(documents_dir_buf), true);
-   strlcat(documents_dir_buf, "/RetroArch", sizeof(documents_dir_buf));
-   /* iOS and tvOS are going to put everything in the documents dir */
-   strlcpy(application_data, documents_dir_buf, sizeof(application_data));
+      /* iOS and tvOS are going to put everything in the documents dir */
+      strlcpy(application_data, documents_dir_buf, sizeof(application_data));
 #endif
+   }
 
    /* By the time we are here:
     * bundle_path_buf is the full path of the .app
@@ -550,10 +561,16 @@ static void frontend_darwin_get_env(int *argc, char *argv[],
        configuration_set_uint(settings, settings->uints.bundle_assets_extract_version_current, (uint)bundleVersion);
     }
 
-   CFTemporaryDirectory(temp_dir, sizeof(temp_dir));
-   strlcpy(g_defaults.dirs[DEFAULT_DIR_CACHE],
-         temp_dir,
-         sizeof(g_defaults.dirs[DEFAULT_DIR_CACHE]));
+   if (data_root_override)
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CACHE],
+            application_data, "cache", sizeof(g_defaults.dirs[DEFAULT_DIR_CACHE]));
+   else
+   {
+      CFTemporaryDirectory(temp_dir, sizeof(temp_dir));
+      strlcpy(g_defaults.dirs[DEFAULT_DIR_CACHE],
+            temp_dir,
+            sizeof(g_defaults.dirs[DEFAULT_DIR_CACHE]));
+   }
 
    if (!path_is_directory(g_defaults.dirs[DEFAULT_DIR_MENU_CONFIG]))
       path_mkdir(g_defaults.dirs[DEFAULT_DIR_MENU_CONFIG]);

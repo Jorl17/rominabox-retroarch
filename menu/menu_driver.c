@@ -46,6 +46,15 @@
 
 #include "menu_driver.h"
 #include "menu_cbs.h"
+#ifdef HAVE_RMLUI
+#include "drivers/rmlui_bridge.h"
+
+static bool menu_driver_is_rmlui(const menu_handle_t *menu)
+{
+   return menu && menu->driver_ctx && menu->driver_ctx->ident
+         && string_is_equal(menu->driver_ctx->ident, "rmlui");
+}
+#endif
 #include "../driver.h"
 #include "../list_special.h"
 #include "../msg_hash_lbl_str.h"
@@ -329,6 +338,9 @@ static menu_ctx_driver_t menu_ctx_null = {
 
 /* Menu drivers */
 const menu_ctx_driver_t *menu_ctx_drivers[] = {
+#if defined(HAVE_RMLUI)
+   &menu_ctx_rmlui,
+#endif
 #if defined(HAVE_MATERIALUI)
    &menu_ctx_mui,
 #endif
@@ -4996,6 +5008,126 @@ static bool menu_input_key_bind_iterate(
    return false;
 }
 
+bool menu_input_rib_bind_start(unsigned bind_index, unsigned timeout_seconds)
+{
+   uint64_t current_usec;
+   input_driver_state_t *input_st = input_state_get_ptr();
+   struct menu_state *menu_st     = &menu_driver_state;
+   struct menu_bind_state *binds  = &menu_st->input_binds;
+   settings_t *settings           = config_get_ptr();
+   const input_device_driver_t *joypad = input_st->primary_joypad;
+#ifdef HAVE_MFI
+   const input_device_driver_t *sec_joypad = input_st->secondary_joypad;
+#else
+   const input_device_driver_t *sec_joypad = NULL;
+#endif
+   uint64_t timeout_us;
+
+   if (!settings || !timeout_seconds ||
+       bind_index >= RARCH_BIND_LIST_END ||
+       !input_config_bind_map_get_valid(bind_index))
+      return false;
+
+   timeout_us                    = (uint64_t)timeout_seconds * 1000000;
+   binds->order                 = 0;
+   binds->begin                 = MENU_SETTINGS_BIND_BEGIN + bind_index;
+   binds->last                  = binds->begin;
+   binds->output                = &input_config_binds[0][bind_index];
+   binds->buffer                = *binds->output;
+   binds->user                  = 0;
+   binds->port                  = settings->uints.input_joypad_index[0];
+
+   menu_input_key_bind_poll_bind_get_rested_axes(joypad, sec_joypad, binds);
+   menu_input_key_bind_poll_bind_state(input_st,
+         (*input_st->libretro_input_binds),
+         settings->floats.input_axis_threshold,
+         settings->uints.input_joypad_index[binds->port],
+         binds, false,
+         (input_st->flags & INP_FLAG_KB_MAPPING_BLOCKED) != 0);
+
+   current_usec                         = cpu_features_get_time_usec();
+   binds->timer_hold.timeout_us         = 0;
+   binds->timer_hold.current            = current_usec;
+   binds->timer_hold.timeout_end        = current_usec;
+   binds->timer_timeout.timeout_us      = timeout_us;
+   binds->timer_timeout.current         = current_usec;
+   binds->timer_timeout.timeout_end     = current_usec + timeout_us;
+
+   input_st->flags                     |= INP_FLAG_KB_MAPPING_BLOCKED;
+   input_st->flags                     |= INP_FLAG_WAIT_INPUT_RELEASE;
+#ifdef HAVE_RMLUI
+   /* Pass Cancel/Back to RmlUi before we sample input for the binder. */
+   if (!menu_driver_is_rmlui(menu_st->driver_data))
+#endif
+   {
+      menu_st->input_state.select_inhibit  = true;
+      menu_st->input_state.cancel_inhibit  = true;
+   }
+   menu_st->flags                      |= MENU_ST_FLAG_IS_BINDING;
+   return true;
+}
+
+enum menu_rib_bind_result menu_input_rib_bind_poll(
+      retro_time_t current_time, float *seconds_remaining, bool accept_input)
+{
+   char message[MENU_LABEL_MAX_LENGTH];
+   menu_input_ctx_bind_t bind;
+   settings_t *settings           = config_get_ptr();
+   struct menu_state *menu_st     = &menu_driver_state;
+   struct menu_bind_state *binds  = &menu_st->input_binds;
+   unsigned saved_timeout;
+   unsigned saved_hold;
+   bool timed_out;
+   bool complete;
+
+   if (!settings)
+      return MENU_RIB_BIND_TIMED_OUT;
+
+   menu_st->flags |= MENU_ST_FLAG_IS_BINDING;
+   if (seconds_remaining)
+      *seconds_remaining = binds->timer_timeout.timeout_end > current_time
+            ? (float)(binds->timer_timeout.timeout_end - current_time) / 1000000.0f
+            : 0.0f;
+
+   timed_out       = current_time >= binds->timer_timeout.timeout_end;
+   if (timed_out)
+   {
+      menu_input_rib_bind_cancel();
+      return MENU_RIB_BIND_TIMED_OUT;
+   }
+   /* UI gestures suppress capture, never the deadline or its display. */
+   if (!accept_input)
+      return MENU_RIB_BIND_ACTIVE;
+   saved_timeout   = settings->uints.input_bind_timeout;
+   saved_hold      = settings->uints.input_bind_hold;
+   settings->uints.input_bind_timeout = 10;
+   settings->uints.input_bind_hold    = 0;
+   bind.s            = message;
+   bind.len          = sizeof(message);
+   complete          = menu_input_key_bind_iterate(settings, &bind, current_time);
+   settings->uints.input_bind_timeout = saved_timeout;
+   settings->uints.input_bind_hold    = saved_hold;
+
+   if (!complete)
+      return MENU_RIB_BIND_ACTIVE;
+
+   menu_st->flags &= ~MENU_ST_FLAG_IS_BINDING;
+   return timed_out ? MENU_RIB_BIND_TIMED_OUT : MENU_RIB_BIND_CAPTURED;
+}
+
+void menu_input_rib_bind_cancel(void)
+{
+   input_driver_state_t *input_st = input_state_get_ptr();
+   struct menu_state *menu_st     = &menu_driver_state;
+
+   input_st->keyboard_press_cb    = NULL;
+   input_st->keyboard_press_data  = NULL;
+   input_st->flags               &= ~INP_FLAG_KB_MAPPING_BLOCKED;
+   input_st->flags               |= INP_FLAG_WAIT_INPUT_RELEASE;
+   menu_st->input_driver_flushing_input = 2;
+   menu_st->flags                &= ~MENU_ST_FLAG_IS_BINDING;
+}
+
 bool menu_input_dialog_get_display_kb(void)
 {
    struct menu_state *menu_st     = &menu_driver_state;
@@ -5169,9 +5301,17 @@ unsigned menu_event(
          RETRO_DEVICE_ID_JOYPAD_B : RETRO_DEVICE_ID_JOYPAD_A;
    unsigned menu_cancel_btn                        = swap_ok_cancel_btns ?
          RETRO_DEVICE_ID_JOYPAD_A : RETRO_DEVICE_ID_JOYPAD_B;
+#ifdef HAVE_RMLUI
+   bool is_rmlui                                    = menu_driver_is_rmlui(menu);
+#else
+   bool is_rmlui                                    = false;
+#endif
    unsigned ok_current                             =
-            BIT256_GET_PTR(p_input, menu_ok_btn)
-         || (pointer_hw_state->flags & MENU_INP_PTR_FLG_PRESS_SELECT);
+            BIT256_GET_PTR(p_input, menu_ok_btn);
+#ifdef HAVE_RMLUI
+   if (rib_rmlui_ok_includes_pointer_select(is_rmlui))
+#endif
+      ok_current |= (pointer_hw_state->flags & MENU_INP_PTR_FLG_PRESS_SELECT);
    unsigned ok_trigger                             = ok_current & ~ok_old;
    unsigned ok_trigger_release                     = !ok_current && ok_old;
    static unsigned navigation_initial              = 0;
@@ -5270,8 +5410,12 @@ unsigned menu_event(
       if (pointer_hw_state->flags & MENU_INP_PTR_FLG_ACTIVE)
       {
          menu_st->input_last_time_us = menu_st->current_time_us;
-         /* Prevent double trigger when OK/Cancel has mouse binds */
-         menu_st->input_driver_flushing_input = 1;
+         /* Pointer clicks go to RmlUi, and a flush on motion would
+          * block Escape and keyboard navigation. */
+#ifdef HAVE_RMLUI
+         if (!is_rmlui)
+#endif
+            menu_st->input_driver_flushing_input = 1;
       }
    }
 
@@ -5279,7 +5423,11 @@ unsigned menu_event(
     * Note: dx, dy, ptr, y_accel, etc. entries are set elsewhere */
    menu_input->pointer.x          = pointer_hw_state->x;
    menu_input->pointer.y          = pointer_hw_state->y;
-   if (menu_input->select_inhibit || menu_input->cancel_inhibit)
+   if ((menu_input->select_inhibit || menu_input->cancel_inhibit)
+#ifdef HAVE_RMLUI
+         && !is_rmlui
+#endif
+      )
       menu_input->pointer.flags &= ~(MENU_INP_PTR_FLG_ACTIVE
                                    | MENU_INP_PTR_FLG_PRESS_SELECT);
    else
@@ -6404,6 +6552,10 @@ void menu_driver_toggle(
 #else
       menu_pause_libretro             = settings->bools.menu_pause_libretro;
 #endif
+#ifdef HAVE_RMLUI
+      if (rib_rmlui_splash_active())
+         menu_pause_libretro = false;
+#endif
 #ifdef HAVE_AUDIOMIXER
       audio_enable_menu               = settings->bools.audio_enable_menu;
 #endif
@@ -6619,6 +6771,12 @@ void retroarch_menu_running_finished(bool quit)
 
    if (menu)
    {
+#ifdef HAVE_RMLUI
+      if (!quit && menu->driver_ctx
+            && string_is_equal(menu->driver_ctx->ident, "rmlui")
+            && rib_rmlui_consume_menu_toggle(menu->userdata))
+         return;
+#endif
       if (menu->driver_ctx && menu->driver_ctx->toggle)
          menu->driver_ctx->toggle(menu->userdata, false);
 

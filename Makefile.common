@@ -1053,6 +1053,18 @@ ifeq ($(HAVE_MENU), 1)
    DEFINES += -DHAVE_MENU
    HAVE_MENU_COMMON = 1
 
+   ifeq ($(HAVE_RMLUI), 1)
+      OBJ += menu/drivers/rmlui.o menu/drivers/rmlui_bridge.o \
+             menu/drivers/third_party/lodepng.o
+      DEFINES += -DHAVE_RMLUI
+      DEFINES += -DRIB_RMLUI_DEFAULT_ASSETS='"/Users/mariowilde/src/rominabox/work/experiments/rml-retroarch/assets"'
+      INCLUDE_DIRS += -I../vendor/RmlUi/Include -I../vendor/RmlUi/Backends
+      INCLUDE_DIRS += -I../vendor/RmlUi/Dependencies/include -I/opt/homebrew/include/freetype2
+      LIBS += ../build-rmlui/librmlui.a /opt/homebrew/lib/libfreetype.dylib -framework OpenGL
+      CXXFLAGS += -std=c++17
+      NEED_CXX_LINKER = 1
+   endif
+
    ifeq ($(HAVE_GFX_WIDGETS), 1)
       DEFINES += -DHAVE_GFX_WIDGETS
    endif
@@ -1374,7 +1386,7 @@ ifeq ($(HAVE_OPENDINGUX_FBDEV), 1)
    OBJ += gfx/drivers_context/opendingux_fbdev_ctx.o
 endif
 
-ifneq ($(findstring Darwin,$(OS)),)
+ifeq ($(HAVE_COCOA),1)
    OBJ += gfx/display_servers/dispserv_apple.o
 endif
 

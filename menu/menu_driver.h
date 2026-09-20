@@ -763,6 +763,19 @@ bool menu_is_running_quick_menu(void);
 bool menu_input_key_bind_set_mode(
       enum menu_input_binds_ctl_state state, void *data);
 
+enum menu_rib_bind_result
+{
+   MENU_RIB_BIND_ACTIVE = 0,
+   MENU_RIB_BIND_CAPTURED,
+   MENU_RIB_BIND_TIMED_OUT
+};
+
+/* Focused single-bind capture used by the ROM-in-a-Box Controls page. */
+bool menu_input_rib_bind_start(unsigned bind_index, unsigned timeout_seconds);
+enum menu_rib_bind_result menu_input_rib_bind_poll(
+      retro_time_t current_time, float *seconds_remaining, bool accept_input);
+void menu_input_rib_bind_cancel(void);
+
 #ifdef HAVE_RUNAHEAD
 void menu_update_runahead_mode(void);
 #endif
@@ -781,6 +794,9 @@ extern menu_ctx_driver_t menu_ctx_ozone;
 extern menu_ctx_driver_t menu_ctx_rgui;
 extern menu_ctx_driver_t menu_ctx_mui;
 extern menu_ctx_driver_t menu_ctx_xmb;
+#ifdef HAVE_RMLUI
+extern menu_ctx_driver_t menu_ctx_rmlui;
+#endif
 
 RETRO_END_DECLS
 

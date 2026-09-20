@@ -1299,14 +1299,14 @@ void* video_display_server_init(enum rarch_display_type type)
 #endif
          break;
       case RARCH_DISPLAY_OSX:
-#if defined(__APPLE__)
+#if defined(__APPLE__) && defined(HAVE_COCOA)
          current_display_server = &dispserv_apple;
 #endif
          break;
       default:
 #if defined(ANDROID)
          current_display_server = &dispserv_android;
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) && defined(HAVE_COCOA)
          current_display_server = &dispserv_apple;
 #else
          current_display_server = &dispserv_null;

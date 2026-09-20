@@ -83,6 +83,15 @@ typedef struct ui_application_cocoa
 static int waiting_argc;
 static char **waiting_argv;
 
+static const char *rominabox_window_title(void)
+{
+   const char *title = getenv("ROMINABOX_TITLE");
+
+   if (title && title[0])
+      return title;
+   return NULL;
+}
+
 #if defined(HAVE_COCOA_METAL) || defined(HAVE_COCOATOUCH)
 extern id<ApplePlatform> apple_platform;
 #elif defined(HAVE_COCOA)
@@ -125,6 +134,11 @@ static void ui_window_cocoa_set_title(void *data, char *buf)
 {
    CocoaView *cocoa_view    = (BRIDGE CocoaView*)data;
    const char* const text   = buf; /* < Can't access buffer directly in the block */
+
+   /* We keep the title from the launcher for exported games. */
+   if (rominabox_window_title())
+      return;
+
    [[cocoa_view window] setTitle:[NSString stringWithCString:text encoding:NSUTF8StringEncoding]];
 }
 
@@ -1497,7 +1511,13 @@ static NSWindow *cocoa_create_main_window(void)
                                                   styleMask:style
                                                     backing:NSBackingStoreBuffered
                                                       defer:NO];
-   [window setTitle:@"RetroArch"];
+   {
+      const char *rib_title = rominabox_window_title();
+      if (rib_title)
+         [window setTitle:[NSString stringWithUTF8String:rib_title]];
+      else
+         [window setTitle:@"RetroArch"];
+   }
    [window setReleasedWhenClosed:NO];
    [window setAllowsToolTipsWhenApplicationIsInactive:NO];
    [window center];
@@ -1559,7 +1579,10 @@ int main(int argc, char *argv[])
 
       cocoa_create_menu_bar(delegate);
 
-      [window makeKeyAndOrderFront:nil];
+      /* Keep the placeholder 480x360 window off-screen until the GL
+       * context presents the first intended frame. */
+      if (!rominabox_window_title())
+         [window makeKeyAndOrderFront:nil];
       [NSApp activateIgnoringOtherApps:YES];
       [NSApp run];
 #ifdef HAVE_COCOA_METAL

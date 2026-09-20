@@ -27,6 +27,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
+
 #if defined(DEBUG) && defined(HAVE_DRMINGW)
 #include "exchndl.h"
 #endif
@@ -142,6 +143,20 @@
 #include "menu/menu_cbs.h"
 #include "menu/menu_driver.h"
 #include "menu/menu_input.h"
+#ifdef HAVE_RMLUI
+#include "menu/drivers/rmlui_bridge.h"
+#endif
+#endif
+
+#ifdef HAVE_MENU
+static INLINE bool rominabox_menu_pause_allowed(bool configured)
+{
+#ifdef HAVE_RMLUI
+   if (rib_rmlui_splash_active())
+      return false;
+#endif
+   return configured;
+}
 #endif
 
 #if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
@@ -3254,7 +3269,8 @@ bool runloop_environment_cb(unsigned cmd, void *data)
          menu_opened = (menu_state_get_ptr()->flags & MENU_ST_FLAG_ALIVE) ? true : false;
          if (menu_opened)
          {
-            bool menu_pause_libretro = settings->bools.menu_pause_libretro;
+            bool menu_pause_libretro = rominabox_menu_pause_allowed(
+                  settings->bools.menu_pause_libretro);
 #ifdef HAVE_NETWORKING
             core_paused = menu_pause_libretro
                && netplay_driver_ctl(RARCH_NETPLAY_CTL_ALLOW_PAUSE, NULL);
@@ -5678,7 +5694,8 @@ static enum runloop_state_enum runloop_check_state(
    bool runloop_paused                 = !!(runloop_st->flags & RUNLOOP_FLAG_PAUSED);
    bool pause_nonactive                = settings->bools.pause_nonactive;
    unsigned quit_gamepad_combo         = settings->uints.input_quit_gamepad_combo;
-   bool menu_pause_libretro            = settings->bools.menu_pause_libretro;
+   bool menu_pause_libretro            = rominabox_menu_pause_allowed(
+         settings->bools.menu_pause_libretro);
 #ifdef HAVE_MENU
    struct menu_state *menu_st          = menu_state_get_ptr();
    menu_handle_t *menu                 = menu_st->driver_data;
@@ -6094,14 +6111,42 @@ static enum runloop_state_enum runloop_check_state(
    /* Check menu hotkey */
    {
       static bool old_pressed = false;
+      static bool startup_overlay_checked = false;
+      bool opened_start_menu  = false;
       bool pressed            = BIT256_GET(current_bits, RARCH_MENU_TOGGLE)
          && memcmp(settings->arrays.menu_driver, "null", 5) != 0;
       bool core_type_is_dummy = runloop_st->current_core_type == CORE_TYPE_DUMMY;
+      bool core_is_running    = runloop_st->flags & RUNLOOP_FLAG_CORE_RUNNING;
 
-      if (pressed && !old_pressed)
+      if (!startup_overlay_checked && !core_type_is_dummy && core_is_running)
       {
-         bool core_is_running    = runloop_st->flags & RUNLOOP_FLAG_CORE_RUNNING;
+         const char *start_at_menu = getenv("ROMINABOX_START_AT_MENU");
+         bool keep_menu_open = start_at_menu && string_is_equal(start_at_menu, "1");
+         startup_overlay_checked = true;
+#ifdef HAVE_RMLUI
+         {
+            const char *splash = getenv("ROMINABOX_SPLASH");
+            if (splash && string_is_equal(splash, "1") &&
+                string_is_equal(settings->arrays.menu_driver, "rmlui"))
+            {
+               rib_rmlui_begin_splash(keep_menu_open);
+               if (!(menu_st->flags & MENU_ST_FLAG_ALIVE))
+                  retroarch_menu_running();
+               opened_start_menu = true;
+            }
+         }
+#endif
+         if (!opened_start_menu && keep_menu_open &&
+             memcmp(settings->arrays.menu_driver, "null", 5) != 0 &&
+             !(menu_st->flags & MENU_ST_FLAG_ALIVE))
+         {
+            retroarch_menu_running();
+            opened_start_menu = true;
+         }
+      }
 
+      if (!opened_start_menu && pressed && !old_pressed)
+      {
          if (menu_st->flags & MENU_ST_FLAG_ALIVE)
          {
             if (rarch_is_initialized && !core_type_is_dummy && core_is_running)
@@ -7455,12 +7500,14 @@ int runloop_iterate(void)
    bool netplay_allow_pause               = false;
 #endif
 #ifdef HAVE_MENU
-   bool menu_pause_libretro               = settings->bools.menu_pause_libretro && netplay_allow_pause;
+   bool menu_pause_libretro               = rominabox_menu_pause_allowed(
+         settings->bools.menu_pause_libretro) && netplay_allow_pause;
    bool core_paused                       =
             !!(runloop_st->flags & RUNLOOP_FLAG_PAUSED)
          || (menu_pause_libretro && (menu_state_get_ptr()->flags & MENU_ST_FLAG_ALIVE));
 #else
-   bool menu_pause_libretro               = settings->bools.menu_pause_libretro;
+   bool menu_pause_libretro               = rominabox_menu_pause_allowed(
+         settings->bools.menu_pause_libretro);
    bool core_paused                       = !!(runloop_st->flags & RUNLOOP_FLAG_PAUSED);
 #endif
    float slowmotion_ratio                 = settings->floats.slowmotion_ratio;
