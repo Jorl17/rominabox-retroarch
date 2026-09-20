@@ -92,6 +92,29 @@ static const char *rominabox_window_title(void)
    return NULL;
 }
 
+static bool rominabox_advanced_access(void)
+{
+   const char *value = getenv("ROMINABOX_ADVANCED_ACCESS");
+
+   return value && string_is_equal(value, "1");
+}
+
+/* In ordinary ROM-in-a-Box exports we hide the stock emulator menus. In
+ * standalone RetroArch, and in exports with Advanced unlocked, we keep them. */
+static bool rominabox_restricted_native_menus(void)
+{
+   return rominabox_window_title() && !rominabox_advanced_access();
+}
+
+static NSString *rominabox_menu_app_name(void)
+{
+   const char *title = rominabox_window_title();
+
+   if (title)
+      return [NSString stringWithUTF8String:title];
+   return @"ROM-in-a-Box";
+}
+
 #if defined(HAVE_COCOA_METAL) || defined(HAVE_COCOATOUCH)
 extern id<ApplePlatform> apple_platform;
 #elif defined(HAVE_COCOA)
@@ -146,6 +169,11 @@ static void ui_window_cocoa_set_droppable(void *data, bool droppable)
 {
    ui_window_cocoa_t *cocoa = (ui_window_cocoa_t*)data;
    CocoaView *cocoa_view    = (BRIDGE CocoaView*)cocoa->data;
+
+   /* In restricted exports we must not open dropped files, which would
+    * bypass the restriction. Loading content from argv at start is unchanged. */
+   if (rominabox_restricted_native_menus())
+      droppable = false;
 
    if (droppable)
    {
@@ -1004,6 +1032,12 @@ static ui_application_t ui_application_cocoa = {
 
 - (void)application:(NSApplication *)sender openFiles:(NSArray *)filenames
 {
+   if (rominabox_restricted_native_menus())
+   {
+      [sender replyToOpenOrPrint:NSApplicationDelegateReplyCancel];
+      return;
+   }
+
    if ((filenames.count == 1) && [filenames objectAtIndex:0])
    {
       struct retro_system_info *sysinfo = &runloop_state_get_ptr()->system.info;
@@ -1103,6 +1137,9 @@ static void open_document_handler(
 
 - (IBAction)openCore:(id)sender
 {
+   if (rominabox_restricted_native_menus())
+      return;
+
    const ui_browser_window_t *browser =
       ui_companion_driver_get_browser_window_ptr();
 
@@ -1130,6 +1167,9 @@ static void open_document_handler(
 
 - (void)openDocument:(id)sender
 {
+   if (rominabox_restricted_native_menus())
+      return;
+
    const ui_browser_window_t *browser =
       ui_companion_driver_get_browser_window_ptr();
 
@@ -1247,6 +1287,40 @@ static NSMenuItem *cocoa_menu_item_with_action(NSString *title,
       [item setTag:tag];
    RARCH_AUTORELEASE(item);
    return item;
+}
+
+static NSMenu *cocoa_create_simple_app_menu(void)
+{
+   NSString *name = rominabox_menu_app_name();
+   NSMenu *menu = [[NSMenu alloc] initWithTitle:name];
+
+   [menu addItem:cocoa_menu_item_with_action([@"About " stringByAppendingString:name],
+         @selector(orderFrontStandardAboutPanel:), @"", 0, NSApp, 0)];
+   [menu addItem:[NSMenuItem separatorItem]];
+   [menu addItem:cocoa_menu_item_with_action([@"Hide " stringByAppendingString:name],
+         @selector(hide:), @"h", NSEventModifierFlagCommand, nil, 0)];
+   [menu addItem:[NSMenuItem separatorItem]];
+   [menu addItem:cocoa_menu_item_with_action([@"Quit " stringByAppendingString:name],
+         @selector(terminate:), @"q", NSEventModifierFlagCommand, NSApp, 0)];
+
+   RARCH_AUTORELEASE(menu);
+   return menu;
+}
+
+static NSMenu *cocoa_create_simple_window_menu(void)
+{
+   NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Window"];
+
+   [menu addItem:cocoa_menu_item_with_action(@"Minimize",
+         @selector(performMiniaturize:), @"m", NSEventModifierFlagCommand, nil, 0)];
+   [menu addItem:cocoa_menu_item_with_action(@"Enter Full Screen",
+         @selector(toggleFullScreen:), @"f",
+         NSEventModifierFlagControl | NSEventModifierFlagCommand, nil, 0)];
+
+   [NSApp setWindowsMenu:menu];
+
+   RARCH_AUTORELEASE(menu);
+   return menu;
 }
 
 static NSMenu *cocoa_create_app_menu(id delegate)
@@ -1454,43 +1528,52 @@ static void cocoa_create_menu_bar(id delegate)
    NSMenu *menubar = [[NSMenu alloc] init];
    NSMenuItem *item;
    NSMenu *submenu;
+   bool restricted = rominabox_restricted_native_menus();
 
-   /* RetroArch (Apple) menu */
+   /* RetroArch (Apple) menu, or a simple About/Hide/Quit menu. */
    item = [[NSMenuItem alloc] init];
-   submenu = cocoa_create_app_menu(delegate);
+   submenu = restricted ? cocoa_create_simple_app_menu()
+                        : cocoa_create_app_menu(delegate);
    [item setSubmenu:submenu];
    [menubar addItem:item];
    RARCH_RELEASE(item);
 
-   /* File menu */
-   item = [[NSMenuItem alloc] init];
-   [item setSubmenu:cocoa_create_file_menu(delegate)];
-   [menubar addItem:item];
-   RARCH_RELEASE(item);
+   if (!restricted)
+   {
+      /* File menu */
+      item = [[NSMenuItem alloc] init];
+      [item setSubmenu:cocoa_create_file_menu(delegate)];
+      [menubar addItem:item];
+      RARCH_RELEASE(item);
 
-   /* Command menu */
-   item = [[NSMenuItem alloc] init];
-   [item setSubmenu:cocoa_create_command_menu(delegate)];
-   [menubar addItem:item];
-   RARCH_RELEASE(item);
+      /* Command menu */
+      item = [[NSMenuItem alloc] init];
+      [item setSubmenu:cocoa_create_command_menu(delegate)];
+      [menubar addItem:item];
+      RARCH_RELEASE(item);
 
-   /* Paths menu */
-   item = [[NSMenuItem alloc] init];
-   [item setSubmenu:cocoa_create_paths_menu(delegate)];
-   [menubar addItem:item];
-   RARCH_RELEASE(item);
+      /* Paths menu */
+      item = [[NSMenuItem alloc] init];
+      [item setSubmenu:cocoa_create_paths_menu(delegate)];
+      [menubar addItem:item];
+      RARCH_RELEASE(item);
+   }
 
    /* Window menu */
    item = [[NSMenuItem alloc] init];
-   [item setSubmenu:cocoa_create_window_menu(delegate)];
+   [item setSubmenu:restricted ? cocoa_create_simple_window_menu()
+                               : cocoa_create_window_menu(delegate)];
    [menubar addItem:item];
    RARCH_RELEASE(item);
 
-   /* Help menu */
-   item = [[NSMenuItem alloc] init];
-   [item setSubmenu:cocoa_create_help_menu()];
-   [menubar addItem:item];
-   RARCH_RELEASE(item);
+   if (!restricted)
+   {
+      /* Help menu */
+      item = [[NSMenuItem alloc] init];
+      [item setSubmenu:cocoa_create_help_menu()];
+      [menubar addItem:item];
+      RARCH_RELEASE(item);
+   }
 
    [NSApp setMainMenu:menubar];
    RARCH_RELEASE(menubar);

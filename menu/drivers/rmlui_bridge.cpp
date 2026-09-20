@@ -8,7 +8,7 @@
 
 #ifndef RIB_RMLUI_HEADLESS
 #include <RmlUi_Renderer_GL2.h>
-#include "../../../vendor/RmlUi/Backends/RmlUi_Renderer_GL2.cpp"
+#include <RmlUi_Renderer_GL2.cpp>
 #include <OpenGL/gl.h>
 #include <OpenGL/glext.h>
 #include "third_party/lodepng.h"
