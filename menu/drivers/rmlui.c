@@ -8,11 +8,14 @@
 #include "../../input/input_driver.h"
 #include "../../input/input_keymaps.h"
 #include "../../input/input_remapping.h"
+#include "../../file_path_special.h"
 #include "../../runloop.h"
 #include "../../verbosity.h"
 #include <file/file_path.h>
 #include <file/config_file.h>
+#include <streams/file_stream.h>
 #include <string/stdstring.h>
+#include <libretro.h>
 #include "../menu_driver.h"
 #include "../menu_input.h"
 #include "../menu_cbs.h"
@@ -469,10 +472,17 @@ static bool rib_rmlui_load_controls_file(rib_rmlui_menu_t *menu,
    if (!menu || !path || !(config = config_file_new_from_path_to_string(path)))
       return false;
 
+   /* The starting pad is in the author's defaults. We load the per-game
+    * override after them. It contains the pad the player chose later, so we
+    * use that pad, and the player sees it in the picker at every launch. We
+    * read the list of variants only from the defaults, because the override
+    * does not contain it. */
+   if (config_get_array(config, "controls_profile", profile, sizeof(profile))
+         && profile[0])
+      strlcpy(menu->profile_id, profile, sizeof(menu->profile_id));
+
    if (defaults)
    {
-      if (config_get_array(config, "controls_profile", profile, sizeof(profile)))
-         strlcpy(menu->profile_id, profile, sizeof(menu->profile_id));
       rib_rmlui_discover_controls(menu, config);
       rib_rmlui_discover_devices(menu, config);
       /* We load the document before we build these lists, so there are no
@@ -481,6 +491,8 @@ static bool rib_rmlui_load_controls_file(rib_rmlui_menu_t *menu,
       rib_rmlui_wire_device_picker();
       rib_rmlui_set_device_picker(false, menu->profile_id);
    }
+   else if (profile[0])
+      rib_rmlui_set_device_picker(false, menu->profile_id);
 
    if (defaults)
       for (index = 0; index < menu->control_count; ++index)
@@ -789,6 +801,138 @@ static void rib_rmlui_play_action_sound(int action)
 #endif
 }
 
+/* The path of the core remap file, the one in use when there is no game or
+ * content-directory remap (config_load_remap):
+ * <input_remapping_directory>/<library name>/<library name>.rmp
+ * With sort-by-controller on, we add the name of the physical pad, because
+ * the path in use with that setting contains it. */
+static bool rib_rmlui_core_remap_path(char *path, size_t len)
+{
+   settings_t *settings = config_get_ptr();
+   const char *core_name;
+   const char *directory;
+   char remap_dir[PATH_MAX_LENGTH];
+
+   if (!path || !len)
+      return false;
+   path[0] = '\0';
+   if (!settings)
+      return false;
+
+   core_name = runloop_state_get_ptr()->system.info.library_name;
+   directory = settings->paths.directory_input_remapping;
+   if (!core_name || !*core_name || !directory || !*directory)
+      return false;
+
+   strlcpy(remap_dir, core_name, sizeof(remap_dir));
+   if (settings->bools.input_remap_sort_by_controller_enable)
+   {
+      char *device_dir = NULL;
+      const char *device_name = input_config_get_device_display_name(
+            settings->uints.input_joypad_index[0]);
+      if (device_name && *device_name
+            && (device_dir = sanitize_path_part(
+                  device_name, strlen(device_name)))
+            && *device_dir)
+         fill_pathname_join_special(remap_dir, core_name, device_dir,
+               sizeof(remap_dir));
+      free(device_dir);
+   }
+
+   fill_pathname_join_special_ext(path, directory, remap_dir, core_name,
+         FILE_PATH_REMAP_EXTENSION, len);
+   return path[0] != '\0';
+}
+
+/* Update input_libretro_device_p1 in an existing remap, or create one.
+ *
+ * That key is valid only in a remap file. If we replaced the whole file, as
+ * with input_remapping_save_file, we would also write turbo, port and analog
+ * settings the author never put there, so we keep the other keys as they are.
+ * We update the file in place and never remove it. At launch we copy the
+ * author's remap into the data directory only when that file is missing, so
+ * without it the next launch would use the author's device again. */
+static bool rib_rmlui_write_remap_device(const char *path, unsigned device)
+{
+   config_file_t *conf;
+   char directory[PATH_MAX_LENGTH];
+   char temporary[PATH_MAX_LENGTH];
+   char existing[32];
+   char wanted[32];
+   bool existed;
+
+   if (!path || !*path || !device)
+      return false;
+
+   existed = path_is_valid(path);
+   conf = existed ? config_file_new_from_path_to_string(path) : NULL;
+   if (existed && !conf)
+      return false;
+   if (!conf && !(conf = config_file_new_alloc()))
+      return false;
+
+   snprintf(wanted, sizeof(wanted), "%u", device);
+   if (config_get_array(conf, "input_libretro_device_p1",
+            existing, sizeof(existing))
+         && string_is_equal(existing, wanted))
+   {
+      config_file_free(conf);
+      return true;
+   }
+   config_set_uint(conf, "input_libretro_device_p1", device);
+
+   fill_pathname_parent_dir(directory, path, sizeof(directory));
+   if (*directory && !path_is_directory(directory) && !path_mkdir(directory))
+   {
+      config_file_free(conf);
+      return false;
+   }
+
+   if (strlcpy(temporary, path, sizeof(temporary)) >= sizeof(temporary)
+         || strlcat(temporary, ".tmp", sizeof(temporary)) >= sizeof(temporary))
+   {
+      config_file_free(conf);
+      return false;
+   }
+
+   if (!config_file_write(conf, temporary, true))
+   {
+      config_file_free(conf);
+      return false;
+   }
+   config_file_free(conf);
+
+   /* On POSIX rename() replaces an existing file, and on Windows it fails. */
+#if defined(_WIN32)
+   if (filestream_exists(path))
+      filestream_delete(path);
+#endif
+   if (filestream_rename(temporary, path) != 0)
+   {
+      filestream_delete(temporary);
+      return false;
+   }
+   return true;
+}
+
+static bool rib_rmlui_persist_libretro_device(unsigned device)
+{
+   char core_path[PATH_MAX_LENGTH];
+   const char *active;
+   bool ok;
+
+   if (!rib_rmlui_core_remap_path(core_path, sizeof(core_path)))
+      return false;
+
+   ok = rib_rmlui_write_remap_device(core_path, device);
+   /* A game or content-directory remap, when there is one, comes before the
+    * core file and would hide it, so we write the same device into it too. */
+   active = runloop_state_get_ptr()->name.remapfile;
+   if (active && *active && !string_is_equal(active, core_path))
+      ok = rib_rmlui_write_remap_device(active, device) && ok;
+   return ok;
+}
+
 static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
 {
    settings_t *settings = config_get_ptr();
@@ -818,27 +962,47 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       if (chosen && *chosen && !string_is_equal(chosen, menu->profile_id))
       {
          int index;
+         unsigned device = 0;
+         bool known = false;
+
          strlcpy(menu->profile_id, chosen, sizeof(menu->profile_id));
          /* The pad belongs to the player who picks it, so we write it to the
           * per-game override and never to the author's fixed defaults. */
          rib_rmlui_save_controls(menu);
 
-         /* We also apply it to the core now, not at the next launch. The
-          * emulated device is a setting in RetroArch, and we apply it again
-          * with CMD_EVENT_CONTROLLER_INIT, the same path as for any other
-          * change of device in the frontend. */
          for (index = 0; index < menu->device_count; ++index)
-            if (string_is_equal(menu->device_ids[index], chosen)
-                  && menu->device_libretro[index])
+            if (string_is_equal(menu->device_ids[index], chosen))
             {
-               configuration_set_uint(settings,
-                     settings->uints.input_libretro_device[0],
-                     menu->device_libretro[index]);
-               command_event(CMD_EVENT_CONTROLLER_INIT, NULL);
-               RARCH_LOG("[RIB] controller '%s' applied as device %u.\n",
-                     chosen, menu->device_libretro[index]);
+               device = menu->device_libretro[index];
+               known = true;
                break;
             }
+
+         /* We apply it to the core now, not at the next launch. The
+          * emulated device is a setting in RetroArch, and we apply it again
+          * with CMD_EVENT_CONTROLLER_INIT, as for any other change of device
+          * in the frontend. A catalog device of 0 means "no subclass". The
+          * default in the frontend is then a joypad, and writing 0 would
+          * connect nothing. At the next launch we read the device from the
+          * remap and not from the per-game override. */
+         if (known && settings)
+         {
+            unsigned applied = device ? device : (unsigned)RETRO_DEVICE_JOYPAD;
+            configuration_set_uint(settings,
+                  settings->uints.input_libretro_device[0], applied);
+            command_event(CMD_EVENT_CONTROLLER_INIT, NULL);
+            if (!rib_rmlui_persist_libretro_device(applied))
+               RARCH_ERR("[RIB] controller '%s' is active as device %u, but "
+                     "the remap could not be written. The next launch will "
+                     "restore the previous device.\n", chosen, applied);
+            else
+               RARCH_LOG("[RIB] controller '%s' applied as device %u.\n",
+                     chosen, applied);
+         }
+
+         /* We leave the callouts and the illustration as exported. We made
+          * menu.rml for one pad, and the player has no art or positions for
+          * the other pads, so we cannot draw the scene again. */
       }
       rib_rmlui_set_device_picker(false, menu->profile_id);
       return;
