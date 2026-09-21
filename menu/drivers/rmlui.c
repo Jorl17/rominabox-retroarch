@@ -26,6 +26,11 @@
  * declares, and this number is only how many of them fit in this struct.
  * When a console declares more, we say so in the log. */
 #define RIB_CONTROL_MAX 48
+
+/* How many controllers fit in a picker. Like the limit for controls, this is
+ * the size of a buffer. The controllers that exist are the ones in the console
+ * package, and when there are more, we say so in the log. */
+#define RIB_DEVICE_MAX 8
 #define RIB_CONTROL_CAPTURE_SECONDS 10
 
 typedef struct rib_control
@@ -50,6 +55,11 @@ typedef struct rib_rmlui_menu
    int control_focus;
    int selected_control;
    char profile_id[32];
+   /* The controllers in the picker, from the exported configuration. */
+   char device_ids[RIB_DEVICE_MAX][32];
+   char device_names[RIB_DEVICE_MAX][NAME_MAX_LENGTH];
+   int device_count;
+   bool device_picker_open;
    rib_control_t controls[RIB_CONTROL_MAX];
    int control_count;
    bool control_active[RIB_CONTROL_MAX];
@@ -149,6 +159,73 @@ static void rib_rmlui_discover_controls(rib_rmlui_menu_t *menu,
       menu->controls[menu->control_count].bind_index = bind_index;
       ++menu->control_count;
    }
+}
+
+/* Read the controllers available for this console.
+ *
+ * `controls_variants` is a space-separated list of ids that we write at
+ * export, with a display name for each. There are no controller names in the
+ * player, for the same reason there are no control names: they are all in
+ * the console package.
+ */
+static void rib_rmlui_discover_devices(rib_rmlui_menu_t *menu,
+      config_file_t *config)
+{
+   char list[512];
+   char *cursor;
+   char *token;
+
+   menu->device_count = 0;
+   if (!config_get_array(config, "controls_variants", list, sizeof(list)))
+      return;
+
+   cursor = list;
+   while ((token = strtok_r(cursor, " ", &cursor)))
+   {
+      char key[96];
+      char name[NAME_MAX_LENGTH];
+
+      if (!*token)
+         continue;
+      if (menu->device_count >= RIB_DEVICE_MAX)
+      {
+         RARCH_ERR("[RIB] more than %d controllers offered; '%s' and any after "
+               "it cannot be chosen.\n", RIB_DEVICE_MAX, token);
+         return;
+      }
+      strlcpy(menu->device_ids[menu->device_count], token,
+            sizeof(menu->device_ids[menu->device_count]));
+      snprintf(key, sizeof(key), "controls_variant_name_%s", token);
+      if (config_get_array(config, key, name, sizeof(name)))
+         strlcpy(menu->device_names[menu->device_count], name,
+               sizeof(menu->device_names[menu->device_count]));
+      else
+         strlcpy(menu->device_names[menu->device_count], token,
+               sizeof(menu->device_names[menu->device_count]));
+      ++menu->device_count;
+   }
+}
+
+int rib_rmlui_device_count(void)
+{
+   const rib_rmlui_menu_t *menu = rib_rmlui_active_menu;
+   return menu ? menu->device_count : 0;
+}
+
+const char *rib_rmlui_device_id(int index)
+{
+   const rib_rmlui_menu_t *menu = rib_rmlui_active_menu;
+   if (!menu || index < 0 || index >= menu->device_count)
+      return NULL;
+   return menu->device_ids[index];
+}
+
+const char *rib_rmlui_device_name(int index)
+{
+   const rib_rmlui_menu_t *menu = rib_rmlui_active_menu;
+   if (!menu || index < 0 || index >= menu->device_count)
+      return NULL;
+   return menu->device_names[index];
 }
 
 /* We keep no control names in the bridge and read them from here. */
@@ -386,9 +463,12 @@ static bool rib_rmlui_load_controls_file(rib_rmlui_menu_t *menu,
       if (config_get_array(config, "controls_profile", profile, sizeof(profile)))
          strlcpy(menu->profile_id, profile, sizeof(menu->profile_id));
       rib_rmlui_discover_controls(menu, config);
-      /* We load the document before we build this list, so there are no
-       * listeners on its control elements yet. */
+      rib_rmlui_discover_devices(menu, config);
+      /* We load the document before we build these lists, so there are no
+       * listeners yet on its control and picker elements. */
       rib_rmlui_wire_controls();
+      rib_rmlui_wire_device_picker();
+      rib_rmlui_set_device_picker(false, menu->profile_id);
    }
 
    if (defaults)
@@ -685,6 +765,8 @@ static void rib_rmlui_play_action_sound(int action)
       case RIB_RMLUI_ACTION_CONTROLS:
       case RIB_RMLUI_ACTION_CONTROLS_RESET:
       case RIB_RMLUI_ACTION_QUIT:
+      case RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE:
+      case RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE:
          audio_driver_mixer_play_menu_sound(AUDIO_MIXER_SYSTEM_SLOT_OK);
          break;
       default:
@@ -709,6 +791,30 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
        action != RIB_RMLUI_ACTION_CONTROLS_CANCEL &&
        action != RIB_RMLUI_ACTION_CONTROLS_BACK)
       return;
+
+   if (action == RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE)
+   {
+      menu->device_picker_open = !menu->device_picker_open;
+      rib_rmlui_set_device_picker(menu->device_picker_open, menu->profile_id);
+      return;
+   }
+   if (action == RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE)
+   {
+      /* We pass the chosen id next to the action, not inside it, so the number
+       * of controllers for a console never has to be part of an enum. */
+      const char *chosen = rib_rmlui_chosen_device();
+      menu->device_picker_open = false;
+      if (chosen && *chosen && !string_is_equal(chosen, menu->profile_id))
+      {
+         strlcpy(menu->profile_id, chosen, sizeof(menu->profile_id));
+         /* We write the pad the player picks to the per-game override,
+          * not to the author's defaults. We do not apply it to the running
+          * core yet. */
+         RARCH_LOG("[RIB] controller changed to '%s'.\n", menu->profile_id);
+      }
+      rib_rmlui_set_device_picker(false, menu->profile_id);
+      return;
+   }
 
    if (action >= RIB_RMLUI_ACTION_CONTROL_FIRST &&
        action <= RIB_RMLUI_ACTION_CONTROL_LAST)

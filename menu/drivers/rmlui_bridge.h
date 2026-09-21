@@ -31,7 +31,14 @@ enum rib_rmlui_action
     * declares, and a PlayStation DualShock declares twenty-four. In the menu
     * we read the controls declared for the console from rmlui.c, through
     * rib_rmlui_control_id. */
-   RIB_RMLUI_ACTION_CONTROL_LAST = RIB_RMLUI_ACTION_CONTROL_FIRST + 47
+   RIB_RMLUI_ACTION_CONTROL_LAST = RIB_RMLUI_ACTION_CONTROL_FIRST + 47,
+
+   /* Opening and closing the controller picker. We pass the chosen option
+    * as a string next to the action, not as another range of enum values like
+    * "select slot N", so we do not add a range for every new list in the
+    * menu. */
+   RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE,
+   RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE
 };
 
 /* How many control ids there are in the player, and each id in the order of
@@ -42,6 +49,18 @@ enum rib_rmlui_action
  * list. We load the document before that, so at load time there is nothing
  * to attach to. */
 void rib_rmlui_wire_controls(void);
+void rib_rmlui_wire_device_picker(void);
+void rib_rmlui_set_device_picker(bool open, const char *chosen);
+
+/* The controllers in the picker, which we read in the player from the exported
+ * configuration, and the one in use now. There are no controller names in the
+ * bridge, for the same reason there are no control names. */
+int rib_rmlui_device_count(void);
+const char *rib_rmlui_device_id(int index);
+const char *rib_rmlui_device_name(int index);
+
+/* The option the player chose with a click, valid until the next action. */
+const char *rib_rmlui_chosen_device(void);
 
 int rib_rmlui_control_capacity(void);
 const char *rib_rmlui_control_id(int index);

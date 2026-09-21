@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -227,6 +228,36 @@ private:
 
 int HoverListener::hovered_action = RIB_RMLUI_ACTION_NONE;
 
+/* The option the player chose with a click.
+ *
+ * We pass it as a string next to the action, not inside the action. Slots are
+ * `SELECT_SLOT_1 + index`, and if we encoded every list that way, the number
+ * of controllers for a console would have to be in the enum, while it is a
+ * fact of the console package.
+ */
+static std::string chosen_device;
+
+class DeviceOptionListener : public Rml::EventListener
+{
+public:
+   explicit DeviceOptionListener(std::string id) : id(std::move(id)) {}
+
+   void ProcessEvent(Rml::Event&) override
+   {
+      chosen_device = id;
+      ActionListener::queue_action(RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE);
+   }
+   void OnDetach(Rml::Element*) override { delete this; }
+
+private:
+   std::string id;
+};
+
+extern "C" const char *rib_rmlui_chosen_device(void)
+{
+   return chosen_device.c_str();
+}
+
 std::unique_ptr<RominaboxRenderer> renderer;
 Rml::Context *context = nullptr;
 Rml::ElementDocument *document = nullptr;
@@ -384,6 +415,63 @@ void update_document_state()
  * empty and we attach nothing. Keyboard input does not go through these
  * listeners, so only clicks and hovers depend on this second call.
  */
+/* Attach the controller picker, if there is a choice for this console.
+ *
+ * The options are in the document only when there is more than one pad, so a
+ * missing picker is not an error. Most consoles have exactly one pad.
+ */
+extern "C" void rib_rmlui_wire_device_picker(void)
+{
+   if (!document)
+      return;
+   if (Rml::Element *current = document->GetElementById("controls-device-current"))
+      current->AddEventListener(Rml::EventId::Click,
+            new ActionListener(RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE));
+
+   for (int index = 0; index < rib_rmlui_device_count(); ++index)
+   {
+      const char *id = rib_rmlui_device_id(index);
+      if (!id || !*id)
+         continue;
+      if (Rml::Element *option =
+            document->GetElementById("controls-device-option-" + std::string(id)))
+         option->AddEventListener(Rml::EventId::Click,
+               new DeviceOptionListener(id));
+   }
+}
+
+/* Show or hide the picker's list, and mark which option is in use. */
+extern "C" void rib_rmlui_set_device_picker(bool open, const char *chosen)
+{
+   if (!document)
+      return;
+   if (Rml::Element *list = document->GetElementById("controls-device-list"))
+   {
+      if (open)
+         list->RemoveProperty("display");
+      else
+         list->SetProperty("display", "none");
+   }
+   for (int index = 0; index < rib_rmlui_device_count(); ++index)
+   {
+      const char *id = rib_rmlui_device_id(index);
+      if (!id || !*id)
+         continue;
+      if (Rml::Element *option =
+            document->GetElementById("controls-device-option-" + std::string(id)))
+         option->SetClass("selected", chosen && !std::strcmp(chosen, id));
+   }
+   if (Rml::Element *current = document->GetElementById("controls-device-current"))
+      for (int index = 0; index < rib_rmlui_device_count(); ++index)
+         if (chosen && rib_rmlui_device_id(index)
+               && !std::strcmp(chosen, rib_rmlui_device_id(index)))
+         {
+            const char *name = rib_rmlui_device_name(index);
+            current->SetInnerRML(Rml::StringUtilities::EncodeRml(name ? name : chosen));
+            break;
+         }
+}
+
 extern "C" void rib_rmlui_wire_controls(void)
 {
    if (!document)
