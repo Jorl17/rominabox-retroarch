@@ -29,8 +29,20 @@ enum rib_rmlui_action
    RIB_RMLUI_ACTION_CONTROLS_LABEL_SAVE,
    RIB_RMLUI_ACTION_CONTROLS_LABEL_CANCEL,
    RIB_RMLUI_ACTION_CONTROL_FIRST,
-   RIB_RMLUI_ACTION_CONTROL_LAST = RIB_RMLUI_ACTION_CONTROL_FIRST + 15
+   /* The size of a buffer: how many control actions fit in the mailbox, not
+    * which controls exist. It must be enough for every control a console
+    * declares, and a PlayStation DualShock declares twenty-four. In the menu
+    * we read the controls declared for the console from rmlui.c, through
+    * rib_rmlui_control_id. */
+   RIB_RMLUI_ACTION_CONTROL_LAST = RIB_RMLUI_ACTION_CONTROL_FIRST + 47
 };
+
+/* How many control ids there are in the player, and each id in the order of
+ * the console declaration. The code is in rmlui.c, where we read the list
+ * from the exported controls configuration. On purpose, there are no control
+ * names in the bridge. */
+int rib_rmlui_control_capacity(void);
+const char *rib_rmlui_control_id(int index);
 
 /* Escape/menu-toggle: cancel capture, then leave Controls, then resume. */
 static inline int rib_rmlui_map_menu_toggle(

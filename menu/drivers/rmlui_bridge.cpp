@@ -413,17 +413,20 @@ bool load_document()
                new HoverListener(binding.action));
       }
 
-   const char *control_ids[] = {
-      "up", "down", "left", "right", "a", "b",
-      "x", "y", "l", "r", "l2", "r2", "l3", "r3",
-      "start", "select"
-   };
-   for (int index = 0; index < 16; ++index)
+   /* Walk the elements in the document, not a list of ids.
+    *
+    * We generate the scene markup from the console package, so the elements
+    * in the document are the declared controls, however many there are, and
+    * their names are not in this code. */
+   for (int index = 0; index < rib_rmlui_control_capacity(); ++index)
    {
+      const char *control_id = rib_rmlui_control_id(index);
+      if (!control_id || !*control_id)
+         break;
       const int action = RIB_RMLUI_ACTION_CONTROL_FIRST + index;
       const std::string ids[] = {
-         "control-" + std::string(control_ids[index]),
-         "control-hit-" + std::string(control_ids[index])
+         "control-" + std::string(control_id),
+         "control-hit-" + std::string(control_id)
       };
       for (const std::string& id : ids)
          if (Rml::Element *element = document->GetElementById(id))
