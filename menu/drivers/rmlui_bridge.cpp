@@ -377,6 +377,46 @@ void update_document_state()
       status->SetInnerRML(Rml::StringUtilities::EncodeRml(main_status.text));
 }
 
+/* Attach listeners to the control elements.
+ *
+ * We call this again once we know the control list. We load the document
+ * before we read the controls configuration, so during the load the list is
+ * empty and we attach nothing. Keyboard input does not go through these
+ * listeners, so only clicks and hovers depend on this second call.
+ */
+extern "C" void rib_rmlui_wire_controls(void)
+{
+   if (!document)
+      return;
+   /* Walk the elements in the document, not a list of ids.
+    *
+    * We generate the scene markup from the console package, so the elements
+    * in the document are the declared controls, however many there are, and
+    * their names are not in this code. */
+   for (int index = 0; index < rib_rmlui_control_capacity(); ++index)
+   {
+      const char *control_id = rib_rmlui_control_id(index);
+      if (!control_id || !*control_id)
+         break;
+      const int action = RIB_RMLUI_ACTION_CONTROL_FIRST + index;
+      const std::string ids[] = {
+         "control-" + std::string(control_id),
+         "control-hit-" + std::string(control_id)
+      };
+      for (const std::string& id : ids)
+         if (Rml::Element *element = document->GetElementById(id))
+         {
+            element->AddEventListener(Rml::EventId::Click,
+                  new ActionListener(action));
+            element->AddEventListener(Rml::EventId::Mouseover,
+                  new HoverListener(action));
+            element->AddEventListener(Rml::EventId::Mouseout,
+                  new HoverListener(action));
+         }
+   }
+
+}
+
 bool load_document()
 {
    document = context ? context->LoadDocument(asset_path("menu.rml")) : nullptr;
@@ -412,32 +452,7 @@ bool load_document()
                new HoverListener(binding.action));
       }
 
-   /* Walk the elements in the document, not a list of ids.
-    *
-    * We generate the scene markup from the console package, so the elements
-    * in the document are the declared controls, however many there are, and
-    * their names are not in this code. */
-   for (int index = 0; index < rib_rmlui_control_capacity(); ++index)
-   {
-      const char *control_id = rib_rmlui_control_id(index);
-      if (!control_id || !*control_id)
-         break;
-      const int action = RIB_RMLUI_ACTION_CONTROL_FIRST + index;
-      const std::string ids[] = {
-         "control-" + std::string(control_id),
-         "control-hit-" + std::string(control_id)
-      };
-      for (const std::string& id : ids)
-         if (Rml::Element *element = document->GetElementById(id))
-         {
-            element->AddEventListener(Rml::EventId::Click,
-                  new ActionListener(action));
-            element->AddEventListener(Rml::EventId::Mouseover,
-                  new HoverListener(action));
-            element->AddEventListener(Rml::EventId::Mouseout,
-                  new HoverListener(action));
-         }
-   }
+   rib_rmlui_wire_controls();
 
    update_document_state();
    document->Show();

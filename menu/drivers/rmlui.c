@@ -386,6 +386,9 @@ static bool rib_rmlui_load_controls_file(rib_rmlui_menu_t *menu,
       if (config_get_array(config, "controls_profile", profile, sizeof(profile)))
          strlcpy(menu->profile_id, profile, sizeof(menu->profile_id));
       rib_rmlui_discover_controls(menu, config);
+      /* We load the document before we build this list, so there are no
+       * listeners on its control elements yet. */
+      rib_rmlui_wire_controls();
    }
 
    if (defaults)

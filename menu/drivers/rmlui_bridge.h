@@ -38,6 +38,11 @@ enum rib_rmlui_action
  * the console declaration. The code is in rmlui.c, where we read the list
  * from the exported controls configuration. On purpose, there are no control
  * names in the bridge. */
+/* Attach listeners to control elements. Call it after we know the control
+ * list. We load the document before that, so at load time there is nothing
+ * to attach to. */
+void rib_rmlui_wire_controls(void);
+
 int rib_rmlui_control_capacity(void);
 const char *rib_rmlui_control_id(int index);
 
