@@ -58,6 +58,9 @@ typedef struct rib_rmlui_menu
    /* The controllers in the picker, from the exported configuration. */
    char device_ids[RIB_DEVICE_MAX][32];
    char device_names[RIB_DEVICE_MAX][NAME_MAX_LENGTH];
+   /* The emulated device for each variant. 0 is the core's default device,
+    * which suits most pads. */
+   unsigned device_libretro[RIB_DEVICE_MAX];
    int device_count;
    bool device_picker_open;
    rib_control_t controls[RIB_CONTROL_MAX];
@@ -195,6 +198,14 @@ static void rib_rmlui_discover_devices(rib_rmlui_menu_t *menu,
       }
       strlcpy(menu->device_ids[menu->device_count], token,
             sizeof(menu->device_ids[menu->device_count]));
+      snprintf(key, sizeof(key), "controls_variant_device_%s", token);
+      menu->device_libretro[menu->device_count] = 0;
+      {
+         char device[32];
+         if (config_get_array(config, key, device, sizeof(device)))
+            menu->device_libretro[menu->device_count] =
+               (unsigned)strtoul(device, NULL, 10);
+      }
       snprintf(key, sizeof(key), "controls_variant_name_%s", token);
       if (config_get_array(config, key, name, sizeof(name)))
          strlcpy(menu->device_names[menu->device_count], name,
@@ -806,11 +817,28 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       menu->device_picker_open = false;
       if (chosen && *chosen && !string_is_equal(chosen, menu->profile_id))
       {
+         int index;
          strlcpy(menu->profile_id, chosen, sizeof(menu->profile_id));
-         /* We write the pad the player picks to the per-game override,
-          * not to the author's defaults. We do not apply it to the running
-          * core yet. */
-         RARCH_LOG("[RIB] controller changed to '%s'.\n", menu->profile_id);
+         /* The pad belongs to the player who picks it, so we write it to the
+          * per-game override and never to the author's fixed defaults. */
+         rib_rmlui_save_controls(menu);
+
+         /* We also apply it to the core now, not at the next launch. The
+          * emulated device is a setting in RetroArch, and we apply it again
+          * with CMD_EVENT_CONTROLLER_INIT, the same path as for any other
+          * change of device in the frontend. */
+         for (index = 0; index < menu->device_count; ++index)
+            if (string_is_equal(menu->device_ids[index], chosen)
+                  && menu->device_libretro[index])
+            {
+               configuration_set_uint(settings,
+                     settings->uints.input_libretro_device[0],
+                     menu->device_libretro[index]);
+               command_event(CMD_EVENT_CONTROLLER_INIT, NULL);
+               RARCH_LOG("[RIB] controller '%s' applied as device %u.\n",
+                     chosen, menu->device_libretro[index]);
+               break;
+            }
       }
       rib_rmlui_set_device_picker(false, menu->profile_id);
       return;
