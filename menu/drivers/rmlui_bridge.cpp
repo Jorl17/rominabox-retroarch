@@ -129,7 +129,6 @@ private:
 };
 #endif
 
-
 #ifdef RIB_RMLUI_HEADLESS
 static double test_clock_offset = 0;
 #endif
@@ -441,10 +440,6 @@ bool load_document()
    }
 
    update_document_state();
-   if (Rml::Element *edit = document->GetElementById("controls-edit-label"))
-      edit->SetProperty("display", "none");
-   if (Rml::Element *dialog = document->GetElementById("controls-label-dialog"))
-      dialog->SetProperty("display", "none");
    document->Show();
    rml_mtime = modification_time(asset_path("menu.rml"));
    rcss_mtime = modification_time(asset_path("menu.rcss"));
@@ -633,11 +628,6 @@ extern "C" void rib_rmlui_set_controls_action_focus(
 {
    if (!document)
       return;
-   if (Rml::Element *element = document->GetElementById("controls-edit-label"))
-   {
-      element->SetClass("focused", false);
-      element->SetProperty("display", "none");
-   }
    if (Rml::Element *element = document->GetElementById("controls-reset"))
       element->SetClass("focused", reset);
    if (Rml::Element *element = document->GetElementById("controls-back"))
@@ -650,23 +640,6 @@ extern "C" void rib_rmlui_set_controls_action_focus(
       else
          element->SetProperty("display", "none");
    }
-}
-
-extern "C" void rib_rmlui_set_label_dialog(bool visible, const char *value)
-{
-   rib_rmlui_clear_intents();
-   if (!document)
-      return;
-   if (Rml::Element *dialog = document->GetElementById("controls-label-dialog"))
-   {
-      if (visible)
-         dialog->RemoveProperty("display");
-      else
-         dialog->SetProperty("display", "none");
-   }
-   if (Rml::Element *element = document->GetElementById("controls-label-value"))
-      element->SetInnerRML(Rml::StringUtilities::EncodeRml(
-            value ? value : ""));
 }
 
 extern "C" void rib_rmlui_set_footer_hint(const char *hint)

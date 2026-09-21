@@ -25,9 +25,6 @@ enum rib_rmlui_action
    RIB_RMLUI_ACTION_CONTROLS_BACK,
    RIB_RMLUI_ACTION_CONTROLS_RESET,
    RIB_RMLUI_ACTION_CONTROLS_CANCEL,
-   RIB_RMLUI_ACTION_CONTROLS_EDIT_LABEL,
-   RIB_RMLUI_ACTION_CONTROLS_LABEL_SAVE,
-   RIB_RMLUI_ACTION_CONTROLS_LABEL_CANCEL,
    RIB_RMLUI_ACTION_CONTROL_FIRST,
    /* The size of a buffer: how many control actions fit in the mailbox, not
     * which controls exist. It must be enough for every control a console
@@ -101,7 +98,6 @@ void rib_rmlui_set_control_state(const char *id, const char *label,
 void rib_rmlui_set_controls_action_focus(
       bool reset, bool back, bool cancel);
 void rib_rmlui_set_controls_status(const char *status);
-void rib_rmlui_set_label_dialog(bool visible, const char *value);
 void rib_rmlui_set_footer_hint(const char *hint);
 void rib_rmlui_set_splash(bool visible, float opacity);
 void rib_rmlui_pointer_move(int x, int y);
