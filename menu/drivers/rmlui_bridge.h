@@ -133,7 +133,25 @@ void rib_rmlui_set_controls_action_focus(
       bool reset, bool back, bool cancel);
 void rib_rmlui_set_controls_status(const char *status);
 void rib_rmlui_set_footer_hint(const char *hint);
-void rib_rmlui_set_splash(bool visible, float opacity);
+
+/* How we draw an overlay at this moment.
+ *
+ * An overlay is not a screen. Nobody asks for it by name, it has no input, it
+ * hides nothing, and it is over the game and not inside the menu. In the
+ * player we set only which of these states an element is in. How each state
+ * appears, and how long leaving lasts, is in the stylesheet of the design. */
+enum rib_overlay_state
+{
+   RIB_OVERLAY_HIDDEN = 0,
+   RIB_OVERLAY_SHOWING,
+   RIB_OVERLAY_LEAVING
+};
+
+/* The document drawn over a running game and not in front of it. What that
+ * means for the frame, heading and panels of the menu is up to the design, so
+ * there are no element ids here. */
+void rib_rmlui_set_overlay_mode(bool only_overlays);
+void rib_rmlui_set_overlay(const char *element, enum rib_overlay_state state);
 void rib_rmlui_pointer_move(int x, int y);
 void rib_rmlui_pointer_button(bool down);
 void rib_rmlui_pointer_leave(void);
@@ -198,8 +216,17 @@ void rib_rmlui_clear_intents(void);
 bool rib_rmlui_element_center(const char *id, int *x, int *y);
 bool rib_rmlui_element_disabled(const char *id);
 bool rib_rmlui_reload_if_changed(void);
-void rib_rmlui_begin_splash(bool keep_menu_open);
-bool rib_rmlui_splash_active(void);
+
+/* The game has started. Run the overlays declared in the design.
+ *
+ * We draw them over the running game, so the core is not paused and the
+ * player's controller mapping stays active. */
+void rib_rmlui_begin_overlays(void);
+
+/* Whether we still want frames for the menu driver while the menu is closed.
+ * In every video driver we skip the menu while it is closed, so without this
+ * we would never draw an overlay. */
+bool rib_rmlui_overlays_drawing(void);
 bool rib_rmlui_consume_menu_toggle(void *userdata);
 void rib_rmlui_notify_state_task(const char *path, int slot,
       bool is_save, bool success);

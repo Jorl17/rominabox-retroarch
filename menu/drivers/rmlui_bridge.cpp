@@ -1192,54 +1192,25 @@ extern "C" void rib_rmlui_set_footer_hint(const char *hint)
             hint ? hint : ""));
 }
 
-extern "C" void rib_rmlui_set_splash(bool visible, float opacity)
+extern "C" void rib_rmlui_set_overlay_mode(bool only_overlays)
 {
-   rib_rmlui_clear_intents();
+   if (only_overlays)
+      rib_rmlui_clear_intents();
    if (!document)
       return;
-   const char *hidden_ids[] = {"heading", "pause-panel", "footer"};
-   for (const char *id : hidden_ids)
-      if (Rml::Element *element = document->GetElementById(id))
-      {
-         if (visible)
-            element->SetProperty("display", "none");
-         else
-            element->RemoveProperty("display");
-      }
    if (Rml::Element *body = document->GetElementById("body"))
+      body->SetClass("overlay", only_overlays);
+}
+
+extern "C" void rib_rmlui_set_overlay(const char *element,
+      enum rib_overlay_state state)
+{
+   if (!document || !element || !*element)
+      return;
+   if (Rml::Element *overlay = document->GetElementById(element))
    {
-      if (visible)
-         body->SetProperty("background-color", "transparent");
-      else
-         body->RemoveProperty("background-color");
-   }
-   if (Rml::Element *screen = document->GetElementById("screen"))
-   {
-      if (visible)
-      {
-         screen->SetProperty("background-color", "transparent");
-         screen->SetProperty("border-color", "transparent");
-         screen->SetProperty("decorator", "none");
-      }
-      else
-      {
-         screen->RemoveProperty("background-color");
-         screen->RemoveProperty("border-color");
-         screen->RemoveProperty("decorator");
-      }
-   }
-   if (Rml::Element *splash = document->GetElementById("splash"))
-   {
-      if (visible)
-      {
-         if (Rml::Element *logo = document->GetElementById("splash-logo"))
-            if (!logo->HasAttribute("src"))
-               logo->SetAttribute("src", "splash-logo.png");
-         splash->SetProperty("display", "block");
-         splash->SetProperty("opacity", std::to_string(opacity));
-      }
-      else
-         splash->SetProperty("display", "none");
+      overlay->SetClass("showing", state == RIB_OVERLAY_SHOWING);
+      overlay->SetClass("leaving", state == RIB_OVERLAY_LEAVING);
    }
 }
 
