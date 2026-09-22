@@ -1021,13 +1021,32 @@ static ui_application_t ui_application_cocoa = {
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)theApplication { return YES; }
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender
 {
-   NSApplicationTerminateReply reply = NSTerminateNow;
+   /* Cmd-Q, Quit in the menu bar, closing the last window and an Apple
+    * Event quit all arrive here. With NSTerminateNow, -[NSApplication
+    * terminate:] calls exit() on this stack, and the static destructors
+    * of Flycast abort while its threads are still running. In the pause
+    * menu we use CMD_EVENT_QUIT, and in the observer we read that flag,
+    * unload the core and then exit. From main_exit we ask AppKit to
+    * terminate again, and a second command_event from inside that
+    * teardown is not safe. */
+   static bool handed = false;
 
-   command_event(CMD_EVENT_QUIT, NULL);
-
-   rarch_stop_draw_observer();
-
-   return reply;
+   if (!rarch_draw_observer_is_active())
+      return NSTerminateNow;
+   if (!handed)
+   {
+      handed = true;
+      /* We have already sent CMD_EVENT_QUIT from the pause menu. This
+       * call is the request to terminate from main_exit, after we
+       * unloaded the core. Quitting again here would fail to start the
+       * audio driver. */
+      if (!(runloop_state_get_ptr()->flags & RUNLOOP_FLAG_SHUTDOWN_INITIATED))
+      {
+         command_event(CMD_EVENT_QUIT, NULL);
+         RARCH_LOG("[RIB] AppKit quit handed to orderly shutdown.\n");
+      }
+   }
+   return NSTerminateCancel;
 }
 
 - (void)application:(NSApplication *)sender openFiles:(NSArray *)filenames

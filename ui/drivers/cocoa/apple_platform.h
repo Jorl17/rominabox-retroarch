@@ -86,6 +86,7 @@ extern id apple_platform;
 
 void rarch_start_draw_observer(void);
 void rarch_stop_draw_observer(void);
+bool rarch_draw_observer_is_active(void);
 
 #if TARGET_OS_IPHONE && defined(HAVE_COCOATOUCH)
 #if defined(HAVE_COCOA_METAL)
