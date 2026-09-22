@@ -26,6 +26,7 @@
 #include "../menu_cbs.h"
 #include "rmlui_bridge.h"
 #include "rmlui_shader_mark.h"
+#include <gfx/gl_capabilities.h>
 
 #ifndef RIB_RMLUI_DEFAULT_ASSETS
 #define RIB_RMLUI_DEFAULT_ASSETS "."
@@ -2322,6 +2323,15 @@ static void rib_rmlui_run_script(void)
       return;
    }
 
+   /* The command for Escape, not a click. When the menu is closed there is no
+    * element to click, so this is the only way to script pause and resume. */
+   if (!strcmp(id, "toggle"))
+   {
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+      RARCH_LOG("[RIB] menu script toggled the menu.\n");
+      return;
+   }
+
    if (!strncmp(id, "hover:", 6))
    {
       strlcpy(rib_script_hover, id + 6, sizeof(rib_script_hover));
@@ -2817,7 +2827,8 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       if (!asset_directory || !*asset_directory)
          asset_directory = RIB_RMLUI_DEFAULT_ASSETS;
       menu->initialized = rib_rmlui_init(asset_directory,
-            (int)video_info->width, (int)video_info->height);
+            (int)video_info->width, (int)video_info->height,
+            gl_query_core_context_in_use());
       if (!menu->initialized)
       {
          RARCH_ERR("[RmlUi] Failed to initialize menu from %s.\n",
