@@ -188,6 +188,11 @@ const char *rib_rmlui_list_row_id(int index);
 /* -1 when the visible list has a single page. Otherwise the new page index. */
 int rib_rmlui_turn_list_page(int delta);
 void rib_rmlui_mark_row(const char *id, const char *on, const char *off);
+
+/* Draw a different controller. The markup is a scene for that pad in the
+ * export. Call wire_controls afterwards, because the elements with its
+ * listeners are gone. */
+bool rib_rmlui_set_scene(const char *markup);
 int rib_rmlui_hovered_action(void);
 void rib_rmlui_clear_intents(void);
 bool rib_rmlui_element_center(const char *id, int *x, int *y);
