@@ -7003,8 +7003,9 @@ static enum runloop_state_enum runloop_check_state(
       {
          rarch_system_info_t *sys_info = &runloop_st->system;
 
-         if (sys_info)
-            disk_control_set_eject_state(&sys_info->disk_control, false, true);
+         if (sys_info
+               && disk_control_set_eject_state(&sys_info->disk_control, false, true))
+            disk_control_log_core_image(&sys_info->disk_control, "tray closed");
       }
    }
 

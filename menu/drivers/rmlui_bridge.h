@@ -332,6 +332,10 @@ bool rib_rmlui_set_scene(const char *markup);
 int rib_rmlui_hovered_action(void);
 void rib_rmlui_clear_intents(void);
 bool rib_rmlui_element_center(const char *id, int *x, int *y);
+bool rib_rmlui_element_box(const char *id, int *x, int *y, int *w, int *h);
+/* The visible list row under the pointer, or -1. There is one focus for keys
+ * and pointer, and a hover outline on another row is a second selection. */
+int rib_rmlui_hovered_list_row(void);
 bool rib_rmlui_element_disabled(const char *id);
 bool rib_rmlui_reload_if_changed(void);
 

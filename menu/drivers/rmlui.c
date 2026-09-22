@@ -182,6 +182,7 @@ static bool rib_script_running;
 
 static void rib_rmlui_refresh_controls(rib_rmlui_menu_t *menu);
 static void rib_focus_control(rib_rmlui_menu_t *menu, int index);
+static void rib_focus_list(rib_rmlui_menu_t *menu, int index);
 static void rib_callout_text(const rib_rmlui_menu_t *menu, int index,
       char *out, size_t length);
 static void rib_rmlui_cancel_capture(rib_rmlui_menu_t *menu, const char *status);
@@ -1437,7 +1438,7 @@ static void rib_rmlui_reset_interaction(rib_rmlui_menu_t *menu, bool opening)
       rib_rmlui_cancel_capture(menu, NULL);
    menu->controls_visible = false;
    strlcpy(menu->screen, "pause", sizeof(menu->screen));
-   menu->list_focus = 0;
+   rib_focus_list(menu, 0);
    menu->pointer_pressed = false;
    menu->capture_ignore_pointer = false;
    menu->focused = RIB_RMLUI_ACTION_RESUME;
@@ -1927,6 +1928,16 @@ static void rib_rmlui_focus_list(rib_rmlui_menu_t *menu)
    rib_rmlui_focus_list_control(menu->list_focus - rows);
 }
 
+/* The only place where we write list_focus. We call it for the keys and for
+ * the pointer, in every list, the shader list included. */
+static void rib_focus_list(rib_rmlui_menu_t *menu, int index)
+{
+   if (!menu || index < 0)
+      return;
+   menu->list_focus = index;
+   rib_rmlui_focus_list(menu);
+}
+
 static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
 {
    settings_t *settings = config_get_ptr();
@@ -1970,7 +1981,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       for (row = 0; row < rib_rmlui_visible_row_count(); ++row)
          if (string_is_equal(rib_rmlui_list_row_id(row), id))
          {
-            menu->list_focus = row;
+            rib_focus_list(menu, row);
             break;
          }
       return;
@@ -1982,10 +1993,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
 
       rib_rmlui_play_action_sound(action);
       if (rib_rmlui_turn_list_page(delta) >= 0)
-      {
-         menu->list_focus = 0;
-         rib_rmlui_focus_list(menu);
-      }
+         rib_focus_list(menu, 0);
       return;
    }
    if (action == RIB_RMLUI_ACTION_TOGGLE)
@@ -2039,7 +2047,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
           * nothing to add here. */
          strlcpy(menu->screen, screen_id, sizeof(menu->screen));
          menu->controls_visible = string_is_equal(screen_id, "controls");
-         menu->list_focus = 0;
+         rib_focus_list(menu, 0);
          if (menu->controls_visible)
          {
             rib_focus_control(menu, rib_control_first(menu));
@@ -2457,6 +2465,12 @@ static void rib_rmlui_run_script(void)
       {
          settle = INT_MAX;
          rib_script_running = false;
+         /* After the clicks, including a disc change after the frames in which
+          * the tray closes. For a row whose action never ran, we report the
+          * index in the core, which is the disc it started on. */
+         disk_control_log_core_image(
+               &runloop_state_get_ptr()->system.disk_control,
+               "menu script done");
          rib_rmlui_script_shot();
       }
       return;
@@ -3113,6 +3127,11 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
    rib_rmlui_run_script();
    if (rib_script_running && rib_script_hover[0])
       rib_rmlui_move_pointer_to(rib_script_hover);
+   /* After we put the pointer back for the script, so a hovered row is the
+    * focused row before the click in this frame. We play no scroll sound,
+    * because the pointer did not move by a step. */
+   if (!menu->capture_active)
+      rib_focus_list(menu, rib_rmlui_hovered_list_row());
 
    for (;;)
    {
@@ -3265,8 +3284,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
          case MENU_ACTION_UP:
             if (stops > 0)
             {
-               menu->list_focus = (menu->list_focus + stops - 1) % stops;
-               rib_rmlui_focus_list(menu);
+               rib_focus_list(menu, (menu->list_focus + stops - 1) % stops);
 #ifdef HAVE_AUDIOMIXER
                audio_driver_mixer_play_scroll_sound(true);
 #endif
@@ -3275,8 +3293,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
          case MENU_ACTION_DOWN:
             if (stops > 0)
             {
-               menu->list_focus = (menu->list_focus + 1) % stops;
-               rib_rmlui_focus_list(menu);
+               rib_focus_list(menu, (menu->list_focus + 1) % stops);
 #ifdef HAVE_AUDIOMIXER
                audio_driver_mixer_play_scroll_sound(false);
 #endif
@@ -3285,16 +3302,14 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
          case MENU_ACTION_LEFT:
             if (rib_rmlui_turn_list_page(-1) >= 0)
             {
-               menu->list_focus = 0;
-               rib_rmlui_focus_list(menu);
+               rib_focus_list(menu, 0);
                rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
             }
             return 0;
          case MENU_ACTION_RIGHT:
             if (rib_rmlui_turn_list_page(1) >= 0)
             {
-               menu->list_focus = 0;
-               rib_rmlui_focus_list(menu);
+               rib_focus_list(menu, 0);
                rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
             }
             return 0;

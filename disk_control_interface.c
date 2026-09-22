@@ -20,6 +20,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <stdio.h>
 #include <string/stdstring.h>
 #include <file/file_path.h>
 
@@ -236,6 +237,24 @@ unsigned disk_control_get_image_index(
    if (!disk_control || !disk_control->cb.get_image_index)
       return 0;
    return disk_control->cb.get_image_index();
+}
+
+void disk_control_log_core_image(
+      disk_control_interface_t *disk_control, const char *when)
+{
+   char label[256];
+
+   if (!disk_control || !disk_control->cb.get_image_index
+         || !disk_control->cb.get_num_images)
+      return;
+   label[0] = '\0';
+   disk_control_get_image_label(disk_control,
+         disk_control_get_image_index(disk_control), label, sizeof(label));
+   fprintf(stderr, "[RIB] %s, core image %u of %u: %s\n",
+         when ? when : "core image",
+         disk_control_get_image_index(disk_control),
+         disk_control_get_num_images(disk_control),
+         label);
 }
 
 /**

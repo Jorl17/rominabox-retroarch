@@ -1943,6 +1943,47 @@ extern "C" bool rib_rmlui_element_center(const char *id, int *x, int *y)
    return size.x > 0.f && size.y > 0.f;
 }
 
+extern "C" bool rib_rmlui_element_box(const char *id, int *x, int *y, int *w, int *h)
+{
+   if (!context || !document || !id || !x || !y || !w || !h)
+      return false;
+   context->Update();
+   Rml::Element *element = document->GetElementById(id);
+   if (!element)
+      return false;
+   const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+   const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
+   *x = static_cast<int>(offset.x);
+   *y = static_cast<int>(offset.y);
+   *w = static_cast<int>(size.x);
+   *h = static_cast<int>(size.y);
+   return size.x > 0.f && size.y > 0.f;
+}
+
+extern "C" int rib_rmlui_hovered_list_row(void)
+{
+   if (!context || !document)
+      return -1;
+   Rml::Element *cursor = context->GetHoverElement();
+   Rml::Element *row = nullptr;
+   for (; cursor; cursor = cursor->GetParentNode())
+   {
+      if (cursor->IsClassSet("list-row"))
+      {
+         row = cursor;
+         break;
+      }
+   }
+   if (!row)
+      return -1;
+   std::vector<Rml::Element*> rows;
+   rib_visible_rows(rows);
+   for (int index = 0; index < (int)rows.size(); ++index)
+      if (rows[index] == row)
+         return index;
+   return -1;
+}
+
 extern "C" bool rib_rmlui_element_disabled(const char *id)
 {
    if (!document || !id)
