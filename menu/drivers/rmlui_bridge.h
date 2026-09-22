@@ -48,7 +48,11 @@ enum rib_rmlui_action
     * action, through rib_rmlui_requested_screen(), so the number of screens
     * in a design is never part of this enum. We do the same for the
     * controller picker, for the same reason. */
-   RIB_RMLUI_ACTION_SHOW_SCREEN
+   RIB_RMLUI_ACTION_SHOW_SCREEN,
+   /* The player flipped a declared switch. We pass which one next to the
+    * action, through rib_rmlui_chosen_item(). A second switch is a line in a
+    * design, not another member here. */
+   RIB_RMLUI_ACTION_TOGGLE
 };
 
 /* How many control ids there are in the player, and each id in the order of
@@ -178,6 +182,18 @@ const char *rib_rmlui_requested_screen(void);
 /* The row id, or "prev" / "next", read with LIST_CHOOSE and LIST_PAGE. */
 void rib_rmlui_remember_item(const char *id);
 const char *rib_rmlui_chosen_item(void);
+
+/* Declared switches. Every element with the list-toggle class is one, and
+ * there are no switch names in the bridge. */
+void rib_rmlui_wire_toggles(void);
+/* Write the word for a switch into `id`-state, and set the `on` class on the
+ * switch itself, so a design can draw the two positions differently. */
+void rib_rmlui_set_toggle(const char *id, const char *state, bool on);
+
+/* Lock the save slots while something else is on, with the words from the design
+ * for the reason. With NULL or empty, the player can use them again. */
+void rib_rmlui_guard_slots(const char *label);
+bool rib_rmlui_slots_guarded(void);
 
 /* Generated lists. The rows are what we drew from the row template in the
  * design, with the list-row class, and we never make a second kind of row. */

@@ -43,11 +43,36 @@
  * to the wrong preset. */
 #define RIB_SHADER_MAX 32
 
+/* How many switches a design can declare, the size of a buffer like the others. */
+#define RIB_TOGGLE_MAX 8
+
 typedef struct rib_control
 {
    char id[32];
    unsigned bind_index;
 } rib_control_t;
+
+/* What changes while a switch is on. The set is closed, so a design cannot
+ * declare an effect that the player lacks. We reject an unknown word when we
+ * read the declaration, instead of ignoring it when the switch is pressed. */
+enum rib_toggle_guard
+{
+   RIB_TOGGLE_GUARD_NONE = 0,
+   RIB_TOGGLE_GUARD_SAVES
+};
+
+/* A switch declared in the design. Every word on screen comes from the design,
+ * and there are no switches or switch names in the player. */
+typedef struct rib_toggle
+{
+   char id[64];
+   char on[32];
+   char off[32];
+   char guard_label[64];
+   char guard_status[128];
+   enum rib_toggle_guard guard;
+   bool state;
+} rib_toggle_t;
 
 typedef struct rib_rmlui_menu
 {
@@ -91,6 +116,8 @@ typedef struct rib_rmlui_menu
    int shader_count;
    char shader_state_on[32];
    char shader_state_off[32];
+   rib_toggle_t toggles[RIB_TOGGLE_MAX];
+   int toggle_count;
 } rib_rmlui_menu_t;
 
 static bool rib_splash_active;
@@ -282,6 +309,147 @@ static void rib_rmlui_discover_screens(const char *asset_directory)
       rib_rmlui_declare_screen(token, panel, heading, footer, button);
    }
    config_file_free(config);
+}
+
+/* Where we store the position of a switch, in the game's storage. */
+static bool rib_toggle_path(const char *id, char *out, size_t length)
+{
+   const char *data = getenv("ROMINABOX_DATA_DIR");
+
+   if (!data || !*data || !id || !*id)
+      return false;
+   snprintf(out, length, "%s/toggle-%s", data, id);
+   return true;
+}
+
+static void rib_toggle_remember(const rib_toggle_t *toggle)
+{
+   char path[PATH_MAX_LENGTH];
+   const char *body = toggle->state ? "1\n" : "0\n";
+
+   if (!rib_toggle_path(toggle->id, path, sizeof(path)))
+      return;
+   if (!filestream_write_file(path, body, (int64_t)strlen(body)))
+      RARCH_ERR("[RIB] the switch '%s' is %s, but %s could not be written, so "
+            "the next launch will start from the design's default.\n",
+            toggle->id, toggle->state ? "on" : "off", path);
+}
+
+static bool rib_toggle_recall(rib_toggle_t *toggle)
+{
+   char path[PATH_MAX_LENGTH];
+   int64_t length = 0;
+   char *body = NULL;
+
+   if (!rib_toggle_path(toggle->id, path, sizeof(path)))
+      return false;
+   if (!filestream_read_file(path, (void**)&body, &length) || !body)
+      return false;
+   toggle->state = length > 0 && body[0] == '1';
+   free(body);
+   return true;
+}
+
+/* Read the switches declared in the design.
+ *
+ * They are declared in the same way as the screens and the controllers: a
+ * space-separated list of ids, with the words for each switch. There are no
+ * switches in the player, and of each one we know only what it changes.
+ */
+static void rib_rmlui_discover_toggles(rib_rmlui_menu_t *menu,
+      const char *asset_directory)
+{
+   char path[PATH_MAX_LENGTH];
+   config_file_t *config;
+   char list[256];
+   char *cursor;
+   char *token;
+
+   if (!menu)
+      return;
+   menu->toggle_count = 0;
+   if (!asset_directory || !*asset_directory)
+      return;
+   snprintf(path, sizeof(path), "%s/design.cfg", asset_directory);
+   if (!(config = config_file_new_from_path_to_string(path)))
+      return;
+   if (!config_get_array(config, "toggles", list, sizeof(list)))
+   {
+      config_file_free(config);
+      return;
+   }
+
+   cursor = list;
+   while ((token = strtok_r(cursor, " ", &cursor)))
+   {
+      char key[128];
+      char value[128];
+      rib_toggle_t *toggle;
+
+      if (!*token)
+         continue;
+      if (menu->toggle_count >= RIB_TOGGLE_MAX)
+      {
+         RARCH_ERR("[RIB] more than %d switches are declared; '%s' and any "
+               "after it will not work.\n", RIB_TOGGLE_MAX, token);
+         break;
+      }
+      toggle = &menu->toggles[menu->toggle_count];
+      memset(toggle, 0, sizeof(*toggle));
+      strlcpy(toggle->id, token, sizeof(toggle->id));
+      snprintf(key, sizeof(key), "toggle_on_%s", token);
+      config_get_array(config, key, toggle->on, sizeof(toggle->on));
+      snprintf(key, sizeof(key), "toggle_off_%s", token);
+      config_get_array(config, key, toggle->off, sizeof(toggle->off));
+      snprintf(key, sizeof(key), "toggle_default_%s", token);
+      value[0] = '\0';
+      config_get_array(config, key, value, sizeof(value));
+      toggle->state = string_is_equal(value, "true");
+      snprintf(key, sizeof(key), "toggle_guard_%s", token);
+      value[0] = '\0';
+      config_get_array(config, key, value, sizeof(value));
+      if (!*value)
+         toggle->guard = RIB_TOGGLE_GUARD_NONE;
+      else if (string_is_equal(value, "saves"))
+         toggle->guard = RIB_TOGGLE_GUARD_SAVES;
+      else
+      {
+         RARCH_ERR("[RIB] the switch '%s' guards '%s', which this player does "
+               "not implement; it will guard nothing.\n", token, value);
+         toggle->guard = RIB_TOGGLE_GUARD_NONE;
+      }
+      snprintf(key, sizeof(key), "toggle_guard_label_%s", token);
+      config_get_array(config, key, toggle->guard_label,
+            sizeof(toggle->guard_label));
+      snprintf(key, sizeof(key), "toggle_guard_status_%s", token);
+      config_get_array(config, key, toggle->guard_status,
+            sizeof(toggle->guard_status));
+      rib_toggle_recall(toggle);
+      menu->toggle_count++;
+   }
+   config_file_free(config);
+}
+
+/* The combined effect of all switches. We combine them instead of applying
+ * them in turn, so of two switches that lock the slots, the last does not win. */
+static void rib_rmlui_apply_toggles(rib_rmlui_menu_t *menu)
+{
+   const rib_toggle_t *guarding = NULL;
+   int index;
+
+   if (!menu)
+      return;
+   for (index = 0; index < menu->toggle_count; ++index)
+   {
+      const rib_toggle_t *toggle = &menu->toggles[index];
+      rib_rmlui_set_toggle(toggle->id,
+            toggle->state ? toggle->on : toggle->off, toggle->state);
+      if (toggle->state && toggle->guard == RIB_TOGGLE_GUARD_SAVES && !guarding)
+         guarding = toggle;
+   }
+   rib_rmlui_guard_slots(guarding ? guarding->guard_label : NULL);
+   if (guarding && *guarding->guard_status)
+      rib_rmlui_set_status(guarding->guard_status);
 }
 
 /* Read the controllers available for this console.
@@ -1245,6 +1413,25 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       }
       return;
    }
+   if (action == RIB_RMLUI_ACTION_TOGGLE)
+   {
+      const char *id = rib_rmlui_chosen_item();
+      int index;
+
+      rib_rmlui_play_action_sound(action);
+      for (index = 0; index < menu->toggle_count; ++index)
+      {
+         rib_toggle_t *toggle = &menu->toggles[index];
+
+         if (!string_is_equal(toggle->id, id))
+            continue;
+         toggle->state = !toggle->state;
+         rib_toggle_remember(toggle);
+         rib_rmlui_apply_toggles(menu);
+         break;
+      }
+      return;
+   }
    if (action == RIB_RMLUI_ACTION_SHOW_SCREEN)
    {
       /* We pass the screen next to the action, so declaring a screen never
@@ -1374,7 +1561,9 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
 
    if ((action == RIB_RMLUI_ACTION_SAVE ||
             action == RIB_RMLUI_ACTION_LOAD) &&
-         menu->transfer_pending)
+         (menu->transfer_pending || rib_rmlui_slots_guarded()))
+      return;
+   if (rib_rmlui_slots_guarded() && rib_rmlui_focus_is_slot(action))
       return;
 
    if (action == RIB_RMLUI_ACTION_LOAD && !rib_rmlui_load_is_available(menu))
@@ -1658,6 +1847,7 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       }
       /* Read the screens in the design before we show any of them. */
       rib_rmlui_discover_screens(asset_directory);
+      rib_rmlui_discover_toggles(menu, asset_directory);
       rib_rmlui_load_shaders(menu, asset_directory);
       rib_rmlui_set_selected_slot(menu->selected_slot);
       rib_rmlui_set_focused(menu->focused);
@@ -1683,6 +1873,8 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       menu->control_focus = rib_control_first(menu);
       menu->selected_control = menu->control_focus;
       rib_rmlui_refresh_controls(menu);
+      /* After the slots, so the lock from a switch replaces the slot count. */
+      rib_rmlui_apply_toggles(menu);
       RARCH_LOG("[RmlUi] Loaded menu from %s.\n", asset_directory);
    }
 

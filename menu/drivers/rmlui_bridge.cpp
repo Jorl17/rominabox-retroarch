@@ -353,6 +353,10 @@ std::string asset_path(const char *name)
    return asset_dir + "/" + name;
 }
 
+/* Why the save slots are unusable, in the words of the design. Empty means
+ * they are usable. The decision is elsewhere, and here we only draw it. */
+std::string slots_guard;
+
 std::string quoted_css_path(const std::string& path)
 {
    std::string result;
@@ -393,11 +397,18 @@ void update_document_state()
                focused_item == RIB_RMLUI_ACTION_SELECT_SLOT_1 + index);
          element->SetClass("occupied", slots[index].occupied);
          element->SetClass("empty", !slots[index].occupied);
+         element->SetClass("disabled", !slots_guard.empty());
+         if (slots_guard.empty())
+            element->RemoveAttribute("disabled");
+         else
+            element->SetAttribute("disabled", "disabled");
       }
       if (Rml::Element *label = document->GetElementById("slot-label-" + suffix))
          label->SetInnerRML("SLOT " + suffix);
       if (Rml::Element *state = document->GetElementById("slot-state-" + suffix))
-         state->SetInnerRML(slots[index].occupied ? "OCCUPIED" : "EMPTY");
+         state->SetInnerRML(slots_guard.empty()
+               ? (slots[index].occupied ? "OCCUPIED" : "EMPTY")
+               : Rml::StringUtilities::EncodeRml(slots_guard));
       if (Rml::Element *image = document->GetElementById("slot-image-" + suffix))
       {
          // The core DAR corrects non-square source pixels. The well has that
@@ -418,15 +429,17 @@ void update_document_state()
       }
    }
 
-   if (Rml::Element *load = document->GetElementById("load"))
-   {
-      const bool disabled = !slots[selected_slot - 1].occupied;
-      load->SetClass("disabled", disabled);
-      if (disabled)
-         load->SetAttribute("disabled", "disabled");
-      else
-         load->RemoveAttribute("disabled");
-   }
+   for (const char *id : {"save", "load"})
+      if (Rml::Element *button = document->GetElementById(id))
+      {
+         const bool disabled = !slots_guard.empty() ||
+               (std::string(id) == "load" && !slots[selected_slot - 1].occupied);
+         button->SetClass("disabled", disabled);
+         if (disabled)
+            button->SetAttribute("disabled", "disabled");
+         else
+            button->RemoveAttribute("disabled");
+      }
 
    if (Rml::Element *status = document->GetElementById("status"))
       status->SetInnerRML(Rml::StringUtilities::EncodeRml(main_status.text));
@@ -586,6 +599,7 @@ bool load_document()
 
    rib_rmlui_wire_controls();
    rib_rmlui_wire_lists();
+   rib_rmlui_wire_toggles();
    /* When a design declares screens, we replace these before the first frame,
     * and when it declares none we keep them. In both cases we attach the
     * listeners to the buttons before the player can press anything. */
@@ -938,6 +952,59 @@ private:
    Kind kind;
    std::string page;
 };
+
+/* A switch is a button with the list-toggle class. We pass the pressed switch
+ * next to the action, as for a row and a controller, so there are no switches
+ * in the bridge. */
+class ToggleListener : public Rml::EventListener
+{
+public:
+   void ProcessEvent(Rml::Event& event) override
+   {
+      Rml::Element *element = event.GetCurrentElement();
+      if (!element)
+         return;
+      if (element->HasAttribute("disabled") || element->IsClassSet("disabled"))
+         return;
+      chosen_item = element->GetId();
+      ActionListener::queue_action(RIB_RMLUI_ACTION_TOGGLE);
+   }
+   void OnDetach(Rml::Element*) override { delete this; }
+};
+
+extern "C" void rib_rmlui_wire_toggles(void)
+{
+   if (!document)
+      return;
+   std::vector<Rml::Element*> toggles;
+   rib_collect(document, "list-toggle", toggles);
+   for (Rml::Element *toggle : toggles)
+      toggle->AddEventListener(Rml::EventId::Click, new ToggleListener());
+}
+
+extern "C" void rib_rmlui_set_toggle(const char *id, const char *state, bool on)
+{
+   if (!document || !id || !*id)
+      return;
+   if (Rml::Element *toggle = document->GetElementById(id))
+      toggle->SetClass("on", on);
+   if (Rml::Element *word = document->GetElementById(std::string(id) + "-state"))
+      word->SetInnerRML(Rml::StringUtilities::EncodeRml(state ? state : ""));
+}
+
+extern "C" void rib_rmlui_guard_slots(const char *label)
+{
+   const std::string next = label ? label : "";
+   if (next == slots_guard)
+      return;
+   slots_guard = next;
+   update_document_state();
+}
+
+extern "C" bool rib_rmlui_slots_guarded(void)
+{
+   return !slots_guard.empty();
+}
 
 extern "C" void rib_rmlui_wire_lists(void)
 {
