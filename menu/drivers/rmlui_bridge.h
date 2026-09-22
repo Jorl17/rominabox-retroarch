@@ -39,6 +39,11 @@ enum rib_rmlui_action
     * menu. */
    RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE,
    RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE,
+   /* The player chose a row in a generated list, or moved its pager. We pass
+    * the row and the direction next to the action. Lists add nothing to the
+    * enum, because shaders and achievements use the same kind of row. */
+   RIB_RMLUI_ACTION_LIST_CHOOSE,
+   RIB_RMLUI_ACTION_LIST_PAGE,
    /* The player asked for a declared screen. We pass which one next to the
     * action, through rib_rmlui_requested_screen(), so the number of screens
     * in a design is never part of this enum. We do the same for the
@@ -169,6 +174,20 @@ enum rib_menu_sound rib_rmlui_action_sound(int action);
 /* The screen whose button the player pressed, which we read when we take
  * RIB_RMLUI_ACTION_SHOW_SCREEN from the queue. */
 const char *rib_rmlui_requested_screen(void);
+
+/* The row id, or "prev" / "next", read with LIST_CHOOSE and LIST_PAGE. */
+void rib_rmlui_remember_item(const char *id);
+const char *rib_rmlui_chosen_item(void);
+
+/* Generated lists. The rows are what we drew from the row template in the
+ * design, with the list-row class, and we never make a second kind of row. */
+void rib_rmlui_wire_lists(void);
+int rib_rmlui_visible_row_count(void);
+void rib_rmlui_focus_list_row(int index);
+const char *rib_rmlui_list_row_id(int index);
+/* -1 when the visible list has a single page. Otherwise the new page index. */
+int rib_rmlui_turn_list_page(int delta);
+void rib_rmlui_mark_row(const char *id, const char *on, const char *off);
 int rib_rmlui_hovered_action(void);
 void rib_rmlui_clear_intents(void);
 bool rib_rmlui_element_center(const char *id, int *x, int *y);

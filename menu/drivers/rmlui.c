@@ -12,6 +12,7 @@
 #include "../../file_path_special.h"
 #include "../../runloop.h"
 #include "../../gfx/video_driver.h"
+#include "../../gfx/video_shader_parse.h"
 #include "../../verbosity.h"
 #include <file/file_path.h>
 #include <file/config_file.h>
@@ -37,6 +38,10 @@
  * package, and when there are more, we say so in the log. */
 #define RIB_DEVICE_MAX 8
 #define RIB_CONTROL_CAPTURE_SECONDS 10
+/* How many generated rows fit in one list, the size of a buffer. We write the
+ * ids at export, and we log any id beyond this number instead of applying it
+ * to the wrong preset. */
+#define RIB_SHADER_MAX 32
 
 typedef struct rib_control
 {
@@ -77,6 +82,15 @@ typedef struct rib_rmlui_menu
    char control_labels[RIB_CONTROL_MAX][NAME_MAX_LENGTH];
    char default_labels[RIB_CONTROL_MAX][NAME_MAX_LENGTH];
    struct retro_keybind default_binds[RIB_CONTROL_MAX];
+   /* The screen shown now. "pause" is the main menu screen. Escape resumes
+    * the game only on pause, and on any other screen it stays in the menu. */
+   char screen[32];
+   int list_focus;
+   char shader_ids[RIB_SHADER_MAX][64];
+   char shader_presets[RIB_SHADER_MAX][PATH_MAX_LENGTH];
+   int shader_count;
+   char shader_state_on[32];
+   char shader_state_off[32];
 } rib_rmlui_menu_t;
 
 static bool rib_splash_active;
@@ -86,6 +100,9 @@ static rib_rmlui_menu_t *rib_rmlui_active_menu;
 
 static void rib_rmlui_refresh_controls(rib_rmlui_menu_t *menu);
 static void rib_rmlui_cancel_capture(rib_rmlui_menu_t *menu, const char *status);
+static void rib_rmlui_load_shaders(rib_rmlui_menu_t *menu,
+      const char *asset_directory);
+static void rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id);
 
 void rib_rmlui_begin_splash(bool keep_menu_open)
 {
@@ -752,6 +769,8 @@ static void rib_rmlui_reset_interaction(rib_rmlui_menu_t *menu, bool opening)
    if (menu->capture_active)
       rib_rmlui_cancel_capture(menu, NULL);
    menu->controls_visible = false;
+   strlcpy(menu->screen, "pause", sizeof(menu->screen));
+   menu->list_focus = 0;
    menu->pointer_pressed = false;
    menu->capture_ignore_pointer = false;
    menu->focused = RIB_RMLUI_ACTION_RESUME;
@@ -774,7 +793,8 @@ bool rib_rmlui_consume_menu_toggle(void *userdata)
 {
    rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)userdata;
    return menu && rib_rmlui_toggle_stays_in_menu(
-         menu->controls_visible, menu->capture_active);
+         menu->controls_visible || !string_is_equal(menu->screen, "pause"),
+         menu->capture_active);
 }
 
 static void rib_rmlui_cancel_capture(rib_rmlui_menu_t *menu,
@@ -983,6 +1003,125 @@ static bool rib_rmlui_persist_libretro_device(unsigned device)
    return ok;
 }
 
+/* The bundled list, from shaders.cfg next to the design. An id that is not in
+ * it is a row of another list, and choosing it has no effect here. */
+static void rib_rmlui_load_shaders(rib_rmlui_menu_t *menu,
+      const char *asset_directory)
+{
+   char path[PATH_MAX_LENGTH];
+   config_file_t *config;
+   char list[1024];
+   char *cursor;
+   char *token;
+
+   if (!menu)
+      return;
+   menu->shader_count = 0;
+   menu->shader_state_on[0] = '\0';
+   menu->shader_state_off[0] = '\0';
+   if (!asset_directory || !*asset_directory)
+      return;
+   snprintf(path, sizeof(path), "%s/shaders.cfg", asset_directory);
+   if (!(config = config_file_new_from_path_to_string(path)))
+      return;
+   config_get_array(config, "shader_state_on",
+         menu->shader_state_on, sizeof(menu->shader_state_on));
+   config_get_array(config, "shader_state_off",
+         menu->shader_state_off, sizeof(menu->shader_state_off));
+   if (!config_get_array(config, "shader_ids", list, sizeof(list)))
+   {
+      config_file_free(config);
+      return;
+   }
+   cursor = list;
+   while ((token = strtok_r(cursor, " ", &cursor)))
+   {
+      char key[96];
+      char preset[PATH_MAX_LENGTH];
+
+      if (!*token)
+         continue;
+      if (menu->shader_count >= RIB_SHADER_MAX)
+      {
+         RARCH_ERR("[RIB] shader list has more than %d entries; the rest "
+               "are not offered.\n", RIB_SHADER_MAX);
+         break;
+      }
+      strlcpy(menu->shader_ids[menu->shader_count], token,
+            sizeof(menu->shader_ids[menu->shader_count]));
+      snprintf(key, sizeof(key), "shader_preset_%s", token);
+      preset[0] = '\0';
+      config_get_array(config, key, preset, sizeof(preset));
+      strlcpy(menu->shader_presets[menu->shader_count], preset,
+            sizeof(menu->shader_presets[menu->shader_count]));
+      menu->shader_count++;
+   }
+   config_file_free(config);
+}
+
+static void rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id)
+{
+   settings_t *settings = config_get_ptr();
+   const char *assets = getenv("ROMINABOX_RML_ASSETS");
+   const char *data = getenv("ROMINABOX_DATA_DIR");
+   char absolute[PATH_MAX_LENGTH];
+   char choice_path[PATH_MAX_LENGTH];
+   char body[PATH_MAX_LENGTH + 2];
+   const char *relative = NULL;
+   int index;
+   bool known = false;
+
+   if (!menu || !id || !*id || !settings)
+      return;
+   for (index = 0; index < menu->shader_count; ++index)
+      if (string_is_equal(menu->shader_ids[index], id))
+      {
+         relative = menu->shader_presets[index];
+         known = true;
+         break;
+      }
+   /* Not in this list. Other lists use the same action, and we handle their
+    * ids with each list. */
+   if (!known)
+      return;
+
+   absolute[0] = '\0';
+   if (relative && *relative && assets && *assets)
+      snprintf(absolute, sizeof(absolute), "%s/%s", assets, relative);
+
+   configuration_set_bool(settings, settings->bools.video_shader_enable,
+         absolute[0] != '\0');
+   {
+      bool applied;
+
+      if (absolute[0])
+         applied = video_shader_apply_shader(settings,
+               video_shader_parse_type(absolute), absolute, false);
+      else
+         applied = video_shader_apply_shader(settings, RARCH_SHADER_NONE, NULL, false);
+      /* To stderr, because we keep stderr in the launcher, and RARCH_LOG writes
+       * nothing without verbose logging. The line shows that we gave the
+       * preset to the driver. */
+      fprintf(stderr, "[RIB] shader '%s' %s: %s\n", id,
+            applied ? "applied" : "not applied",
+            absolute[0] ? absolute : "unfiltered");
+   }
+
+   if (data && *data)
+   {
+      snprintf(choice_path, sizeof(choice_path), "%s/shader-choice", data);
+      if (absolute[0])
+         snprintf(body, sizeof(body), "%s\n", absolute);
+      else
+         strlcpy(body, "\n", sizeof(body));
+      if (!filestream_write_file(choice_path, body, (int64_t)strlen(body)))
+         RARCH_ERR("[RIB] the shader is active, but %s could not be written. "
+               "The next launch will use the bundled starting shader.\n",
+               choice_path);
+   }
+   rib_rmlui_mark_row(id, menu->shader_state_on, menu->shader_state_off);
+}
+
 static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
 {
    settings_t *settings = config_get_ptr();
@@ -1003,6 +1142,34 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       rib_rmlui_set_device_picker(menu->device_picker_open, menu->profile_id);
       return;
    }
+   if (action == RIB_RMLUI_ACTION_LIST_CHOOSE)
+   {
+      const char *id = rib_rmlui_chosen_item();
+      int row;
+
+      rib_rmlui_play_action_sound(action);
+      rib_rmlui_apply_listed_shader(menu, id);
+      for (row = 0; row < rib_rmlui_visible_row_count(); ++row)
+         if (string_is_equal(rib_rmlui_list_row_id(row), id))
+         {
+            menu->list_focus = row;
+            break;
+         }
+      return;
+   }
+   if (action == RIB_RMLUI_ACTION_LIST_PAGE)
+   {
+      const char *which = rib_rmlui_chosen_item();
+      int delta = which && string_is_equal(which, "prev") ? -1 : 1;
+
+      rib_rmlui_play_action_sound(action);
+      if (rib_rmlui_turn_list_page(delta) >= 0)
+      {
+         menu->list_focus = 0;
+         rib_rmlui_focus_list_row(0);
+      }
+      return;
+   }
    if (action == RIB_RMLUI_ACTION_SHOW_SCREEN)
    {
       /* We pass the screen next to the action, so declaring a screen never
@@ -1015,7 +1182,9 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
           * Here we keep only the case of the controls screen, where capture
           * and navigation work differently. For any other screen there is
           * nothing to add here. */
+         strlcpy(menu->screen, wanted, sizeof(menu->screen));
          menu->controls_visible = string_is_equal(wanted, "controls");
+         menu->list_focus = 0;
          if (menu->controls_visible)
          {
             menu->control_focus = rib_control_first(menu);
@@ -1025,7 +1194,10 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
          }
          else if (menu->capture_active)
             rib_rmlui_cancel_capture(menu, "BINDING UNCHANGED");
+         else if (!string_is_equal(wanted, "pause"))
+            rib_rmlui_focus_list_row(0);
       }
+      rib_rmlui_play_action_sound(action);
       return;
    }
 
@@ -1141,6 +1313,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
                   menu->transfer_slot, false, false);
          break;
       case RIB_RMLUI_ACTION_CONTROLS:
+         strlcpy(menu->screen, "controls", sizeof(menu->screen));
          menu->controls_visible = true;
          menu->control_focus = rib_control_first(menu);
          menu->selected_control = menu->control_focus;
@@ -1153,6 +1326,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       case RIB_RMLUI_ACTION_CONTROLS_BACK:
          if (menu->capture_active)
             rib_rmlui_cancel_capture(menu, "BINDING UNCHANGED");
+         strlcpy(menu->screen, "pause", sizeof(menu->screen));
          menu->controls_visible = false;
          menu->focused = RIB_RMLUI_ACTION_CONTROLS;
          rib_rmlui_show_screen("pause");
@@ -1214,6 +1388,7 @@ static void *rib_rmlui_menu_init(void **userdata, bool video_is_threaded)
 
    menu->selected_slot = 1;
    menu->focused = RIB_RMLUI_ACTION_RESUME;
+   strlcpy(menu->screen, "pause", sizeof(menu->screen));
    rib_rmlui_active_menu = menu;
    *userdata = menu;
    return menu_handle;
@@ -1382,6 +1557,7 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       }
       /* Read the screens in the design before we show any of them. */
       rib_rmlui_discover_screens(asset_directory);
+      rib_rmlui_load_shaders(menu, asset_directory);
       rib_rmlui_set_selected_slot(menu->selected_slot);
       rib_rmlui_set_focused(menu->focused);
       rib_rmlui_refresh_slots();
@@ -1530,6 +1706,67 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
 
    if (!menu)
       return 0;
+
+   if (!string_is_equal(menu->screen, "pause") && !menu->controls_visible)
+   {
+      int rows = rib_rmlui_visible_row_count();
+
+      switch (action)
+      {
+         case MENU_ACTION_UP:
+            if (rows > 0)
+            {
+               menu->list_focus = (menu->list_focus + rows - 1) % rows;
+               rib_rmlui_focus_list_row(menu->list_focus);
+#ifdef HAVE_AUDIOMIXER
+               audio_driver_mixer_play_scroll_sound(true);
+#endif
+            }
+            return 0;
+         case MENU_ACTION_DOWN:
+            if (rows > 0)
+            {
+               menu->list_focus = (menu->list_focus + 1) % rows;
+               rib_rmlui_focus_list_row(menu->list_focus);
+#ifdef HAVE_AUDIOMIXER
+               audio_driver_mixer_play_scroll_sound(false);
+#endif
+            }
+            return 0;
+         case MENU_ACTION_LEFT:
+            if (rib_rmlui_turn_list_page(-1) >= 0)
+            {
+               menu->list_focus = 0;
+               rib_rmlui_focus_list_row(0);
+               rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
+            }
+            return 0;
+         case MENU_ACTION_RIGHT:
+            if (rib_rmlui_turn_list_page(1) >= 0)
+            {
+               menu->list_focus = 0;
+               rib_rmlui_focus_list_row(0);
+               rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
+            }
+            return 0;
+         case MENU_ACTION_OK:
+         case MENU_ACTION_SELECT:
+            if (rows > 0)
+            {
+               rib_rmlui_remember_item(rib_rmlui_list_row_id(menu->list_focus));
+               rib_rmlui_perform_action(menu, RIB_RMLUI_ACTION_LIST_CHOOSE);
+            }
+            return 0;
+         case MENU_ACTION_CANCEL:
+         case MENU_ACTION_RESUME:
+         case MENU_ACTION_TOGGLE:
+            rib_rmlui_perform_action(menu, rib_rmlui_map_menu_toggle(
+                  true, false));
+            return 0;
+         default:
+            return 0;
+      }
+   }
 
    if (menu->controls_visible)
    {
