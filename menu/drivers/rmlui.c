@@ -447,9 +447,8 @@ static void rib_rmlui_apply_toggles(rib_rmlui_menu_t *menu)
       if (toggle->state && toggle->guard == RIB_TOGGLE_GUARD_SAVES && !guarding)
          guarding = toggle;
    }
-   rib_rmlui_guard_slots(guarding ? guarding->guard_label : NULL);
-   if (guarding && *guarding->guard_status)
-      rib_rmlui_set_status(guarding->guard_status);
+   rib_rmlui_guard_slots(guarding ? guarding->guard_label : NULL,
+         guarding ? guarding->guard_status : NULL);
 }
 
 /* Read the controllers available for this console.
@@ -1623,6 +1622,17 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
                   menu->transfer_slot, false, false);
          break;
       case RIB_RMLUI_ACTION_CONTROLS:
+      {
+         /* Open the screen on the pause row in the design, through its button.
+          * We use this path for both the keyboard and the pointer. */
+         const char *button = rib_rmlui_pause_screen_button();
+
+         if (button && *button)
+         {
+            rib_rmlui_click_element(button);
+            return;
+         }
+      }
          strlcpy(menu->screen, "controls", sizeof(menu->screen));
          menu->controls_visible = true;
          menu->control_focus = rib_control_first(menu);
@@ -2082,8 +2092,12 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
          case MENU_ACTION_CANCEL:
          case MENU_ACTION_RESUME:
          case MENU_ACTION_TOGGLE:
-            rib_rmlui_perform_action(menu, rib_rmlui_map_menu_toggle(
-                  true, false));
+            /* We leave this screen through its back button, so pressing Escape
+             * goes to the same place as BACK, including back to Options from a
+             * screen opened from Options. */
+            if (!rib_rmlui_click_screen_back())
+               rib_rmlui_perform_action(menu, rib_rmlui_map_menu_toggle(
+                     true, false));
             return 0;
          default:
             return 0;
@@ -2139,8 +2153,12 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
          case MENU_ACTION_CANCEL:
          case MENU_ACTION_RESUME:
          case MENU_ACTION_TOGGLE:
-            rib_rmlui_perform_action(menu, rib_rmlui_map_menu_toggle(
-                  true, false));
+            /* We leave this screen through its back button, so pressing Escape
+             * goes to the same place as BACK, including back to Options from a
+             * screen opened from Options. */
+            if (!rib_rmlui_click_screen_back())
+               rib_rmlui_perform_action(menu, rib_rmlui_map_menu_toggle(
+                     true, false));
             return 0;
          default:
             return 0;

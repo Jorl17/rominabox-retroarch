@@ -353,9 +353,11 @@ std::string asset_path(const char *name)
    return asset_dir + "/" + name;
 }
 
-/* Why the save slots are unusable, in the words of the design. Empty means
- * they are usable. The decision is elsewhere, and here we only draw it. */
+/* Why the save slots are unusable, in the words of the design: the word on
+ * each slot and the line that explains it. Empty means they are usable. The
+ * decision is elsewhere in the player, and here we only draw it. */
 std::string slots_guard;
+std::string slots_guard_reason;
 
 std::string quoted_css_path(const std::string& path)
 {
@@ -442,7 +444,13 @@ void update_document_state()
       }
 
    if (Rml::Element *status = document->GetElementById("status"))
-      status->SetInnerRML(Rml::StringUtilities::EncodeRml(main_status.text));
+   {
+      /* Why the slots are unusable is a lasting state, not a message, so we keep
+       * it while they are locked. Messages go in front of it and expire. */
+      const std::string &shown =
+         main_status.text.empty() ? slots_guard_reason : main_status.text;
+      status->SetInnerRML(Rml::StringUtilities::EncodeRml(shown));
+   }
 }
 
 /* Attach listeners to the control elements.
@@ -992,12 +1000,14 @@ extern "C" void rib_rmlui_set_toggle(const char *id, const char *state, bool on)
       word->SetInnerRML(Rml::StringUtilities::EncodeRml(state ? state : ""));
 }
 
-extern "C" void rib_rmlui_guard_slots(const char *label)
+extern "C" void rib_rmlui_guard_slots(const char *label, const char *reason)
 {
    const std::string next = label ? label : "";
-   if (next == slots_guard)
+   const std::string why = reason ? reason : "";
+   if (next == slots_guard && why == slots_guard_reason)
       return;
    slots_guard = next;
+   slots_guard_reason = why;
    update_document_state();
 }
 
@@ -1048,17 +1058,88 @@ extern "C" void rib_rmlui_focus_list_row(int index)
       rows[index]->SetClass("focused", true);
 }
 
-/* The panel of the visible list, so a control is part of the screen shown. */
+static Rml::Element *rib_visible_panel(void)
+{
+   if (!document)
+      return nullptr;
+   std::vector<Rml::Element*> panels;
+   rib_collect(document, "screen-panel", panels);
+   for (Rml::Element *panel : panels)
+      if (!rib_display_none(panel))
+         return panel;
+   return nullptr;
+}
+
+/* The controls on the screen shown that the player can reach with the keyboard,
+ * after its rows and in the order we draw them. We walk Options as a list,
+ * because its entries are buttons on a panel, and a player with a pad could not
+ * use a control that only a pointer can reach. */
 static void rib_visible_controls(std::vector<Rml::Element*> &out)
 {
    out.clear();
-   Rml::Element *panel = rib_visible_list();
-   while (panel && !panel->IsClassSet("screen-panel"))
-      panel = panel->GetParentNode();
+   Rml::Element *panel = rib_visible_panel();
    if (!panel)
       return;
-   rib_collect(panel, "list-toggle", out);
-   rib_collect(panel, "list-back", out);
+   for (const char *name : {"option-entry", "list-toggle", "list-back", "options-back"})
+      rib_collect(panel, name, out);
+}
+
+/* Press the way back from the screen shown, through the listener of the
+ * element. The screen it returns to is in the declaration of the design, and
+ * we do not work it out in the player. */
+extern "C" bool rib_rmlui_click_screen_back(void)
+{
+   Rml::Element *panel = rib_visible_panel();
+   if (!panel)
+      return false;
+   std::vector<Rml::Element*> back;
+   rib_collect(panel, "list-back", back);
+   rib_collect(panel, "options-back", back);
+   if (back.empty())
+      return false;
+   return rib_rmlui_click_element(back.front()->GetId().c_str());
+}
+
+/* The button on the pause row that opens a screen.
+ *
+ * The fourth button of the pause row is for the screen the design puts there,
+ * and with Options in the game it is not the controls button. So to focus and
+ * press it, we find the element and do not use the name of a screen.
+ */
+extern "C" const char *rib_rmlui_pause_screen_button(void)
+{
+   static std::string id;
+   id.clear();
+   if (!document || screens.empty())
+      return id.c_str();
+   Rml::Element *pause = document->GetElementById(screens.front().panel);
+   if (!pause)
+      return id.c_str();
+   for (const Screen& screen : screens)
+   {
+      const char *cursor = screen.button.c_str();
+      while (*cursor)
+      {
+         while (*cursor == ' ')
+            ++cursor;
+         const char *end = cursor;
+         while (*end && *end != ' ')
+            ++end;
+         if (end > cursor)
+         {
+            const std::string one(cursor, end);
+            for (Rml::Element *e = document->GetElementById(one); e;
+                  e = e->GetParentNode())
+               if (e == pause)
+               {
+                  id = one;
+                  return id.c_str();
+               }
+         }
+         cursor = end;
+      }
+   }
+   return id.c_str();
 }
 
 extern "C" int rib_rmlui_list_control_count(void)

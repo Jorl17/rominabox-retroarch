@@ -192,8 +192,16 @@ void rib_rmlui_set_toggle(const char *id, const char *state, bool on);
 
 /* Lock the save slots while something else is on, with the words from the design
  * for the reason. With NULL or empty, the player can use them again. */
-void rib_rmlui_guard_slots(const char *label);
+void rib_rmlui_guard_slots(const char *label, const char *reason);
 bool rib_rmlui_slots_guarded(void);
+
+/* Press the way back from the screen shown. False when there is no back button
+ * on it, because the player reached that screen some other way. */
+bool rib_rmlui_click_screen_back(void);
+
+/* The button on the pause row that opens a screen, whichever screen the design
+ * puts there. Empty when there is none on the pause row. */
+const char *rib_rmlui_pause_screen_button(void);
 
 /* Generated lists. The rows are what we drew from the row template in the
  * design, with the list-row class, and we never make a second kind of row. */
