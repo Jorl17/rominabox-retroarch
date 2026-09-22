@@ -1479,6 +1479,10 @@ extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
       left = screen_size.x - list_size.x - 8.f;
    if (left < 8.f)
       left = 8.f;
+   std::fprintf(stderr, "[RIB] place '%s' on '%s' left=%d top=%d box=%dx%d screen=%dx%d\n",
+         list_id, anchor_id, (int)left, (int)top,
+         (int)list_size.x, (int)list_size.y,
+         (int)screen_size.x, (int)screen_size.y);
    list->SetProperty("left", std::to_string((int)left) + "px");
    list->SetProperty("top", std::to_string((int)top) + "px");
 }
