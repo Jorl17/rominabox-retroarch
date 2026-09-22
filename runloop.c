@@ -20,6 +20,7 @@
  */
 
 #include "input/input_driver.h"
+#include "input/held_key_policy.h"
 #ifdef _WIN32
 #ifdef _XBOX
 #include <xtl.h>
@@ -5731,6 +5732,11 @@ static enum runloop_state_enum runloop_check_state(
 
 #ifdef HAVE_MENU
    last_input                       = current_bits;
+   /* We decide the keyboard menu toggle below, with the shared held-key
+    * policy. Clear what the polled hotkey loop set, so a direction key that
+    * is down cannot leave that bit stuck off, and the two paths cannot
+    * disagree. */
+   BIT256_CLEAR(current_bits, RARCH_MENU_TOGGLE);
    if (     menu_toggle_gamepad_combo != INPUT_COMBO_NONE
          && input_driver_button_combo(
                menu_toggle_gamepad_combo,
@@ -5738,19 +5744,34 @@ static enum runloop_state_enum runloop_check_state(
                &last_input))
       BIT256_SET(current_bits, RARCH_MENU_TOGGLE);
 
-   if (menu_st->input_driver_flushing_input > 0)
    {
-      bool input_active = bits_any_set(current_bits.data, ARRAY_SIZE(current_bits.data));
-      /* Don't count 'enable_hotkey' as active input */
-      if (      input_active
-            &&  BIT256_GET(current_bits, RARCH_ENABLE_HOTKEY)
-            && !BIT256_GET(current_bits, RARCH_MENU_TOGGLE))
-         input_active = false;
+      /* We decide the menu toggle here, from the keyboard level and
+       * from the edges recorded as keys arrive. A direction key that is
+       * down must not stop the flush or hide Escape. We may have set the
+       * bit for the gamepad combo above. Keep it when there was no
+       * keyboard toggle as well. */
+      bool toggle_already = BIT256_GET(current_bits, RARCH_MENU_TOGGLE);
+      int other_held      = 0;
+      unsigned bind;
+      unsigned toggle_key = 0;
+      int fire;
 
-      if (!input_active)
-         menu_st->input_driver_flushing_input--;
+      for (bind = 0; bind < RARCH_FIRST_CUSTOM_BIND; bind++)
+      {
+         if (BIT256_GET(current_bits, bind))
+            other_held = 1;
+      }
+      /* The default bind is Escape. Use the key that is bound, so a
+       * different menu key also goes through this path. */
+      if (input_config_binds[0][RARCH_MENU_TOGGLE].valid)
+         toggle_key = (unsigned)input_config_binds[0][RARCH_MENU_TOGGLE].key;
+      fire = held_key_menu_toggle_fires(
+            toggle_key,
+            input_driver_keyboard_pressed(toggle_key),
+            other_held,
+            &menu_st->input_driver_flushing_input);
 
-      if (input_active || (menu_st->input_driver_flushing_input > 0))
+      if (menu_st->input_driver_flushing_input > 0)
       {
          BIT256_CLEAR_ALL(current_bits);
          if (      runloop_paused
@@ -5767,7 +5788,13 @@ static enum runloop_state_enum runloop_check_state(
             else
                video_driver_cached_frame();
          }
+         toggle_already = false;
       }
+
+      if (fire || toggle_already)
+         BIT256_SET(current_bits, RARCH_MENU_TOGGLE);
+      else
+         BIT256_CLEAR(current_bits, RARCH_MENU_TOGGLE);
    }
 #endif
 

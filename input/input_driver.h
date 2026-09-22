@@ -810,6 +810,11 @@ void input_pad_connect(unsigned port, input_device_driver_t *driver);
 void input_keyboard_event(bool down, unsigned code, uint32_t character,
       uint16_t mod, unsigned device);
 
+/* The keyboard level, which we read from the driver itself. While input is
+ * flushing, we report nothing on the state path for the core, which would
+ * hide a key that is still held. */
+int input_driver_keyboard_pressed(unsigned key);
+
 input_driver_state_t *input_state_get_ptr(void);
 
 /*************************************/
