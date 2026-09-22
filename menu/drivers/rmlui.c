@@ -103,6 +103,11 @@ typedef struct rib_rmlui_menu
 typedef struct rib_overlay
 {
    char id[64];
+   /* An overlay declared before this one, which must finish first. We show
+    * the notice after the logo in this way, not after a fixed delay, so a slow
+    * start delays both and they never overlap. When this is empty, we wait
+    * only for the game to start. */
+   char follows[64];
    /* A staged file that we require to draw the overlay. For the logo, we show
     * it only when the export contains that file. We check the file itself and
     * have no separate flag for it in the launcher. */
@@ -110,6 +115,10 @@ typedef struct rib_overlay
    int after_ms;
    int hold_ms;
    int leave_ms;
+   /* When the clock for this overlay started, after what it follows was done.
+    * Zero until then. */
+   retro_time_t started_at;
+   retro_time_t finished_at;
    enum rib_overlay_state state;
    bool finished;
 } rib_overlay_t;
@@ -361,6 +370,7 @@ static void rib_rmlui_discover_overlays(const char *asset_directory)
    {
       char key[96];
       char needs[128];
+      char follows[64];
       int after = 0;
       int hold  = 0;
       int leave = 0;
@@ -381,6 +391,9 @@ static void rib_rmlui_discover_overlays(const char *asset_directory)
          continue;
       snprintf(key, sizeof(key), "overlay_leave_%s", token);
       config_get_int(config, key, &leave);
+      snprintf(key, sizeof(key), "overlay_follows_%s", token);
+      if (!config_get_array(config, key, follows, sizeof(follows)))
+         follows[0] = '\0';
       snprintf(key, sizeof(key), "overlay_needs_%s", token);
       if (!config_get_array(config, key, needs, sizeof(needs)))
          needs[0] = '\0';
@@ -398,11 +411,14 @@ static void rib_rmlui_discover_overlays(const char *asset_directory)
       overlay = &rib_overlays[rib_overlay_count++];
       strlcpy(overlay->id, token, sizeof(overlay->id));
       strlcpy(overlay->needs, needs, sizeof(overlay->needs));
-      overlay->after_ms = after;
-      overlay->hold_ms  = hold;
-      overlay->leave_ms = leave;
-      overlay->state    = RIB_OVERLAY_HIDDEN;
-      overlay->finished = false;
+      strlcpy(overlay->follows, follows, sizeof(overlay->follows));
+      overlay->after_ms    = after;
+      overlay->hold_ms     = hold;
+      overlay->leave_ms    = leave;
+      overlay->started_at  = 0;
+      overlay->finished_at = 0;
+      overlay->state       = RIB_OVERLAY_HIDDEN;
+      overlay->finished    = false;
    }
    config_file_free(config);
 }
@@ -1794,10 +1810,29 @@ static void rib_rmlui_run_script(void)
  * arrives, how it leaves and where it is are in the stylesheet of the design,
  * and the leaving time in the stylesheet comes from this same declaration.
  */
+/* When the clock for this overlay starts: at the start of the game, or when the
+ * overlay before it is done. Zero until then. */
+static retro_time_t rib_overlay_begins_at(const rib_overlay_t *overlay)
+{
+   int index;
+
+   if (!*overlay->follows)
+      return rib_overlays_started_at;
+   for (index = 0; index < rib_overlay_count; ++index)
+   {
+      const rib_overlay_t *before = &rib_overlays[index];
+      if (before == overlay)
+         break;
+      if (string_is_equal(before->id, overlay->follows))
+         return before->finished ? before->finished_at : 0;
+   }
+   /* No overlay before it has that name, so there is nothing to wait for. */
+   return rib_overlays_started_at;
+}
+
 static void rib_rmlui_run_overlays(void)
 {
    retro_time_t now;
-   int elapsed;
    int index;
    bool pending = false;
 
@@ -1807,17 +1842,31 @@ static void rib_rmlui_run_overlays(void)
    now = cpu_features_get_time_usec();
    if (!rib_overlays_started_at)
       rib_overlays_started_at = now;
-   elapsed = (int)((now - rib_overlays_started_at) / 1000);
 
    for (index = 0; index < rib_overlay_count; ++index)
    {
       rib_overlay_t *overlay      = &rib_overlays[index];
       enum rib_overlay_state want = RIB_OVERLAY_HIDDEN;
+      int elapsed;
 
       if (overlay->finished)
          continue;
+      if (!overlay->started_at)
+      {
+         overlay->started_at = rib_overlay_begins_at(overlay);
+         if (!overlay->started_at)
+         {
+            /* The overlay before it is not done yet. */
+            pending = true;
+            continue;
+         }
+      }
+      elapsed = (int)((now - overlay->started_at) / 1000);
       if (elapsed >= overlay->after_ms + overlay->hold_ms + overlay->leave_ms)
-         overlay->finished = true;
+      {
+         overlay->finished    = true;
+         overlay->finished_at = now;
+      }
       else if (elapsed >= overlay->after_ms + overlay->hold_ms)
          want = RIB_OVERLAY_LEAVING;
       else if (elapsed >= overlay->after_ms)
