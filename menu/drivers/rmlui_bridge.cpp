@@ -838,6 +838,23 @@ extern "C" enum rib_menu_sound rib_rmlui_action_sound(int action)
    }
 }
 
+/* Replace the drawing in the controller scene.
+ *
+ * The export contains one of these for each pad in the picker, because we
+ * cannot generate markup in the player. A different controller changes the
+ * emulated device and the label, and with this call we redraw the pad.
+ */
+extern "C" bool rib_rmlui_set_scene(const char *markup)
+{
+   if (!document || !markup)
+      return false;
+   Rml::Element *scene = document->GetElementById("controller-scene");
+   if (!scene)
+      return false;
+   scene->SetInnerRML(markup);
+   return true;
+}
+
 extern "C" const char *rib_rmlui_requested_screen(void)
 {
    return requested_screen.c_str();

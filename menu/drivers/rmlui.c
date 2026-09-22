@@ -134,13 +134,50 @@ static bool rib_control_bind_index(const char *id, unsigned *resolved)
  * here, we can add a control to a console without rebuilding the player, and
  * the list has a single source.
  */
+/* Whether a control is part of the pad in use now.
+ *
+ * We export the labels of every pad in the picker, because a player who
+ * changes pad should see the new labels at once, and an exported game has no
+ * other place to find them. With this filter, a player on a three-button pad
+ * cannot move to the extra buttons of a six-button pad, which have no element
+ * in its scene. For a console with one pad we declare no list, and then every
+ * control is part of the pad.
+ */
+static bool rib_rmlui_control_belongs(const char *list, const char *id)
+{
+   const char *at;
+   size_t length;
+
+   if (!list || !*list)
+      return true;
+   length = strlen(id);
+   for (at = list; (at = strstr(at, id)); at += length)
+   {
+      const bool starts = (at == list) || at[-1] == ' ';
+      const bool ends = at[length] == '\0' || at[length] == ' ';
+      if (starts && ends)
+         return true;
+   }
+   return false;
+}
+
 static void rib_rmlui_discover_controls(rib_rmlui_menu_t *menu,
       config_file_t *config)
 {
    struct config_file_entry entry;
    bool present;
+   char key[96];
+   char belonging[1024];
 
    menu->control_count = 0;
+   belonging[0] = '\0';
+   if (menu->profile_id[0])
+   {
+      snprintf(key, sizeof(key), "controls_variant_controls_%s",
+            menu->profile_id);
+      if (!config_get_array(config, key, belonging, sizeof(belonging)))
+         belonging[0] = '\0';
+   }
    for (present = config_get_entry_list_head(config, &entry); present;
         present = config_get_entry_list_next(&entry))
    {
@@ -151,6 +188,8 @@ static void rib_rmlui_discover_controls(rib_rmlui_menu_t *menu,
          continue;
       id = entry.key + 10;
       if (!*id)
+         continue;
+      if (!rib_rmlui_control_belongs(belonging, id))
          continue;
       if (!rib_control_bind_index(id, &bind_index))
       {
@@ -614,6 +653,42 @@ static bool rib_rmlui_load_controls_file(rib_rmlui_menu_t *menu,
    config_file_free(config);
    return true;
 }
+
+/* Read the controls for the pad in use again, and attach the listeners again.
+ *
+ * We call this when the player chooses another controller in the picker. We
+ * replaced the elements of the scene, so their listeners are gone, and the
+ * new pad has a different set of controls. The export contains the labels of
+ * every pad in the picker and the ids of each pad, so we only read them again
+ * and ask for nothing.
+ */
+static void rib_rmlui_reload_controls(rib_rmlui_menu_t *menu)
+{
+   const char *asset_directory = getenv("ROMINABOX_RML_ASSETS");
+   char defaults_path[PATH_MAX_LENGTH];
+
+   if (!asset_directory || !*asset_directory)
+      asset_directory = RIB_RMLUI_DEFAULT_ASSETS;
+   snprintf(defaults_path, sizeof(defaults_path),
+         "%s/controls-defaults.cfg", asset_directory);
+
+   menu->control_focus = 0;
+   menu->selected_control = 0;
+   if (!rib_rmlui_load_controls_file(menu, defaults_path, true))
+   {
+      RARCH_ERR("[RIB] could not re-read controls from %s after changing "
+            "controller; the menu still lists the previous pad.\n",
+            defaults_path);
+      return;
+   }
+   if (menu->controls_path[0])
+      rib_rmlui_load_controls_file(menu, menu->controls_path, false);
+   rib_rmlui_wire_controls();
+   menu->control_focus = rib_control_first(menu);
+   menu->selected_control = menu->control_focus;
+   rib_rmlui_refresh_controls(menu);
+}
+
 
 static void rib_rmlui_save_joy_button(config_file_t *config,
       const char *key, uint16_t joykey)
@@ -1183,9 +1258,35 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
                      chosen, applied);
          }
 
-         /* We leave the callouts and the illustration as exported. We made
-          * menu.rml for one pad, and the player has no art or positions for
-          * the other pads, so we cannot draw the scene again. */
+         /* Draw the chosen pad. The export contains a scene for each pad in
+          * the picker, so we have the art and the positions here. */
+         {
+            const char *assets = getenv("ROMINABOX_RML_ASSETS");
+            char path[PATH_MAX_LENGTH];
+            if (!assets || !*assets)
+               assets = RIB_RMLUI_DEFAULT_ASSETS;
+            snprintf(path, sizeof(path), "%s/scene-%s.rml", assets, chosen);
+            {
+               int64_t length = 0;
+               void *markup = NULL;
+               if (filestream_read_file(path, &markup, &length) && markup)
+               {
+                  if (rib_rmlui_set_scene((const char*)markup))
+                  {
+                     /* We replaced the elements of the old scene, which had
+                      * the listeners, and this pad has a different set of
+                      * controls. */
+                     rib_rmlui_reload_controls(menu);
+                     RARCH_LOG("[RIB] drawing '%s' from %s.\n", chosen, path);
+                  }
+                  free(markup);
+               }
+               else
+                  RARCH_ERR("[RIB] no scene for '%s' at %s; the pad on screen "
+                        "is still the one the game was exported with.\n",
+                        chosen, path);
+            }
+         }
       }
       rib_rmlui_set_device_picker(false, menu->profile_id);
       return;

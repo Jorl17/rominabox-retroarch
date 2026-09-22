@@ -209,6 +209,10 @@ bool rib_rmlui_slider_drag(const char **id, float *fraction);
 int rib_rmlui_focusables(const char *panel, char ids[][64], int capacity);
 void rib_rmlui_mark_focused(const char *panel, const char *id);
 bool rib_rmlui_part_is_slider(const char *id);
+/* Draw a different controller. The markup is a scene for that pad in the
+ * export. Call wire_controls afterwards, because the elements with its
+ * listeners are gone. */
+bool rib_rmlui_set_scene(const char *markup);
 int rib_rmlui_hovered_action(void);
 void rib_rmlui_clear_intents(void);
 bool rib_rmlui_element_center(const char *id, int *x, int *y);
