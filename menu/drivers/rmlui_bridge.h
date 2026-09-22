@@ -169,6 +169,11 @@ enum rib_menu_sound rib_rmlui_action_sound(int action);
 /* The screen whose button the player pressed, which we read when we take
  * RIB_RMLUI_ACTION_SHOW_SCREEN from the queue. */
 const char *rib_rmlui_requested_screen(void);
+
+/* Draw a different controller. The markup is a scene for that pad in the
+ * export. Call wire_controls afterwards, because the elements with its
+ * listeners are gone. */
+bool rib_rmlui_set_scene(const char *markup);
 int rib_rmlui_hovered_action(void);
 void rib_rmlui_clear_intents(void);
 bool rib_rmlui_element_center(const char *id, int *x, int *y);
