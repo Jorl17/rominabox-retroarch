@@ -28,6 +28,7 @@
 #include "configuration.h"
 #include "gfx/video_defines.h"
 #include "input/input_defines.h"
+#include "audio/volume_range.h"
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -1265,7 +1266,7 @@
 #define DEFAULT_MAX_TIMING_SKEW  0.05f
 
 /* Default audio volume in dB. (0.0 dB == unity gain). */
-#define DEFAULT_AUDIO_VOLUME 0.0f
+#define DEFAULT_AUDIO_VOLUME AUDIO_VOLUME_DEFAULT_DB
 
 /* Default audio volume of the audio mixer in dB. (0.0 dB == unity gain). */
 #define DEFAULT_AUDIO_MIXER_VOLUME 0.0f

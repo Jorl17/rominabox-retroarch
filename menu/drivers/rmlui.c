@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "../../command.h"
 #include "../../audio/audio_driver.h"
@@ -55,6 +56,9 @@ typedef struct rib_rmlui_menu
    int focused;
    bool controls_visible;
    bool controls_loaded;
+   int panel_focus;
+   char screen[32];
+   char volume_path[PATH_MAX_LENGTH];
    bool capture_active;
    int capture_control;
    int control_focus;
@@ -983,6 +987,77 @@ static bool rib_rmlui_persist_libretro_device(unsigned device)
    return ok;
 }
 
+static bool rib_save_volume(const rib_rmlui_menu_t *menu, float db, bool muted)
+{
+   char temporary[PATH_MAX_LENGTH];
+   FILE *file;
+
+   if (!menu || !menu->volume_path[0])
+      return false;
+   snprintf(temporary, sizeof(temporary), "%s.tmp", menu->volume_path);
+   if (!(file = fopen(temporary, "w")))
+      return false;
+   fprintf(file, "%s = \"%.1f\"\n%s = \"%s\"\n",
+         RIB_VOLUME_KEY, db,
+         RIB_VOLUME_MUTE_KEY, muted ? "true" : "false");
+   if (fclose(file) != 0)
+   {
+      filestream_delete(temporary);
+      return false;
+   }
+#if defined(_WIN32)
+   if (filestream_exists(menu->volume_path))
+      filestream_delete(menu->volume_path);
+#endif
+   if (rename(temporary, menu->volume_path) != 0)
+   {
+      filestream_delete(temporary);
+      return false;
+   }
+   return true;
+}
+
+static void rib_paint_volume(void)
+{
+   settings_t *settings = config_get_ptr();
+   bool *muted_flag = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
+   float db = settings ? settings->floats.audio_volume : AUDIO_VOLUME_DEFAULT_DB;
+   char readout[32];
+
+   db = rib_volume_quantize_db(db);
+   snprintf(readout, sizeof(readout), "%.1f dB", db);
+   rib_rmlui_set_slider(RIB_VOLUME_SLIDER_ID,
+         rib_volume_fraction_from_db(db), readout);
+   rib_rmlui_set_toggle(RIB_VOLUME_TOGGLE_ID, muted_flag && *muted_flag);
+}
+
+static void rib_set_volume_db(rib_rmlui_menu_t *menu, float db, bool persist)
+{
+   settings_t *settings = config_get_ptr();
+   bool *muted_flag = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
+
+   db = rib_volume_quantize_db(db);
+   if (settings)
+      configuration_set_float(settings, settings->floats.audio_volume, db);
+   audio_set_float(AUDIO_ACTION_VOLUME_GAIN, db);
+   if (persist)
+      rib_save_volume(menu, db, muted_flag && *muted_flag);
+   rib_paint_volume();
+}
+
+static void rib_set_muted(rib_rmlui_menu_t *menu, bool muted, bool persist)
+{
+   settings_t *settings = config_get_ptr();
+   bool *muted_flag = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
+   float db = settings ? settings->floats.audio_volume : AUDIO_VOLUME_DEFAULT_DB;
+
+   if (muted_flag)
+      *muted_flag = muted;
+   if (persist)
+      rib_save_volume(menu, rib_volume_quantize_db(db), muted);
+   rib_paint_volume();
+}
+
 static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
 {
    settings_t *settings = config_get_ptr();
@@ -1003,6 +1078,21 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       rib_rmlui_set_device_picker(menu->device_picker_open, menu->profile_id);
       return;
    }
+   if (action == RIB_RMLUI_ACTION_SLIDER)
+   {
+      rib_rmlui_play_action_sound(action);
+      if (string_is_equal(rib_rmlui_changed_part(), RIB_VOLUME_SLIDER_ID))
+         rib_set_volume_db(menu,
+               rib_volume_db_from_fraction(rib_rmlui_changed_fraction()), true);
+      return;
+   }
+   if (action == RIB_RMLUI_ACTION_TOGGLE)
+   {
+      rib_rmlui_play_action_sound(action);
+      if (string_is_equal(rib_rmlui_changed_part(), RIB_VOLUME_TOGGLE_ID))
+         rib_set_muted(menu, rib_rmlui_changed_on(), true);
+      return;
+   }
    if (action == RIB_RMLUI_ACTION_SHOW_SCREEN)
    {
       /* We pass the screen next to the action, so declaring a screen never
@@ -1011,6 +1101,8 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       const char *wanted = rib_rmlui_requested_screen();
       if (wanted && *wanted && rib_rmlui_show_screen(wanted))
       {
+         rib_rmlui_play_action_sound(action);
+         strlcpy(menu->screen, wanted, sizeof(menu->screen));
          /* The footer and the heading are in the design, with the screen.
           * Here we keep only the case of the controls screen, where capture
           * and navigation work differently. For any other screen there is
@@ -1025,6 +1117,16 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
          }
          else if (menu->capture_active)
             rib_rmlui_cancel_capture(menu, "BINDING UNCHANGED");
+         if (!menu->controls_visible && !string_is_equal(wanted, "pause"))
+         {
+            char ids[8][64];
+            const char *panel = rib_rmlui_screen_panel(menu->screen);
+            if (rib_rmlui_focusables(panel, ids, 8) > 0)
+            {
+               menu->panel_focus = 0;
+               rib_rmlui_mark_focused(panel, ids[0]);
+            }
+         }
       }
       return;
    }
@@ -1142,6 +1244,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
          break;
       case RIB_RMLUI_ACTION_CONTROLS:
          menu->controls_visible = true;
+         strlcpy(menu->screen, "controls", sizeof(menu->screen));
          menu->control_focus = rib_control_first(menu);
          menu->selected_control = menu->control_focus;
          /* The heading and the footer are in the design, with the
@@ -1155,6 +1258,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
             rib_rmlui_cancel_capture(menu, "BINDING UNCHANGED");
          menu->controls_visible = false;
          menu->focused = RIB_RMLUI_ACTION_CONTROLS;
+         strlcpy(menu->screen, "pause", sizeof(menu->screen));
          rib_rmlui_show_screen("pause");
          rib_rmlui_set_focused(menu->focused);
          break;
@@ -1214,6 +1318,7 @@ static void *rib_rmlui_menu_init(void **userdata, bool video_is_threaded)
 
    menu->selected_slot = 1;
    menu->focused = RIB_RMLUI_ACTION_RESUME;
+   strlcpy(menu->screen, "pause", sizeof(menu->screen));
    rib_rmlui_active_menu = menu;
    *userdata = menu;
    return menu_handle;
@@ -1345,6 +1450,21 @@ static void rib_rmlui_run_script(void)
    id[length] = '\0';
    at += length + (comma ? 1 : 0);
 
+   {
+      char *at = strchr(id, '@');
+      if (at)
+      {
+         *at = '\0';
+         if (!rib_rmlui_commit_slider(id, (float)strtof(at + 1, NULL)))
+         {
+            RARCH_ERR("[RIB] menu script names no slider '%s'; stopping so no "
+                  "screenshot is taken of the wrong screen.\n", id);
+            command_event(CMD_EVENT_QUIT, NULL);
+         }
+         return;
+      }
+   }
+
    if (!rib_rmlui_click_element(id))
    {
       RARCH_ERR("[RIB] menu script names no element '%s'; stopping so no "
@@ -1399,6 +1519,8 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
          {
             snprintf(menu->controls_path, sizeof(menu->controls_path),
                   "%s/controls.cfg", data_directory);
+            snprintf(menu->volume_path, sizeof(menu->volume_path),
+                  "%s/%s", data_directory, RIB_VOLUME_FILE);
             rib_rmlui_load_controls_file(menu, menu->controls_path, false);
          }
          menu->controls_loaded = true;
@@ -1406,6 +1528,10 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       menu->control_focus = rib_control_first(menu);
       menu->selected_control = menu->control_focus;
       rib_rmlui_refresh_controls(menu);
+      rib_rmlui_set_slider_step(RIB_VOLUME_SLIDER_ID,
+            AUDIO_VOLUME_STEP_DB
+            / (AUDIO_VOLUME_MAX_DB - AUDIO_VOLUME_MIN_DB));
+      rib_paint_volume();
       RARCH_LOG("[RmlUi] Loaded menu from %s.\n", asset_directory);
    }
 
@@ -1454,6 +1580,15 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       if (menu->capture_ignore_pointer && !pointer_pressed)
          menu->capture_ignore_pointer = false;
       menu->pointer_pressed = pointer_pressed;
+   }
+
+   {
+      const char *drag_id = NULL;
+      float drag_fraction = 0.0f;
+      if (rib_rmlui_slider_drag(&drag_id, &drag_fraction) && drag_id
+            && string_is_equal(drag_id, RIB_VOLUME_SLIDER_ID))
+         rib_set_volume_db(menu,
+               rib_volume_db_from_fraction(drag_fraction), false);
    }
 
    /* Before we empty the queue, so we handle a scripted click in this frame,
@@ -1521,6 +1656,59 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
 
 }
 
+/* A screen other than Pause and Controls, whose navigation we leave as it
+ * was. On any other screen, the player moves through the parts of the panel in
+ * the design, such as a slider, a toggle or a button, in document order. */
+static int rib_part_navigate(rib_rmlui_menu_t *menu, enum menu_action action)
+{
+   char ids[8][64];
+   const char *panel = rib_rmlui_screen_panel(menu->screen);
+   int count = rib_rmlui_focusables(panel, ids, 8);
+
+   if (count <= 0)
+      return 0;
+   if (menu->panel_focus < 0 || menu->panel_focus >= count)
+      menu->panel_focus = 0;
+
+   switch (action)
+   {
+      case MENU_ACTION_UP:
+         menu->panel_focus = (menu->panel_focus + count - 1) % count;
+         rib_rmlui_mark_focused(panel, ids[menu->panel_focus]);
+#ifdef HAVE_AUDIOMIXER
+         audio_driver_mixer_play_scroll_sound(true);
+#endif
+         return 0;
+      case MENU_ACTION_DOWN:
+         menu->panel_focus = (menu->panel_focus + 1) % count;
+         rib_rmlui_mark_focused(panel, ids[menu->panel_focus]);
+#ifdef HAVE_AUDIOMIXER
+         audio_driver_mixer_play_scroll_sound(false);
+#endif
+         return 0;
+      case MENU_ACTION_LEFT:
+      case MENU_ACTION_RIGHT:
+         if (rib_rmlui_part_is_slider(ids[menu->panel_focus]))
+            rib_rmlui_nudge_slider(ids[menu->panel_focus],
+                  action == MENU_ACTION_RIGHT ? 1 : -1);
+         return 0;
+      case MENU_ACTION_OK:
+      case MENU_ACTION_SELECT:
+         rib_rmlui_click_element(ids[menu->panel_focus]);
+         return 0;
+      case MENU_ACTION_CANCEL:
+      case MENU_ACTION_RESUME:
+      case MENU_ACTION_TOGGLE:
+         rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_CONTROLS_BACK);
+         strlcpy(menu->screen, "pause", sizeof(menu->screen));
+         rib_rmlui_show_screen("pause");
+         rib_rmlui_mark_focused(panel, NULL);
+         return 0;
+      default:
+         return 0;
+   }
+}
+
 static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
       size_t index, enum menu_action action)
 {
@@ -1582,11 +1770,14 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
          case MENU_ACTION_TOGGLE:
             rib_rmlui_perform_action(menu, rib_rmlui_map_menu_toggle(
                   true, false));
-            return 0;
-         default:
-            return 0;
+         return 0;
+      default:
+         return 0;
       }
    }
+
+   if (menu->screen[0] && !string_is_equal(menu->screen, "pause"))
+      return rib_part_navigate(menu, action);
 
    switch (action)
    {

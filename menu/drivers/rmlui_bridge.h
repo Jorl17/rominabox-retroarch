@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "../../audio/volume_range.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,6 +41,11 @@ enum rib_rmlui_action
     * menu. */
    RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE,
    RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE,
+   /* The player moved a slider or a toggle. We pass the part and the value
+    * next to the action, as for a screen id, so the enum never gets a case
+    * for each control. */
+   RIB_RMLUI_ACTION_SLIDER,
+   RIB_RMLUI_ACTION_TOGGLE,
    /* The player asked for a declared screen. We pass which one next to the
     * action, through rib_rmlui_requested_screen(), so the number of screens
     * in a design is never part of this enum. We do the same for the
@@ -169,6 +176,39 @@ enum rib_menu_sound rib_rmlui_action_sound(int action);
 /* The screen whose button the player pressed, which we read when we take
  * RIB_RMLUI_ACTION_SHOW_SCREEN from the queue. */
 const char *rib_rmlui_requested_screen(void);
+
+/* The part a slider or toggle just changed, and the value it changed to.
+ * Valid until the next such change. */
+const char *rib_rmlui_changed_part(void);
+float rib_rmlui_changed_fraction(void);
+bool rib_rmlui_changed_on(void);
+
+/* The panel for a declared screen. Empty when there is no screen with that
+ * name in the design. */
+const char *rib_rmlui_screen_panel(const char *id);
+
+/* Draw a slider or a toggle. How they appear is up to the design, and here we
+ * only move the fill, the thumb and the on/off class. */
+void rib_rmlui_set_slider(const char *id, float fraction, const char *readout);
+void rib_rmlui_set_toggle(const char *id, bool on);
+
+/* Set a slider the way a drag to that point would, and queue the change.
+ * False when the document has no such slider. */
+bool rib_rmlui_commit_slider(const char *id, float fraction);
+
+/* One keypress on a slider. The step is part of the control, set when we
+ * install the control, and in navigation we do not know which slider moves. */
+void rib_rmlui_set_slider_step(const char *id, float step);
+bool rib_rmlui_nudge_slider(const char *id, int direction);
+
+/* While a pointer is dragging a slider. The id is valid until the drag ends. */
+bool rib_rmlui_slider_drag(const char **id, float *fraction);
+
+/* Focusable parts inside a panel, in document order: sliders, toggles and
+ * buttons. We write the ids into storage from the caller. */
+int rib_rmlui_focusables(const char *panel, char ids[][64], int capacity);
+void rib_rmlui_mark_focused(const char *panel, const char *id);
+bool rib_rmlui_part_is_slider(const char *id);
 int rib_rmlui_hovered_action(void);
 void rib_rmlui_clear_intents(void);
 bool rib_rmlui_element_center(const char *id, int *x, int *y);

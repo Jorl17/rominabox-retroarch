@@ -1330,8 +1330,8 @@ void command_event_set_volume(
    size_t _len;
    char msg[128];
    float new_volume = settings->floats.audio_volume + gain;
-   new_volume       = MAX(new_volume, -80.0f);
-   new_volume       = MIN(new_volume, 12.0f);
+   new_volume       = MAX(new_volume, AUDIO_VOLUME_MIN_DB);
+   new_volume       = MIN(new_volume, AUDIO_VOLUME_MAX_DB);
    configuration_set_float(settings, settings->floats.audio_volume, new_volume);
    _len             = strlcpy(msg, msg_hash_to_str(MSG_AUDIO_VOLUME),
          sizeof(msg));
@@ -1368,8 +1368,8 @@ void command_event_set_mixer_volume(
    size_t _len;
    char msg[128];
    float new_volume = settings->floats.audio_mixer_volume + gain;
-   new_volume       = MAX(new_volume, -80.0f);
-   new_volume       = MIN(new_volume, 12.0f);
+   new_volume       = MAX(new_volume, AUDIO_VOLUME_MIN_DB);
+   new_volume       = MIN(new_volume, AUDIO_VOLUME_MAX_DB);
    configuration_set_float(settings, settings->floats.audio_mixer_volume, new_volume);
    _len             = strlcpy(msg, msg_hash_to_str(MSG_AUDIO_VOLUME),
          sizeof(msg));

@@ -17,12 +17,15 @@
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <cstdio>
 #include <cstring>
 #include <set>
 #include <string>
 #include <vector>
+
+extern "C" void rib_rmlui_wire_toggles(void);
 
 namespace
 {
@@ -538,9 +541,11 @@ static void rib_rmlui_built_in_screens(void)
    /* The same path as for the declaration in a design, so we attach the
     * listeners to the buttons in the same way and only once. */
    rib_rmlui_declare_screen("pause", "pause-panel", "GAME PAUSED",
-         "ESC  CONTINUE", "controls-back");
+         "ESC  CONTINUE", "controls-back volume-back");
    rib_rmlui_declare_screen("controls", "controls-panel", "CONTROLS",
          "ESC  BACK", "controls");
+   rib_rmlui_declare_screen("volume", "volume-panel", "VOLUME",
+         "ESC  BACK", "volume");
 }
 
 bool load_document()
@@ -585,6 +590,7 @@ bool load_document()
       }
 
    rib_rmlui_wire_controls();
+   rib_rmlui_wire_toggles();
    /* When a design declares screens, we replace these before the first frame,
     * and when it declares none we keep them. In both cases we attach the
     * listeners to the buttons before the player can press anything. */
@@ -637,6 +643,8 @@ extern "C" bool rib_rmlui_init(
    return true;
 }
 
+static Rml::Element *slider_drag = nullptr;
+
 extern "C" void rib_rmlui_shutdown(void)
 {
    if (context)
@@ -649,6 +657,7 @@ extern "C" void rib_rmlui_shutdown(void)
    ActionListener::clear();
    HoverListener::hovered_action = RIB_RMLUI_ACTION_NONE;
    pointer_down = false;
+   slider_drag = nullptr;
 }
 
 /* Where we write the next rendered frame. We set it in
@@ -850,12 +859,25 @@ extern "C" void rib_rmlui_declare_screen(const char *id, const char *panel,
       return;
    screens.push_back(Screen{id, panel, heading ? heading : "",
          footer ? footer : "", button ? button : ""});
-   /* We load the document before we read a design, so we attach the listener
-    * to the button here and not during the load. */
-   if (document && button && *button
-         && wired_screen_buttons.insert(button).second)
-      if (Rml::Element *element = document->GetElementById(button))
+   /* A screen may list more than one button, for example Back on Controls and
+    * Back on Volume both show Pause. We keep the ids in one field, separated
+    * by spaces, so a second back button is not a new kind of declaration. */
+   if (!document || !button || !*button)
+      return;
+   std::string buttons(button);
+   size_t start = 0;
+   while (start < buttons.size())
+   {
+      size_t end = buttons.find(' ', start);
+      if (end == std::string::npos)
+         end = buttons.size();
+      std::string one = buttons.substr(start, end - start);
+      start = end + 1;
+      if (one.empty() || !wired_screen_buttons.insert(one).second)
+         continue;
+      if (Rml::Element *element = document->GetElementById(one))
          element->AddEventListener(Rml::EventId::Click, new ScreenListener(id));
+   }
 }
 
 /* Show one screen and hide the rest.
@@ -1013,10 +1035,295 @@ extern "C" void rib_rmlui_set_splash(bool visible, float opacity)
    }
 }
 
+/* A slider or a toggle, found by its class in the design. We never describe
+ * the markup in the control, and only ask for the part. */
+static Rml::Element *find_class(Rml::Element *node, const char *cls)
+{
+   if (!node)
+      return nullptr;
+   if (node->IsClassSet(cls))
+      return node;
+   const int count = node->GetNumChildren();
+   for (int index = 0; index < count; ++index)
+      if (Rml::Element *found = find_class(node->GetChild(index), cls))
+         return found;
+   return nullptr;
+}
+
+static Rml::Element *slider_ancestor(Rml::Element *node)
+{
+   for (; node; node = node->GetParentNode())
+      if (node->IsClassSet("slider"))
+         return node;
+   return nullptr;
+}
+
+static std::map<std::string, float> slider_fraction;
+static std::map<std::string, float> slider_step;
+static std::string slider_drag_id;
+static float slider_drag_fraction = 0.0f;
+static std::string changed_part;
+static float changed_fraction = 0.0f;
+static bool changed_on = false;
+static int pointer_x = 0;
+static int pointer_y = 0;
+
+static float clamp_fraction(float fraction)
+{
+   if (fraction < 0.0f)
+      return 0.0f;
+   if (fraction > 1.0f)
+      return 1.0f;
+   return fraction;
+}
+
+static float fraction_at(Rml::Element *slider, int x)
+{
+   Rml::Element *track = find_class(slider, "slider-track");
+   if (!track)
+      return 0.0f;
+   if (context)
+      context->Update();
+   const float left = track->GetAbsoluteOffset(Rml::BoxArea::Border).x;
+   const float width = track->GetBox().GetSize(Rml::BoxArea::Border).x;
+   if (width <= 1.0f)
+      return 0.0f;
+   return clamp_fraction((static_cast<float>(x) - left) / width);
+}
+
+static void paint_slider(Rml::Element *slider, float fraction, const char *readout)
+{
+   if (!slider)
+      return;
+   fraction = clamp_fraction(fraction);
+   slider_fraction[slider->GetId()] = fraction;
+   if (context)
+      context->Update();
+   Rml::Element *track = find_class(slider, "slider-track");
+   Rml::Element *fill = find_class(slider, "slider-fill");
+   Rml::Element *thumb = find_class(slider, "slider-thumb");
+   const float width = track
+         ? track->GetBox().GetSize(Rml::BoxArea::Content).x : 0.0f;
+   const float thumb_width = thumb
+         ? thumb->GetBox().GetSize(Rml::BoxArea::Border).x : 0.0f;
+   if (fill && width > 0.0f)
+      fill->SetProperty("width", std::to_string(width * fraction) + "px");
+   if (thumb && width > 0.0f)
+   {
+      const float travel = std::max(0.0f, width - thumb_width);
+      thumb->SetProperty("left", std::to_string(travel * fraction) + "px");
+   }
+   if (readout)
+      if (Rml::Element *text = find_class(slider, "slider-readout"))
+         text->SetInnerRML(Rml::StringUtilities::EncodeRml(readout));
+}
+
+static void remember_slider(const std::string &id, float fraction)
+{
+   changed_part = id;
+   changed_fraction = clamp_fraction(fraction);
+   ActionListener::queue_action(RIB_RMLUI_ACTION_SLIDER);
+}
+
+class ToggleListener : public Rml::EventListener
+{
+public:
+   explicit ToggleListener(std::string id) : id(std::move(id)) {}
+   void ProcessEvent(Rml::Event &event) override
+   {
+      Rml::Element *element = event.GetCurrentElement();
+      if (!element || element->HasAttribute("disabled")
+            || element->IsClassSet("disabled"))
+         return;
+      const bool on = !element->IsClassSet("on");
+      element->SetClass("on", on);
+      changed_part = id;
+      changed_on = on;
+      ActionListener::queue_action(RIB_RMLUI_ACTION_TOGGLE);
+   }
+   void OnDetach(Rml::Element *) override { delete this; }
+private:
+   std::string id;
+};
+
+static void wire_toggles(Rml::Element *node)
+{
+   if (!node)
+      return;
+   if (node->IsClassSet("toggle") && !node->GetId().empty())
+      node->AddEventListener(Rml::EventId::Click, new ToggleListener(node->GetId()));
+   const int count = node->GetNumChildren();
+   for (int index = 0; index < count; ++index)
+      wire_toggles(node->GetChild(index));
+}
+
+extern "C" void rib_rmlui_wire_toggles(void)
+{
+   if (document)
+      wire_toggles(document);
+}
+
+extern "C" const char *rib_rmlui_changed_part(void)
+{
+   return changed_part.c_str();
+}
+
+extern "C" float rib_rmlui_changed_fraction(void)
+{
+   return changed_fraction;
+}
+
+extern "C" bool rib_rmlui_changed_on(void)
+{
+   return changed_on;
+}
+
+extern "C" const char *rib_rmlui_screen_panel(const char *id)
+{
+   if (!id)
+      return "";
+   for (const Screen &screen : screens)
+      if (screen.id == id)
+         return screen.panel.c_str();
+   return "";
+}
+
+extern "C" void rib_rmlui_set_slider(const char *id, float fraction, const char *readout)
+{
+   if (!document || !id)
+      return;
+   if (Rml::Element *slider = document->GetElementById(id))
+      if (slider->IsClassSet("slider"))
+         paint_slider(slider, fraction, readout);
+}
+
+extern "C" void rib_rmlui_set_toggle(const char *id, bool on)
+{
+   if (!document || !id)
+      return;
+   if (Rml::Element *toggle = document->GetElementById(id))
+      if (toggle->IsClassSet("toggle"))
+         toggle->SetClass("on", on);
+}
+
+extern "C" bool rib_rmlui_commit_slider(const char *id, float fraction);
+
+extern "C" void rib_rmlui_set_slider_step(const char *id, float step)
+{
+   if (id && *id && step > 0.0f)
+      slider_step[id] = step;
+}
+
+extern "C" bool rib_rmlui_nudge_slider(const char *id, int direction)
+{
+   if (!id || direction == 0)
+      return false;
+   const auto step = slider_step.find(id);
+   if (step == slider_step.end())
+      return false;
+   float current = 0.0f;
+   const auto found = slider_fraction.find(id);
+   if (found != slider_fraction.end())
+      current = found->second;
+   return rib_rmlui_commit_slider(id, current + (float)direction * step->second);
+}
+
+extern "C" bool rib_rmlui_commit_slider(const char *id, float fraction)
+{
+   if (!document || !id)
+      return false;
+   Rml::Element *slider = document->GetElementById(id);
+   if (!slider || !slider->IsClassSet("slider"))
+      return false;
+   paint_slider(slider, fraction, nullptr);
+   remember_slider(slider->GetId(), fraction);
+   return true;
+}
+
+extern "C" bool rib_rmlui_slider_drag(const char **id, float *fraction)
+{
+   if (!slider_drag)
+      return false;
+   if (id)
+      *id = slider_drag_id.c_str();
+   if (fraction)
+      *fraction = slider_drag_fraction;
+   return true;
+}
+
+static void drag_to(int x)
+{
+   if (!slider_drag)
+      return;
+   slider_drag_fraction = fraction_at(slider_drag, x);
+   paint_slider(slider_drag, slider_drag_fraction, nullptr);
+}
+
+static void end_drag(void)
+{
+   if (!slider_drag)
+      return;
+   slider_drag->SetClass("dragging", false);
+   remember_slider(slider_drag_id, slider_drag_fraction);
+   slider_drag = nullptr;
+}
+
+static void collect_focusable(Rml::Element *node, std::vector<std::string> &out)
+{
+   if (!node)
+      return;
+   const bool part = node->IsClassSet("slider") || node->IsClassSet("toggle")
+         || node->IsClassSet("menu-action");
+   if (part && !node->GetId().empty())
+      out.push_back(node->GetId());
+   const int count = node->GetNumChildren();
+   for (int index = 0; index < count; ++index)
+      collect_focusable(node->GetChild(index), out);
+}
+
+extern "C" int rib_rmlui_focusables(const char *panel, char ids[][64], int capacity)
+{
+   if (!document || !panel || !ids || capacity <= 0)
+      return 0;
+   Rml::Element *root = document->GetElementById(panel);
+   std::vector<std::string> found;
+   collect_focusable(root, found);
+   int count = 0;
+   for (const std::string &id : found)
+   {
+      if (count >= capacity)
+         break;
+      std::snprintf(ids[count], 64, "%s", id.c_str());
+      ++count;
+   }
+   return count;
+}
+
+extern "C" void rib_rmlui_mark_focused(const char *panel, const char *id)
+{
+   char ids[16][64];
+   const int count = rib_rmlui_focusables(panel, ids, 16);
+   for (int index = 0; index < count; ++index)
+      if (Rml::Element *element = document->GetElementById(ids[index]))
+         element->SetClass("focused", id && std::strcmp(ids[index], id) == 0);
+}
+
+extern "C" bool rib_rmlui_part_is_slider(const char *id)
+{
+   if (!document || !id)
+      return false;
+   Rml::Element *element = document->GetElementById(id);
+   return element && element->IsClassSet("slider");
+}
+
 extern "C" void rib_rmlui_pointer_move(int x, int y)
 {
+   pointer_x = x;
+   pointer_y = y;
    if (context)
       context->ProcessMouseMove(x, y, 0);
+   if (slider_drag)
+      drag_to(x);
 }
 
 extern "C" void rib_rmlui_pointer_button(bool down)
@@ -1027,9 +1334,23 @@ extern "C" void rib_rmlui_pointer_button(bool down)
       return;
    pointer_down = down;
    if (down)
+   {
       context->ProcessMouseButtonDown(0, 0);
+      if (Rml::Element *slider = slider_ancestor(context->GetHoverElement()))
+      {
+         slider_drag = slider;
+         slider_drag_id = slider->GetId();
+         slider->SetClass("dragging", true);
+         drag_to(pointer_x);
+      }
+   }
    else
+   {
+      if (slider_drag)
+         drag_to(pointer_x);
       context->ProcessMouseButtonUp(0, 0);
+      end_drag();
+   }
 }
 
 extern "C" int rib_rmlui_take_action(void)
@@ -1054,6 +1375,8 @@ extern "C" void rib_rmlui_pointer_leave(void)
       return;
    context->ProcessMouseLeave();
    HoverListener::hovered_action = RIB_RMLUI_ACTION_NONE;
+   if (slider_drag)
+      end_drag();
    if (pointer_down)
    {
       pointer_down = false;
