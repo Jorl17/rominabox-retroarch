@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -264,6 +265,28 @@ Rml::ElementDocument *document = nullptr;
 std::string asset_dir;
 struct StatusMessage { std::string text; double expires = 0; };
 StatusMessage main_status, controls_status;
+/* Click an element by id, as with a pointer.
+ *
+ * With the offscreen renderer we can show what a state looks like, but not
+ * that a player reaches that state through the bridge, which is not loaded
+ * there. Here we send a Click to an element in the document, so the listener
+ * that runs is the same as for a click with the mouse, such as ActionListener
+ * or DeviceOptionListener, and not a class set for the picture.
+ *
+ * With this we can do nothing that a player cannot already do with a
+ * pointer, because every element we can reach is already clickable.
+ */
+extern "C" bool rib_rmlui_click_element(const char *id)
+{
+   if (!document || !id || !*id)
+      return false;
+   Rml::Element *element = document->GetElementById(id);
+   if (!element)
+      return false;
+   element->Click();
+   return true;
+}
+
 void show_status(StatusMessage& message, const char *id, const char *text)
 {
    message.text = text ? text : "";
@@ -603,6 +626,57 @@ extern "C" void rib_rmlui_shutdown(void)
    pointer_down = false;
 }
 
+/* Where we write the next rendered frame. We set it in
+ * rib_rmlui_capture_next() and clear it after the write. */
+std::string capture_path;
+
+/* Read the frame we have just drawn for the menu, and write it.
+ *
+ * We do not use the RetroArch screenshot, whose code is in the runloop after
+ * the buffer is presented. A viewport read at that point returns an empty
+ * buffer, so the result is a black picture written without an error. Here
+ * the frame of the core and the menu over it are still in the back buffer.
+ *
+ * GL returns the rows bottom-up, so we flip them. We drop alpha, because we
+ * draw the menu over the game and a screenshot of it is opaque.
+ */
+static void rib_rmlui_write_capture(int width, int height)
+{
+   if (capture_path.empty() || width <= 0 || height <= 0)
+      return;
+#ifdef RIB_RMLUI_HEADLESS
+   /* There is no renderer to read from in the headless build, and in the
+    * bridge tests we send events and check no pixels. */
+   capture_path.clear();
+#else
+
+   const std::string path = capture_path;
+   capture_path.clear();
+   std::vector<unsigned char> pixels((size_t)width * (size_t)height * 4);
+   glPixelStorei(GL_PACK_ALIGNMENT, 1);
+   glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+   std::vector<unsigned char> flipped(pixels.size());
+   const size_t stride = (size_t)width * 4;
+   for (int row = 0; row < height; ++row)
+      std::memcpy(&flipped[(size_t)row * stride],
+            &pixels[(size_t)(height - 1 - row) * stride], stride);
+   for (size_t i = 3; i < flipped.size(); i += 4)
+      flipped[i] = 255;
+
+   const unsigned error = lodepng::encode(path, flipped,
+         (unsigned)width, (unsigned)height);
+   if (error)
+      std::fprintf(stderr, "[RIB] could not write %s: %s\n",
+            path.c_str(), lodepng_error_text(error));
+#endif
+}
+
+extern "C" void rib_rmlui_capture_next(const char *path)
+{
+   capture_path = (path && *path) ? path : "";
+}
+
 extern "C" void rib_rmlui_render(int width, int height)
 {
    if (!context || !renderer)
@@ -619,6 +693,8 @@ extern "C" void rib_rmlui_render(int width, int height)
    renderer->BeginFrame();
    context->Render();
    renderer->EndFrame();
+   /* After the menu is drawn and before the frame is presented. */
+   rib_rmlui_write_capture(width, height);
 }
 
 extern "C" void rib_rmlui_set_selected_slot(int slot)

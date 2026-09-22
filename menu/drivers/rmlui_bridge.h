@@ -128,6 +128,17 @@ void rib_rmlui_pointer_move(int x, int y);
 void rib_rmlui_pointer_button(bool down);
 void rib_rmlui_pointer_leave(void);
 int rib_rmlui_take_action(void);
+
+/* Click an element by id, as with a pointer. False when there is no such element
+ * in the document. Treat that as a failure, because after clicking nothing,
+ * a screenshot would show the wrong thing. */
+bool rib_rmlui_click_element(const char *id);
+
+/* Write the NEXT rendered menu frame to this path, then stop. We capture it
+ * where the pixels are, after we draw the menu over the frame of the core and
+ * before the buffer is presented. A read from the runloop returns an empty
+ * buffer, so the result is a black picture written without an error. */
+void rib_rmlui_capture_next(const char *path);
 int rib_rmlui_hovered_action(void);
 void rib_rmlui_clear_intents(void);
 bool rib_rmlui_element_center(const char *id, int *x, int *y);

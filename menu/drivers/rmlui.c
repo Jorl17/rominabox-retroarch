@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <limits.h>
 #include <stdio.h>
 
 #include "../../command.h"
@@ -10,6 +11,7 @@
 #include "../../input/input_remapping.h"
 #include "../../file_path_special.h"
 #include "../../runloop.h"
+#include "../../gfx/video_driver.h"
 #include "../../verbosity.h"
 #include <file/file_path.h>
 #include <file/config_file.h>
@@ -1173,6 +1175,112 @@ static void rib_rmlui_context_reset(void *data, bool video_is_threaded)
       menu->initialized = false;
 }
 
+/* Drive the menu from ROMINABOX_MENU_SCRIPT, one element per frame.
+ *
+ * We take a screenshot of the menu from the menu itself. With offscreen
+ * rendering we can show a state once its classes are set, but not that
+ * pressing CONTROLS opens the controls screen, because the bridge code for
+ * that is not loaded there. Here we click the same elements as a player,
+ * through the same listeners, so with `--max-frames-ss` we capture a frame
+ * of an actual state, and RetroArch exits by itself afterwards.
+ *
+ * The script is a comma-separated list of element ids, for example
+ * "controls,controls-device-current". We click one per frame, so there is
+ * a frame for the menu to update before the next click.
+ *
+ * We stop the run at an id that is not in the document. A screenshot taken
+ * after clicking nothing would show the wrong thing, which is worse than no
+ * picture.
+ */
+/* How many frames we wait after the last click before the screenshot. We
+ * handle the queued click in the bridge one frame later, and we lay out a
+ * picker that has just opened in the frame after that. */
+#define RIB_SCRIPT_SETTLE_FRAMES 8
+
+static void rib_rmlui_script_shot(void)
+{
+   const char *path       = getenv("ROMINABOX_MENU_SHOT");
+   settings_t *settings   = config_get_ptr();
+   runloop_state_t *state = runloop_state_get_ptr();
+   video_driver_state_t *video_st = video_state_get_ptr();
+
+   if (!path || !*path || !state || !video_st)
+   {
+      /* Without a screenshot, a script only drives the menu, so we leave the
+       * game running and do not quit while someone may be playing it. */
+      return;
+   }
+
+   /* We read the screenshot from the viewport and not from the framebuffer of
+    * the core, because we draw the menu over the game and the framebuffer
+    * contains only the game. We change the setting here, so there is no need
+    * for a config override in the harness to get a picture of the menu. */
+   if (settings)
+      configuration_set_bool(settings, settings->bools.video_gpu_screenshot, true);
+
+   /* We take the picture in the menu renderer, because the pixels are there:
+    * the frame of the core with the menu drawn over it, still in the back
+    * buffer. In RetroArch the screenshot code is in the runloop, after the
+    * buffer is presented, and a viewport read at that point returns an empty
+    * buffer, so the result is a black picture written without any error.
+    *
+    * We then end the run in the usual way, so no window stays open. */
+   rib_rmlui_capture_next(path);
+   state->max_frames = (unsigned)video_st->frame_count + 2;
+   RARCH_LOG("[RIB] menu script shooting %s, exiting after frame %u.\n",
+         path, state->max_frames);
+}
+
+static void rib_rmlui_run_script(void)
+{
+   static const char *script = NULL;
+   static size_t at          = 0;
+   static bool started       = false;
+   static int settle         = RIB_SCRIPT_SETTLE_FRAMES;
+   char id[128];
+   const char *comma;
+   size_t length;
+
+   if (!started)
+   {
+      script  = getenv("ROMINABOX_MENU_SCRIPT");
+      started = true;
+      if (script)
+         RARCH_LOG("[RIB] menu script: %s\n", *script ? script : "(none)");
+   }
+   if (!script)
+      return;
+
+   if (at >= strlen(script))
+   {
+      /* We have made every click. Wait for the menu to settle, take the
+       * screenshot and let RetroArch exit by itself, so no window stays open. */
+      if (settle-- <= 0)
+      {
+         settle = INT_MAX;
+         rib_rmlui_script_shot();
+      }
+      return;
+   }
+
+   comma  = strchr(script + at, ',');
+   length = comma ? (size_t)(comma - (script + at)) : strlen(script + at);
+   if (length >= sizeof(id))
+      length = sizeof(id) - 1;
+   memcpy(id, script + at, length);
+   id[length] = '\0';
+   at += length + (comma ? 1 : 0);
+
+   if (!rib_rmlui_click_element(id))
+   {
+      RARCH_ERR("[RIB] menu script names no element '%s'; stopping so no "
+            "screenshot is taken of the wrong screen.\n", id);
+      command_event(CMD_EVENT_QUIT, NULL);
+      return;
+   }
+   RARCH_LOG("[RIB] menu script clicked '%s'.\n", id);
+}
+
 static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
 {
    rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)data;
@@ -1271,6 +1379,10 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
          menu->capture_ignore_pointer = false;
       menu->pointer_pressed = pointer_pressed;
    }
+
+   /* Before we empty the queue, so we handle a scripted click in this frame,
+    * in the same loop as a click from the player. */
+   rib_rmlui_run_script();
 
    for (;;)
    {
