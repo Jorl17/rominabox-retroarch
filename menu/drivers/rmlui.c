@@ -1378,6 +1378,18 @@ static int rib_rmlui_find_binding_conflict(
    return -1;
 }
 
+/* A step that changed the level. We play the up or down wav from the sound
+ * pack, the same cue as for a focus move, and not the confirm cue. */
+void rib_rmlui_play_move_sound(int direction)
+{
+#ifdef HAVE_AUDIOMIXER
+   if (direction != 0)
+      audio_driver_mixer_play_scroll_sound(direction > 0);
+#else
+   (void)direction;
+#endif
+}
+
 static void rib_rmlui_play_action_sound(int action)
 {
 #ifdef HAVE_AUDIOMIXER

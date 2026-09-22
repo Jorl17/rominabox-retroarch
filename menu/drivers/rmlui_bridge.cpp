@@ -885,6 +885,10 @@ extern "C" enum rib_menu_sound rib_rmlui_action_sound(int action)
       case RIB_RMLUI_ACTION_CONTROLS_BACK:
       case RIB_RMLUI_ACTION_CONTROLS_CANCEL:
          return RIB_MENU_SOUND_CANCEL;
+      /* A slider step is navigation. We play the up or down cue of the sound
+       * pack when the level changes. Confirm as well would be a second sound,
+       * even at an end where the level did not move. */
+      case RIB_RMLUI_ACTION_SLIDER:
       /* Moving the highlight between save slots is navigation, and we already
        * play the movement cue for it, so a second sound would be one too many. */
       case RIB_RMLUI_ACTION_SELECT_SLOT_1:
@@ -1523,6 +1527,7 @@ static std::map<std::string, float> slider_fraction;
 static std::map<std::string, float> slider_step;
 static std::string slider_drag_id;
 static float slider_drag_fraction = 0.0f;
+static float slider_drag_origin = 0.0f;
 static std::string changed_part;
 static float changed_fraction = 0.0f;
 static bool changed_on = false;
@@ -1584,6 +1589,16 @@ static void remember_slider(const std::string &id, float fraction)
    changed_part = id;
    changed_fraction = clamp_fraction(fraction);
    ActionListener::queue_action(RIB_RMLUI_ACTION_SLIDER);
+}
+
+/* One move cue when the level changes, and none when it does not. At an
+ * end, we clamp a further step to the same fraction, which is not a move, so
+ * we play the cue only when the volume changes. */
+static void note_slider_move(float before, float after)
+{
+   const float delta = after - before;
+   if (delta > 0.0001f || delta < -0.0001f)
+      rib_rmlui_play_move_sound(delta > 0.0f ? 1 : -1);
 }
 
 class PartToggleListener : public Rml::EventListener
@@ -1737,8 +1752,14 @@ extern "C" bool rib_rmlui_commit_slider(const char *id, float fraction)
    Rml::Element *slider = document->GetElementById(id);
    if (!slider || !slider->IsClassSet("slider"))
       return false;
+   float before = 0.0f;
+   const auto found = slider_fraction.find(slider->GetId());
+   if (found != slider_fraction.end())
+      before = found->second;
+   const float after = clamp_fraction(fraction);
    paint_slider(slider, fraction, nullptr);
    remember_slider(slider->GetId(), fraction);
+   note_slider_move(before, after);
    return true;
 }
 
@@ -1766,7 +1787,9 @@ static void end_drag(void)
    if (!slider_drag)
       return;
    slider_drag->SetClass("dragging", false);
+   const float after = clamp_fraction(slider_drag_fraction);
    remember_slider(slider_drag_id, slider_drag_fraction);
+   note_slider_move(slider_drag_origin, after);
    slider_drag = nullptr;
 }
 
@@ -1774,8 +1797,12 @@ static void collect_focusable(Rml::Element *node, std::vector<std::string> &out)
 {
    if (!node)
       return;
-   const bool part = node->IsClassSet("slider") || node->IsClassSet("toggle")
-         || node->IsClassSet("menu-action");
+   /* The arrows next to a slider are for stepping it with a pointer. Left
+    * and right on the slider already step it, so an arrow is not a stop, and
+    * moving down from the slider does not reach the arrows. */
+   const bool affordance = node->IsClassSet("volume-arrow");
+   const bool part = !affordance && (node->IsClassSet("slider")
+         || node->IsClassSet("toggle") || node->IsClassSet("menu-action"));
    if (part && !node->GetId().empty())
       out.push_back(node->GetId());
    const int count = node->GetNumChildren();
@@ -1842,6 +1869,10 @@ extern "C" void rib_rmlui_pointer_button(bool down)
       {
          slider_drag = slider;
          slider_drag_id = slider->GetId();
+         slider_drag_origin = 0.0f;
+         const auto painted = slider_fraction.find(slider->GetId());
+         if (painted != slider_fraction.end())
+            slider_drag_origin = painted->second;
          slider->SetClass("dragging", true);
          drag_to(pointer_x);
       }
