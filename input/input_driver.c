@@ -36,6 +36,7 @@
 #endif
 
 #include "input_driver.h"
+#include "held_key_policy.h"
 #include "input_keymaps.h"
 #include "input_remapping.h"
 #include "input_osk.h"
@@ -8197,6 +8198,38 @@ static const char *accessibility_lut_name(char key)
 }
 #endif
 
+int input_driver_keyboard_pressed(unsigned key)
+{
+   input_driver_state_t *input_st = &input_driver_st;
+   input_driver_t *input          = input_st->current_driver;
+   rarch_joypad_info_t joypad_info;
+
+   if (!input || !input->input_state || !input_st->current_data)
+      return 0;
+   if (key == RETROK_UNKNOWN || key >= (unsigned)RETROK_LAST)
+      return 0;
+
+   joypad_info.joy_idx        = 0;
+   joypad_info.axis_threshold = 0.0f;
+   joypad_info.auto_binds     = NULL;
+
+   return input->input_state(
+         input_st->current_data,
+         input_st->primary_joypad,
+#ifdef HAVE_MFI
+         input_st->secondary_joypad,
+#else
+         NULL,
+#endif
+         &joypad_info,
+         input_st->libretro_input_binds[0],
+         false,
+         0,
+         RETRO_DEVICE_KEYBOARD,
+         0,
+         key) ? 1 : 0;
+}
+
 void input_keyboard_event(bool down, unsigned code,
       uint32_t character, uint16_t mod, unsigned device)
 {
@@ -8214,6 +8247,11 @@ void input_keyboard_event(bool down, unsigned code,
 #endif
 #ifdef HAVE_MENU
    struct menu_state *menu_st  = menu_state_get_ptr();
+
+   /* Record the edge before any return. We sample the menu toggle once per
+    * frame, so otherwise we would miss a down and an up between two
+    * samples. */
+   held_key_note(code, down);
 
    /* If screensaver is active, then it should be
     * disabled if:
