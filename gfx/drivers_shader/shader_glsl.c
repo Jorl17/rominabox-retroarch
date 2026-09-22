@@ -363,6 +363,37 @@ static void gl_glsl_dump_shader(GLuint shader, char *save_path)
 #endif
 #endif
 
+#ifndef HAVE_OPENGLES
+/* The GLSL version that a desktop core context supports.
+ *
+ * A core context does not support "#version 130" ("GLSL 1.30 is not
+ * supported"). In the GLES branch of this function, as upstream, we write
+ * the GLSL ES version that matches the GL version of the context (300, 310
+ * or 320). We apply the same rule to a desktop core profile, with 150 for
+ * 3.2 and the version's own number for 3.3 and later (330, 410, ...). */
+static unsigned gl_glsl_core_version(unsigned major, unsigned minor)
+{
+   unsigned gl_ver = major * 100 + minor * 10;
+
+   if (gl_ver >= 330)
+      return gl_ver;
+   if (gl_ver >= 320)
+      return 150;
+   if (gl_ver >= 210)
+      return 120;
+   return 110;
+}
+#endif
+
+static const char *gl_glsl_failed_shader_name(const char *path)
+{
+   /* Stock shaders have no file. In path_basename the pointer goes to
+    * strrchr, so NULL here would crash with SIGSEGV before the message. */
+   if (!path || !path[0])
+      return "stock";
+   return path_basename(path);
+}
+
 static bool gl_glsl_compile_shader(glsl_shader_data_t *glsl,
       GLuint shader,
       const char *define, const char *program)
@@ -410,17 +441,32 @@ static bool gl_glsl_compile_shader(glsl_shader_data_t *glsl,
    else if (glsl_core)
    {
       unsigned version_no = 0;
-      unsigned gl_ver     = glsl_major * 100 + glsl_minor * 10;
-
-      if (gl_ver >= 300)
-         version_no = 130;
-      else if (gl_ver >= 210)
-         version_no = 120;
+#ifdef HAVE_OPENGLES
+      /* This GLES branch is the same as upstream. A GLES core context does
+       * not support a desktop 130, so write the ES version that the context
+       * supports. */
+      if (gl_check_capability(GL_CAPS_GLES3_SUPPORTED))
+      {
+         unsigned gl_ver = glsl_major * 100 + glsl_minor * 10;
+         if      (gl_ver >= 320)
+            version_no = 320;
+         else if (gl_ver >= 310)
+            version_no = 310;
+         else
+            version_no = 300;
+         snprintf(version, sizeof(version), "#version %u es\n", version_no);
+         RARCH_LOG("[GLSL] Using GLSL version %u es.\n", version_no);
+      }
       else
-         version_no = 110;
-
+      {
+         snprintf(version, sizeof(version), "#version 100\n");
+         RARCH_LOG("[GLSL] Using GLSL version 100.\n");
+      }
+#else
+      version_no = gl_glsl_core_version(glsl_major, glsl_minor);
       snprintf(version, sizeof(version), "#version %u\n", version_no);
       RARCH_LOG("[GLSL] Using GLSL version %u.\n", version_no);
+#endif
    }
 
    source[0] = version;
@@ -1259,7 +1305,7 @@ error:
       char msg[NAME_MAX_LENGTH];
 
       _len = snprintf(msg, sizeof(msg), "Failed to compile shader: \"%s\".",
-            path_basename(path));
+            gl_glsl_failed_shader_name(path));
 
       runloop_msg_queue_push(msg, _len, 1, 120, true, NULL,
             MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_ERROR);
