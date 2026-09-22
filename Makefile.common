@@ -337,6 +337,7 @@ OBJ += \
        audio/audio_driver.o \
        input/input_driver.o \
        input/held_key_policy.o \
+       input/alt_enter_fullscreen.o \
        input/common/input_hid_common.o \
        led/led_driver.o \
        gfx/video_driver.o \

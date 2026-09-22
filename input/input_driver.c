@@ -37,6 +37,11 @@
 
 #include "input_driver.h"
 #include "held_key_policy.h"
+#include "alt_enter_fullscreen.h"
+
+_Static_assert(ALT_ENTER_RETURN == RETROK_RETURN, "alt+enter return code");
+_Static_assert(ALT_ENTER_KP_RETURN == RETROK_KP_ENTER, "alt+enter keypad code");
+_Static_assert(ALT_ENTER_ALT == RETROKMOD_ALT, "alt+enter modifier");
 #include "input_keymaps.h"
 #include "input_remapping.h"
 #include "input_osk.h"
@@ -8252,6 +8257,13 @@ void input_keyboard_event(bool down, unsigned code,
     * frame, so otherwise we would miss a down and an up between two
     * samples. */
    held_key_note(code, down);
+   /* Return with Alt is the fullscreen chord. Record it before any return,
+    * and do not also pass that Return to the menu or the core, because Enter
+    * alone is Start. */
+   alt_enter_note(code, down, mod);
+   if ((code == ALT_ENTER_RETURN || code == ALT_ENTER_KP_RETURN)
+         && alt_enter_masks_return())
+      return;
 
    /* If screensaver is active, then it should be
     * disabled if:

@@ -24,6 +24,7 @@
 #endif
 
 #include "../input_keymaps.h"
+#include "../alt_enter_fullscreen.h"
 
 #include "cocoa_input.h"
 
@@ -346,9 +347,15 @@ void apple_input_keyboard_event(bool down,
    if (code != original_code)
       apple_key_state[code] = down;
 
-   input_keyboard_event(down,
-         input_keymaps_translate_keysym_to_rk(code),
-         character, (enum retro_mod)mod, device);
+   {
+      unsigned retro_key = input_keymaps_translate_keysym_to_rk(code);
+      input_keyboard_event(down, retro_key,
+            character, (enum retro_mod)mod, device);
+      /* Alt+Enter must not also press Start. We set the state above. */
+      if ((retro_key == ALT_ENTER_RETURN || retro_key == ALT_ENTER_KP_RETURN)
+            && alt_enter_masks_return())
+         apple_key_state[code] = false;
+   }
 }
 #else
 void apple_input_keyboard_event(bool down,
@@ -372,9 +379,15 @@ void apple_input_keyboard_event(bool down,
 
    apple_key_state[code] = down;
 
-   input_keyboard_event(down,
-         input_keymaps_translate_keysym_to_rk(code),
-         character, (enum retro_mod)mod, device);
+   {
+      unsigned retro_key = input_keymaps_translate_keysym_to_rk(code);
+      input_keyboard_event(down, retro_key,
+            character, (enum retro_mod)mod, device);
+      /* Alt+Enter must not also press Start. We set the state above. */
+      if ((retro_key == ALT_ENTER_RETURN || retro_key == ALT_ENTER_KP_RETURN)
+            && alt_enter_masks_return())
+         apple_key_state[code] = false;
+   }
 }
 #endif
 
