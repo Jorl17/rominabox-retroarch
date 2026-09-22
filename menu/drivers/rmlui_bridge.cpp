@@ -2,6 +2,7 @@
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/Factory.h>
+#include <RmlUi/Core/ElementUtilities.h>
 #include <RmlUi/Core/StringUtilities.h>
 #include <RmlUi/Core/SystemInterface.h>
 #include <filesystem>
@@ -17,6 +18,7 @@
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <memory>
 #include <cstdio>
@@ -2063,6 +2065,211 @@ extern "C" void rib_rmlui_retarget_pages(const char *list_id)
    rib_mark_pager(list, 0, (int)usable.size());
 }
 
+/* A length in dp or px from the stylesheet, as dp. Keywords (auto) are 0,
+ * because they are not a gap to leave free for the text. */
+static float rib_specified_dp(Rml::Element *element, const char *name)
+{
+   const Rml::Property *property = element ? element->GetProperty(name) : nullptr;
+   if (!property)
+      return 0.f;
+   if (property->unit != Rml::Unit::DP && property->unit != Rml::Unit::PX
+         && property->unit != Rml::Unit::NUMBER)
+      return 0.f;
+   const float value = property->value.Get<float>();
+   if (property->unit != Rml::Unit::PX || !context)
+      return value;
+   const float density = std::max(
+         context->GetDensityIndependentPixelRatio(), 0.1f);
+   return value / density;
+}
+
+/* The width required for the widest row, in dp, at most the width in the
+ * design.
+ *
+ * The three parts of a row are absolutely positioned, so the box has no
+ * natural width. The `right` offset of the title is not the detail slot.
+ * The title stops 120dp from the edge and the detail is 128dp wide, so a
+ * size from that offset would draw the title on top of the detail.
+ * The width is the words of the title, a gap, and the fixed slots. While
+ * the pager is open, the width is at least that of its buttons. */
+static int rib_list_width(Rml::Element *list, int declared)
+{
+   static const char *const parts[] = {"list-row-title", "list-row-detail",
+         "list-row-state"};
+   const float density = std::max(context
+         ? context->GetDensityIndependentPixelRatio() : 1.f, 0.1f);
+   float widest = 0.f;
+   std::vector<Rml::Element*> rows;
+
+   rib_collect(list, "list-row", rows);
+   for (Rml::Element *row : rows)
+   {
+      if (rib_hidden(row))
+         continue;
+      float glyphs = 0.f;
+      float reserved = 0.f;
+      for (const char *part : parts)
+      {
+         std::vector<Rml::Element*> found;
+         rib_collect(row, part, found);
+         for (Rml::Element *element : found)
+         {
+            if (rib_display_none(element))
+               continue;
+            const Rml::String text = element->GetInnerRML();
+            if (text.empty())
+               continue;
+            const float words = Rml::ElementUtilities::GetStringWidth(
+                  element, text) / density;
+            const float left = rib_specified_dp(element, "left");
+            const float right = rib_specified_dp(element, "right");
+            const float width = rib_specified_dp(element, "width");
+            const Rml::Property *left_prop = element->GetProperty("left");
+            const Rml::Property *right_prop = element->GetProperty("right");
+            const bool left_set = left_prop
+                  && left_prop->unit != Rml::Unit::KEYWORD;
+            const bool right_set = right_prop
+                  && right_prop->unit != Rml::Unit::KEYWORD;
+            if (left_set && right_set && width <= 0.f)
+               glyphs = std::max(glyphs, left + words);
+            else if (width > 0.f && right_set)
+               reserved = std::max(reserved, right + std::max(width, words));
+            else
+               glyphs = std::max(glyphs, words);
+         }
+      }
+      /* 8dp between the title's last letter and the detail's slot. Without
+       * it the two strings run together, as in "ABUTTON". */
+      const float need = glyphs + reserved + (glyphs > 0.f && reserved > 0.f ? 8.f : 0.f);
+      if (need > widest)
+         widest = need;
+   }
+
+   std::vector<Rml::Element*> pagers;
+   rib_collect(list, "list-pager", pagers);
+   if (!pagers.empty() && !rib_display_none(pagers[0]) && !rib_hidden(pagers[0]))
+   {
+      for (const char *cls : {"list-pager-prev", "list-pager-count",
+            "list-pager-next"})
+      {
+         std::vector<Rml::Element*> found;
+         rib_collect(pagers[0], cls, found);
+         for (Rml::Element *button : found)
+         {
+            const float edge = rib_specified_dp(button, "left")
+                  + rib_specified_dp(button, "width");
+            if (edge > widest)
+               widest = edge;
+         }
+      }
+   }
+
+   if (widest <= 0.f)
+      return declared;
+   const int dp = (int)std::ceil(widest);
+   return dp < declared ? dp : declared;
+}
+
+/* How far a visible child is drawn outside the border box of the list. A
+ * row is 100% wide plus its border, so it extends past the box. With a
+ * clamp that measured only the list, the row would end on the last pixel. */
+static void rib_paint_overflow(Rml::Element *list,
+      float &extra_left, float &extra_top, float &extra_right, float &extra_bottom)
+{
+   extra_left = extra_top = extra_right = extra_bottom = 0.f;
+   const Rml::Vector2f list_at = list->GetAbsoluteOffset(Rml::BoxArea::Border);
+   const Rml::Vector2f list_size = list->GetBox().GetSize(Rml::BoxArea::Border);
+   const char *classes[] = {"list-row", "list-pager"};
+   for (const char *cls : classes)
+   {
+      std::vector<Rml::Element*> found;
+      rib_collect(list, cls, found);
+      for (Rml::Element *child : found)
+      {
+         if (rib_hidden(child))
+            continue;
+         const Rml::Vector2f at = child->GetAbsoluteOffset(Rml::BoxArea::Border);
+         const Rml::Vector2f size = child->GetBox().GetSize(Rml::BoxArea::Border);
+         extra_left = std::max(extra_left, list_at.x - at.x);
+         extra_top = std::max(extra_top, list_at.y - at.y);
+         extra_right = std::max(extra_right,
+               at.x + size.x - (list_at.x + list_size.x));
+         extra_bottom = std::max(extra_bottom,
+               at.y + size.y - (list_at.y + list_size.y));
+      }
+   }
+}
+
+/* `left`/`top` are added to the padding edge of the offset parent (and to the
+ * margin of the element), so we store in the clamp a distance from that
+ * padding edge. From the border edge of the screen, the list would be one
+ * border width too far right, and in a 2x window its border would be on the
+ * last pixel of the window. */
+static void rib_set_border_position(Rml::Element *list, float abs_x, float abs_y)
+{
+   float origin_x = 0.f;
+   float origin_y = 0.f;
+   if (Rml::Element *parent = list->GetOffsetParent())
+   {
+      const Rml::Vector2f padding =
+            parent->GetAbsoluteOffset(Rml::BoxArea::Padding);
+      origin_x = padding.x;
+      origin_y = padding.y;
+   }
+   const float margin_x = list->GetBox().GetEdge(
+         Rml::BoxArea::Margin, Rml::BoxEdge::Left);
+   const float margin_y = list->GetBox().GetEdge(
+         Rml::BoxArea::Margin, Rml::BoxEdge::Top);
+   list->SetProperty("left", std::to_string(
+         (int)std::lround(abs_x - origin_x - margin_x)) + "px");
+   list->SetProperty("top", std::to_string(
+         (int)std::lround(abs_y - origin_y - margin_y)) + "px");
+}
+
+static void rib_clamp_border(float &x, float &y, float w, float h,
+      const Rml::Vector2f &screen_at, const Rml::Vector2f &screen_size)
+{
+   const float margin = 8.f;
+   const float min_x = screen_at.x + margin;
+   const float min_y = screen_at.y + margin;
+   const float max_x = screen_at.x + screen_size.x - margin;
+   const float max_y = screen_at.y + screen_size.y - margin;
+   if (x + w > max_x)
+      x = max_x - w;
+   if (x < min_x)
+      x = min_x;
+   if (y + h > max_y)
+      y = max_y - h;
+   if (y < min_y)
+      y = min_y;
+}
+
+static int rib_labels_covered(const char *anchor_id,
+      float left, float top, float width, float height)
+{
+   int covered = 0;
+   std::set<Rml::String> seen;
+   for (const char *cls : {"control-callout", "control-group"})
+   {
+      std::vector<Rml::Element*> found;
+      rib_collect(document, cls, found);
+      for (Rml::Element *element : found)
+      {
+         if (!element || rib_hidden(element))
+            continue;
+         const Rml::String id = element->GetId();
+         if (id.empty() || (anchor_id && id == anchor_id) || !seen.insert(id).second)
+            continue;
+         const Rml::Vector2f at = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+         const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
+         if (at.x < left + width && at.x + size.x > left
+               && at.y < top + height && at.y + size.y > top)
+            ++covered;
+      }
+   }
+   return covered;
+}
+
 extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
       int width_dp)
 {
@@ -2073,7 +2280,7 @@ extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
       return;
    list->RemoveProperty("display");
    if (width_dp > 0)
-      list->SetProperty("width", std::to_string(width_dp) + "dp");
+      list->SetProperty("width", std::to_string(rib_list_width(list, width_dp)) + "dp");
    if (!anchor || !screen)
       return;
    context->Update();
@@ -2082,33 +2289,87 @@ extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
    const Rml::Vector2f anchor_size = anchor->GetBox().GetSize(Rml::BoxArea::Border);
    const Rml::Vector2f list_size = list->GetBox().GetSize(Rml::BoxArea::Border);
    const Rml::Vector2f screen_size = screen->GetBox().GetSize(Rml::BoxArea::Border);
-   float extra = 0.f;
-   std::vector<Rml::Element*> pagers;
-   rib_collect(list, "list-pager", pagers);
-   if (!pagers.empty() && !rib_display_none(pagers[0]))
+   float extra_left = 0.f, extra_top = 0.f, extra_right = 0.f, extra_bottom = 0.f;
+   rib_paint_overflow(list, extra_left, extra_top, extra_right, extra_bottom);
+   const float paint_w = list_size.x + extra_left + extra_right;
+   const float paint_h = list_size.y + extra_top + extra_bottom;
+   const float gap = 4.f;
+
+   /* Beside the label, toward the pad (over the drawing), then below, then
+    * above. Covering the drawing is fine. Covering another label is not. */
+   float scene_cx = anchor_at.x + anchor_size.x * 0.5f;
+   if (Rml::Element *scene = document->GetElementById("controller-scene"))
    {
-      /* We take the pager out of the flow, so the box ends at the last row and
-       * the pager extends past it, over whatever is next to the list. */
-      const float pager_bottom =
-            pagers[0]->GetAbsoluteOffset(Rml::BoxArea::Border).y
-            + pagers[0]->GetBox().GetSize(Rml::BoxArea::Border).y
-            - list->GetAbsoluteOffset(Rml::BoxArea::Border).y;
-      if (pager_bottom > list_size.y)
-         extra = pager_bottom - list_size.y;
+      const Rml::Vector2f scene_at = scene->GetAbsoluteOffset(Rml::BoxArea::Border);
+      const Rml::Vector2f scene_size = scene->GetBox().GetSize(Rml::BoxArea::Border);
+      scene_cx = scene_at.x + scene_size.x * 0.5f;
    }
-   const float height = list_size.y + extra;
-   float left = anchor_at.x - screen_at.x;
-   float top = anchor_at.y - screen_at.y + anchor_size.y + 4.f;
-   if (top + height > screen_size.y - 8.f)
-      top = anchor_at.y - screen_at.y - height - 4.f;
-   if (top < 8.f)
-      top = 8.f;
-   if (left + list_size.x > screen_size.x - 8.f)
-      left = screen_size.x - list_size.x - 8.f;
-   if (left < 8.f)
-      left = 8.f;
-   list->SetProperty("left", std::to_string((int)left) + "px");
-   list->SetProperty("top", std::to_string((int)top) + "px");
+   const float anchor_cx = anchor_at.x + anchor_size.x * 0.5f;
+   const float beside_x = scene_cx >= anchor_cx
+         ? anchor_at.x + anchor_size.x + gap
+         : anchor_at.x - list_size.x - gap;
+   const float spots[][2] = {
+      {beside_x, anchor_at.y},
+      {anchor_at.x, anchor_at.y + anchor_size.y + gap},
+      {anchor_at.x, anchor_at.y - list_size.y - gap},
+   };
+
+   float best_x = anchor_at.x;
+   float best_y = anchor_at.y + anchor_size.y + gap;
+   int best_cover = 1000000;
+   bool best_inside = false;
+   bool chosen = false;
+   for (const float (&spot)[2] : spots)
+   {
+      float x = spot[0];
+      float y = spot[1];
+      rib_clamp_border(x, y, paint_w, paint_h, screen_at, screen_size);
+      /* Clamping moves the border box of the list. Children that extend past
+       * it must stay inside the same margin, so we test the painted area. */
+      const float paint_x = x - extra_left;
+      const float paint_y = y - extra_top;
+      const bool inside =
+            paint_x >= screen_at.x + 8.f - 0.5f
+            && paint_y >= screen_at.y + 8.f - 0.5f
+            && paint_x + paint_w <= screen_at.x + screen_size.x - 8.f + 0.5f
+            && paint_y + paint_h <= screen_at.y + screen_size.y - 8.f + 0.5f;
+      const int cover = rib_labels_covered(anchor_id, paint_x, paint_y,
+            paint_w, paint_h);
+      if (inside && cover == 0)
+      {
+         best_x = x;
+         best_y = y;
+         chosen = true;
+         break;
+      }
+      if (!chosen && (best_cover == 1000000 || (inside && !best_inside)
+            || (inside == best_inside && cover < best_cover)))
+      {
+         best_x = x;
+         best_y = y;
+         best_cover = cover;
+         best_inside = inside;
+      }
+   }
+   rib_set_border_position(list, best_x, best_y);
+}
+
+/* Relative to the screen. The labels are the callout and group elements in
+ * the document. The box of a stick is control-group-l_stick, not
+ * control-group- plus an axis id, so we would not find it in the control table. */
+extern "C" int rib_rmlui_controls_covered(const char *anchor_id,
+      int left, int top, int width, int height)
+{
+   if (!document || !context || width <= 0 || height <= 0)
+      return 0;
+   context->Update();
+   Rml::Element *screen = document->GetElementById("screen");
+   if (!screen)
+      return 0;
+   const Rml::Vector2f origin = screen->GetAbsoluteOffset(Rml::BoxArea::Border);
+   return rib_labels_covered(anchor_id,
+         origin.x + (float)left, origin.y + (float)top,
+         (float)width, (float)height);
 }
 
 extern "C" bool rib_rmlui_pointer_inside(const char *id, int x, int y)
@@ -2153,6 +2414,107 @@ extern "C" void rib_rmlui_focus_group(const char *group)
 }
 
 #ifdef RIB_RMLUI_HEADLESS
+/* The border box after layout, in window pixels. This is not the left and
+ * width in the stylesheet, because we may clamp a list in one coordinate
+ * space and draw it in another, and only from the box after layout can we tell which. */
+extern "C" bool rib_rmlui_test_row_glyphs_overlap(const char *row_id)
+{
+   if (!document || !context || !row_id)
+      return false;
+   context->Update();
+   Rml::Element *row = document->GetElementById(row_id);
+   if (!row || rib_hidden(row))
+      return false;
+   auto span = [](Rml::Element *element, bool right_aligned,
+         float &left, float &right) -> bool {
+      if (!element || rib_display_none(element))
+         return false;
+      const Rml::String text = element->GetInnerRML();
+      if (text.empty())
+         return false;
+      const float width = (float)Rml::ElementUtilities::GetStringWidth(element, text);
+      if (width <= 0.f)
+         return false;
+      const Rml::Vector2f at = element->GetAbsoluteOffset(Rml::BoxArea::Padding);
+      const float box = element->GetBox().GetSize(Rml::BoxArea::Content).x;
+      if (right_aligned)
+      {
+         right = at.x + box;
+         left = right - width;
+      }
+      else
+      {
+         left = at.x;
+         right = left + width;
+      }
+      return true;
+   };
+   std::vector<Rml::Element*> titles;
+   std::vector<Rml::Element*> details;
+   rib_collect(row, "list-row-title", titles);
+   rib_collect(row, "list-row-detail", details);
+   if (titles.empty() || details.empty())
+      return false;
+   float title_left = 0.f, title_right = 0.f, detail_left = 0.f, detail_right = 0.f;
+   if (!span(titles[0], false, title_left, title_right)
+         || !span(details[0], true, detail_left, detail_right))
+      return false;
+   return title_right > detail_left + 0.5f;
+}
+
+extern "C" bool rib_rmlui_test_box(const char *id, int *x, int *y, int *w, int *h)
+{
+   if (!document || !context || !id || !x || !y || !w || !h)
+      return false;
+   context->Update();
+   Rml::Element *element = document->GetElementById(id);
+   if (!element || rib_hidden(element))
+      return false;
+   const Rml::Vector2f at = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+   const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
+   if (size.x <= 0.f || size.y <= 0.f)
+      return false;
+   *x = (int)std::floor(at.x);
+   *y = (int)std::floor(at.y);
+   *w = (int)std::ceil(at.x + size.x) - *x;
+   *h = (int)std::ceil(at.y + size.y) - *y;
+   return true;
+}
+
+/* Ids of the elements with a class, so in a check we walk the labels drawn in
+ * the document and not a separate list. */
+extern "C" int rib_rmlui_test_class_count(const char *class_name)
+{
+   std::vector<Rml::Element*> found;
+   int count = 0;
+   rib_collect(document, class_name, found);
+   for (Rml::Element *element : found)
+      if (!element->GetId().empty() && !rib_hidden(element))
+         ++count;
+   return count;
+}
+
+extern "C" const char *rib_rmlui_test_class_id(const char *class_name, int index)
+{
+   static std::string id;
+   std::vector<Rml::Element*> found;
+   int seen = 0;
+   id.clear();
+   rib_collect(document, class_name, found);
+   for (Rml::Element *element : found)
+   {
+      if (element->GetId().empty() || rib_hidden(element))
+         continue;
+      if (seen == index)
+      {
+         id = element->GetId();
+         return id.c_str();
+      }
+      ++seen;
+   }
+   return "";
+}
+
 extern "C" const char *rib_rmlui_test_property(const char *id, const char *property)
 {
    static std::string value;
