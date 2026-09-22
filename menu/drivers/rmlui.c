@@ -2108,8 +2108,6 @@ static void rib_show_binds(rib_rmlui_menu_t *menu, int index)
    }
 
    rows = rib_rmlui_rows_in(rib_binds_list);
-   fprintf(stderr, "[RIB] binds for %s lines=%d rows=%d\n",
-         menu->controls[index].id, lines, rows);
    if (lines > rows)
       RARCH_ERR("[RIB] '%s' has %d binds and the menu was built with %d rows; "
             "the rest are not shown.\n",

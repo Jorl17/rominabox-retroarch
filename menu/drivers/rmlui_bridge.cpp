@@ -1469,20 +1469,31 @@ extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
    const Rml::Vector2f anchor_size = anchor->GetBox().GetSize(Rml::BoxArea::Border);
    const Rml::Vector2f list_size = list->GetBox().GetSize(Rml::BoxArea::Border);
    const Rml::Vector2f screen_size = screen->GetBox().GetSize(Rml::BoxArea::Border);
+   float extra = 0.f;
+   std::vector<Rml::Element*> pagers;
+   rib_collect(list, "list-pager", pagers);
+   if (!pagers.empty() && !rib_display_none(pagers[0]))
+   {
+      /* We take the pager out of the flow, so the box ends at the last row and
+       * the pager extends past it, over whatever is next to the list. */
+      const float pager_bottom =
+            pagers[0]->GetAbsoluteOffset(Rml::BoxArea::Border).y
+            + pagers[0]->GetBox().GetSize(Rml::BoxArea::Border).y
+            - list->GetAbsoluteOffset(Rml::BoxArea::Border).y;
+      if (pager_bottom > list_size.y)
+         extra = pager_bottom - list_size.y;
+   }
+   const float height = list_size.y + extra;
    float left = anchor_at.x - screen_at.x;
    float top = anchor_at.y - screen_at.y + anchor_size.y + 4.f;
-   if (top + list_size.y > screen_size.y - 8.f)
-      top = anchor_at.y - screen_at.y - list_size.y - 4.f;
+   if (top + height > screen_size.y - 8.f)
+      top = anchor_at.y - screen_at.y - height - 4.f;
    if (top < 8.f)
       top = 8.f;
    if (left + list_size.x > screen_size.x - 8.f)
       left = screen_size.x - list_size.x - 8.f;
    if (left < 8.f)
       left = 8.f;
-   std::fprintf(stderr, "[RIB] place '%s' on '%s' left=%d top=%d box=%dx%d screen=%dx%d\n",
-         list_id, anchor_id, (int)left, (int)top,
-         (int)list_size.x, (int)list_size.y,
-         (int)screen_size.x, (int)screen_size.y);
    list->SetProperty("left", std::to_string((int)left) + "px");
    list->SetProperty("top", std::to_string((int)top) + "px");
 }
