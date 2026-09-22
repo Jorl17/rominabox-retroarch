@@ -200,6 +200,12 @@ enum rib_menu_sound
 
 enum rib_menu_sound rib_rmlui_action_sound(int action);
 
+/* The move cue of the sound pack: up when the level rises, down when it
+ * falls. We count it in the headless bridge test, and in the player we play
+ * the wav for a move from the pack. Do not call this for a step that leaves
+ * the level as it is, because a step past either end is not a move. */
+void rib_rmlui_play_move_sound(int direction);
+
 /* The screen whose button the player pressed, which we read when we take
  * RIB_RMLUI_ACTION_SHOW_SCREEN from the queue. */
 const char *rib_rmlui_requested_screen(void);
