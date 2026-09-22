@@ -2438,25 +2438,72 @@ static void rib_push_bind_line(char details[][64], char kinds[][8], int *count,
    (*count)++;
 }
 
-static void rib_lines_from_bind(const struct retro_keybind *bind,
-      char details[][64], char kinds[][8], int *count)
+/* The pad button and axis that a press comes from.
+ *
+ * In RetroArch a press comes from TWO arrays: the binds in the configuration,
+ * and the binds from an autoconfig profile for the pad that is plugged in.
+ * For each field, the explicit bind comes first when there is one, and the
+ * autoconfigured one otherwise. In input_driver.c, `input_key_pressed`
+ * contains
+ *
+ *     joykey = (bind_joykey != NO_BTN) ? bind_joykey : autobind_joykey;
+ *
+ * We read both arrays in the menu, so for a pad bound by autoconfig we show
+ * its inputs on the controls screen next to the keyboard key, and when the
+ * player hovers over a control, we list every input for it.
+ *
+ * That order comes from upstream, where it is written out in several files
+ * (input_driver.c twice, winraw, x11, udev and dinput). We repeat it once,
+ * here, so the vendored input drivers stay unchanged. We store nothing
+ * extra: both arrays are in RetroArch.
+ */
+static const struct retro_keybind *rib_effective_pad(
+      const struct retro_keybind *bind, unsigned index,
+      struct retro_keybind *scratch)
 {
+   const struct retro_keybind *automatic = &input_autoconf_binds[0][index];
+
+   if (!bind)
+      return NULL;
+   *scratch = *bind;
+   if (scratch->joykey == NO_BTN)
+   {
+      scratch->joykey       = automatic->joykey;
+      scratch->joykey_label = automatic->joykey_label;
+   }
+   if (scratch->joyaxis == AXIS_NONE)
+   {
+      scratch->joyaxis       = automatic->joyaxis;
+      scratch->joyaxis_label = automatic->joyaxis_label;
+   }
+   return scratch;
+}
+
+static void rib_lines_from_bind(const struct retro_keybind *bind,
+      unsigned bind_index, char details[][64], char kinds[][8], int *count)
+{
+   struct retro_keybind scratch;
+   const struct retro_keybind *effective;
    char text[64];
 
    if (!bind)
       return;
+   effective = rib_effective_pad(bind, bind_index, &scratch);
    text[0] = '\0';
+   /* There is no autoconfig for the keyboard, so we read the key from the bind. */
    input_keymaps_translate_rk_to_str(bind->key, text, sizeof(text));
    if (text[0] && strcmp(text, "nul") != 0)
       rib_push_bind_line(details, kinds, count, "KEY", text);
-   if (bind->joykey != NO_BTN)
+   if (effective->joykey != NO_BTN)
    {
-      input_config_get_bind_string_joykey(false, text, "", bind, sizeof(text));
+      input_config_get_bind_string_joykey(false, text, "", effective,
+            sizeof(text));
       rib_push_bind_line(details, kinds, count, "PAD", text);
    }
-   if (bind->joyaxis != AXIS_NONE)
+   if (effective->joyaxis != AXIS_NONE)
    {
-      input_config_get_bind_string_joyaxis(false, text, "", bind, sizeof(text));
+      input_config_get_bind_string_joyaxis(false, text, "", effective,
+            sizeof(text));
       rib_push_bind_line(details, kinds, count, "AXIS", text);
    }
    if (bind->mbutton != NO_BTN)
@@ -2530,9 +2577,9 @@ static void rib_callout_text(const rib_rmlui_menu_t *menu, int index,
 
    for (slot = 0; slot < member_count; ++slot)
    {
-      const struct retro_keybind *bind =
-         &input_config_binds[0][menu->controls[members[slot]].bind_index];
-      rib_lines_from_bind(bind, details, kinds, &lines);
+      const unsigned at = menu->controls[members[slot]].bind_index;
+      rib_lines_from_bind(&input_config_binds[0][at], at,
+            details, kinds, &lines);
    }
    if (lines <= 0)
    {
@@ -2581,9 +2628,9 @@ static void rib_show_binds(rib_rmlui_menu_t *menu, int index)
    for (member = 0; member < member_count; ++member)
    {
       int before = lines;
-      const struct retro_keybind *bind =
-         &input_config_binds[0][menu->controls[members[member]].bind_index];
-      rib_lines_from_bind(bind, details, kinds, &lines);
+      const unsigned at = menu->controls[members[member]].bind_index;
+      rib_lines_from_bind(&input_config_binds[0][at], at,
+            details, kinds, &lines);
       for (slot = before; slot < lines; ++slot)
       {
          const char *label = menu->control_labels[members[member]];
