@@ -13,11 +13,13 @@
 #include "../../file_path_special.h"
 #include "../../runloop.h"
 #include "../../gfx/video_driver.h"
+#include "../../gfx/video_shader_parse.h"
 #include "../../verbosity.h"
 #include <file/file_path.h>
 #include <file/config_file.h>
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
+#include <features/features_cpu.h>
 #include <libretro.h>
 #include "../menu_driver.h"
 #include "../menu_input.h"
@@ -38,6 +40,13 @@
  * package, and when there are more, we say so in the log. */
 #define RIB_DEVICE_MAX 8
 #define RIB_CONTROL_CAPTURE_SECONDS 10
+/* How many generated rows fit in one list, the size of a buffer. We write the
+ * ids at export, and we log any id beyond this number instead of applying it
+ * to the wrong preset. */
+#define RIB_SHADER_MAX 32
+
+/* How many overlays one design can declare, the size of a buffer. */
+#define RIB_OVERLAY_MAX 8
 
 typedef struct rib_control
 {
@@ -57,7 +66,6 @@ typedef struct rib_rmlui_menu
    bool controls_visible;
    bool controls_loaded;
    int panel_focus;
-   char screen[32];
    char volume_path[PATH_MAX_LENGTH];
    bool capture_active;
    int capture_control;
@@ -81,26 +89,88 @@ typedef struct rib_rmlui_menu
    char control_labels[RIB_CONTROL_MAX][NAME_MAX_LENGTH];
    char default_labels[RIB_CONTROL_MAX][NAME_MAX_LENGTH];
    struct retro_keybind default_binds[RIB_CONTROL_MAX];
+   /* The screen shown now. "pause" is the main menu screen. Escape resumes
+    * the game only on pause, and on any other screen it stays in the menu. */
+   char screen[32];
+   int list_focus;
+   char shader_ids[RIB_SHADER_MAX][64];
+   char shader_presets[RIB_SHADER_MAX][PATH_MAX_LENGTH];
+   int shader_count;
+   char shader_state_on[32];
+   char shader_state_off[32];
 } rib_rmlui_menu_t;
 
-static bool rib_splash_active;
-static bool rib_splash_keep_menu_open;
-static retro_time_t rib_splash_started_at;
+/* An overlay declared in the design: one element that we draw over the running
+ * game for a while and then remove. The overlays that exist are the ones in the
+ * design, and there are no overlay names in the player. */
+typedef struct rib_overlay
+{
+   char id[64];
+   /* An overlay declared before this one, which must finish first. We show
+    * the notice after the logo in this way, not after a fixed delay, so a slow
+    * start delays both and they never overlap. When this is empty, we wait
+    * only for the game to start. */
+   char follows[64];
+   /* A staged file that we require to draw the overlay. For the logo, we show
+    * it only when the export contains that file. We check the file itself and
+    * have no separate flag for it in the launcher. */
+   char needs[128];
+   int after_ms;
+   int hold_ms;
+   int leave_ms;
+   /* When the clock for this overlay started, after what it follows was done.
+    * Zero until then. */
+   retro_time_t started_at;
+   retro_time_t finished_at;
+   enum rib_overlay_state state;
+   bool finished;
+} rib_overlay_t;
+
+static rib_overlay_t rib_overlays[RIB_OVERLAY_MAX];
+static int rib_overlay_count;
+static bool rib_overlays_running;
+static bool rib_overlay_mode;
+static retro_time_t rib_overlays_started_at;
 static rib_rmlui_menu_t *rib_rmlui_active_menu;
 
 static void rib_rmlui_refresh_controls(rib_rmlui_menu_t *menu);
 static void rib_rmlui_cancel_capture(rib_rmlui_menu_t *menu, const char *status);
+static void rib_rmlui_load_shaders(rib_rmlui_menu_t *menu,
+      const char *asset_directory);
+static void rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id);
 
-void rib_rmlui_begin_splash(bool keep_menu_open)
+static bool rib_rmlui_menu_alive(void)
 {
-   rib_splash_active = true;
-   rib_splash_keep_menu_open = keep_menu_open;
-   rib_splash_started_at = 0;
+   struct menu_state *menu_st = menu_state_get_ptr();
+   return menu_st && (menu_st->flags & MENU_ST_FLAG_ALIVE);
 }
 
-bool rib_rmlui_splash_active(void)
+/* Keep frames going to the menu driver while the menu is closed. In every video
+ * driver we skip the menu while it is closed, so without this we would never
+ * draw an overlay. We use the same switch as for drawing the menu, so there is
+ * no code for overlays in the video drivers. */
+static void rib_rmlui_draw_without_menu(bool on)
 {
-   return rib_splash_active;
+   video_driver_state_t *video_st = video_state_get_ptr();
+   if (rib_rmlui_menu_alive())
+      return;
+   if (video_st && video_st->poke && video_st->poke->set_texture_enable)
+      video_st->poke->set_texture_enable(video_st->data, on, false);
+}
+
+void rib_rmlui_begin_overlays(void)
+{
+   /* Assume yes for now. We read the declarations in the design on the first
+    * frame, and there are no frames until we ask for them here. When a design
+    * declares no overlay, we stop asking for frames on that same frame. */
+   rib_overlays_running = true;
+   rib_overlays_started_at = 0;
+   rib_rmlui_draw_without_menu(true);
+}
+
+bool rib_rmlui_overlays_drawing(void)
+{
+   return rib_overlays_running;
 }
 
 /* Resolve a declared control id to its libretro bind.
@@ -267,6 +337,91 @@ static void rib_rmlui_discover_screens(const char *asset_directory)
       if (!config_get_array(config, key, button, sizeof(button)))
          button[0] = '\0';
       rib_rmlui_declare_screen(token, panel, heading, footer, button);
+   }
+   config_file_free(config);
+}
+
+/* Read the overlays declared in this design.
+ *
+ * They are declared like the screens and the controller list: a space-separated
+ * list of ids and one key per field. There are no overlay names in this code.
+ * When the export does not contain the file for an overlay, we do not declare
+ * the overlay at all, so it is never drawn empty.
+ */
+static void rib_rmlui_discover_overlays(const char *asset_directory)
+{
+   char path[PATH_MAX_LENGTH];
+   config_file_t *config;
+   char list[512];
+   char *cursor;
+   char *token;
+
+   rib_overlay_count = 0;
+   if (!asset_directory || !*asset_directory)
+      return;
+   snprintf(path, sizeof(path), "%s/design.cfg", asset_directory);
+   if (!(config = config_file_new_from_path_to_string(path)))
+      return;
+   if (!config_get_array(config, "overlays", list, sizeof(list)))
+   {
+      config_file_free(config);
+      return;
+   }
+
+   cursor = list;
+   while ((token = strtok_r(cursor, " ", &cursor)))
+   {
+      char key[96];
+      char needs[128];
+      char follows[64];
+      int after = 0;
+      int hold  = 0;
+      int leave = 0;
+      rib_overlay_t *overlay;
+
+      if (!*token)
+         continue;
+      if (rib_overlay_count >= RIB_OVERLAY_MAX)
+      {
+         RARCH_WARN("[RIB] the design declares more than %d overlays; '%s' and "
+               "anything after it will not be drawn.\n", RIB_OVERLAY_MAX, token);
+         break;
+      }
+      snprintf(key, sizeof(key), "overlay_after_%s", token);
+      config_get_int(config, key, &after);
+      snprintf(key, sizeof(key), "overlay_hold_%s", token);
+      if (!config_get_int(config, key, &hold) || hold <= 0)
+         continue;
+      snprintf(key, sizeof(key), "overlay_leave_%s", token);
+      config_get_int(config, key, &leave);
+      snprintf(key, sizeof(key), "overlay_follows_%s", token);
+      if (!config_get_array(config, key, follows, sizeof(follows)))
+         follows[0] = '\0';
+      snprintf(key, sizeof(key), "overlay_needs_%s", token);
+      if (!config_get_array(config, key, needs, sizeof(needs)))
+         needs[0] = '\0';
+      if (*needs)
+      {
+         char required[PATH_MAX_LENGTH];
+         snprintf(required, sizeof(required), "%s/%s", asset_directory, needs);
+         if (!path_is_valid(required))
+         {
+            RARCH_LOG("[RIB] overlay '%s' needs %s, which this game does not "
+                  "carry; it will not be drawn.\n", token, needs);
+            continue;
+         }
+      }
+      overlay = &rib_overlays[rib_overlay_count++];
+      strlcpy(overlay->id, token, sizeof(overlay->id));
+      strlcpy(overlay->needs, needs, sizeof(overlay->needs));
+      strlcpy(overlay->follows, follows, sizeof(overlay->follows));
+      overlay->after_ms    = after;
+      overlay->hold_ms     = hold;
+      overlay->leave_ms    = leave;
+      overlay->started_at  = 0;
+      overlay->finished_at = 0;
+      overlay->state       = RIB_OVERLAY_HIDDEN;
+      overlay->finished    = false;
    }
    config_file_free(config);
 }
@@ -831,6 +986,8 @@ static void rib_rmlui_reset_interaction(rib_rmlui_menu_t *menu, bool opening)
    if (menu->capture_active)
       rib_rmlui_cancel_capture(menu, NULL);
    menu->controls_visible = false;
+   strlcpy(menu->screen, "pause", sizeof(menu->screen));
+   menu->list_focus = 0;
    menu->pointer_pressed = false;
    menu->capture_ignore_pointer = false;
    menu->focused = RIB_RMLUI_ACTION_RESUME;
@@ -853,7 +1010,8 @@ bool rib_rmlui_consume_menu_toggle(void *userdata)
 {
    rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)userdata;
    return menu && rib_rmlui_toggle_stays_in_menu(
-         menu->controls_visible, menu->capture_active);
+         menu->controls_visible || !string_is_equal(menu->screen, "pause"),
+         menu->capture_active);
 }
 
 static void rib_rmlui_cancel_capture(rib_rmlui_menu_t *menu,
@@ -1120,6 +1278,125 @@ static void rib_set_volume_db(rib_rmlui_menu_t *menu, float db, bool persist)
    rib_paint_volume();
 }
 
+/* The bundled list, from shaders.cfg next to the design. An id that is not in
+ * it is a row of another list, and choosing it has no effect here. */
+static void rib_rmlui_load_shaders(rib_rmlui_menu_t *menu,
+      const char *asset_directory)
+{
+   char path[PATH_MAX_LENGTH];
+   config_file_t *config;
+   char list[1024];
+   char *cursor;
+   char *token;
+
+   if (!menu)
+      return;
+   menu->shader_count = 0;
+   menu->shader_state_on[0] = '\0';
+   menu->shader_state_off[0] = '\0';
+   if (!asset_directory || !*asset_directory)
+      return;
+   snprintf(path, sizeof(path), "%s/shaders.cfg", asset_directory);
+   if (!(config = config_file_new_from_path_to_string(path)))
+      return;
+   config_get_array(config, "shader_state_on",
+         menu->shader_state_on, sizeof(menu->shader_state_on));
+   config_get_array(config, "shader_state_off",
+         menu->shader_state_off, sizeof(menu->shader_state_off));
+   if (!config_get_array(config, "shader_ids", list, sizeof(list)))
+   {
+      config_file_free(config);
+      return;
+   }
+   cursor = list;
+   while ((token = strtok_r(cursor, " ", &cursor)))
+   {
+      char key[96];
+      char preset[PATH_MAX_LENGTH];
+
+      if (!*token)
+         continue;
+      if (menu->shader_count >= RIB_SHADER_MAX)
+      {
+         RARCH_ERR("[RIB] shader list has more than %d entries; the rest "
+               "are not offered.\n", RIB_SHADER_MAX);
+         break;
+      }
+      strlcpy(menu->shader_ids[menu->shader_count], token,
+            sizeof(menu->shader_ids[menu->shader_count]));
+      snprintf(key, sizeof(key), "shader_preset_%s", token);
+      preset[0] = '\0';
+      config_get_array(config, key, preset, sizeof(preset));
+      strlcpy(menu->shader_presets[menu->shader_count], preset,
+            sizeof(menu->shader_presets[menu->shader_count]));
+      menu->shader_count++;
+   }
+   config_file_free(config);
+}
+
+static void rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id)
+{
+   settings_t *settings = config_get_ptr();
+   const char *assets = getenv("ROMINABOX_RML_ASSETS");
+   const char *data = getenv("ROMINABOX_DATA_DIR");
+   char absolute[PATH_MAX_LENGTH];
+   char choice_path[PATH_MAX_LENGTH];
+   char body[PATH_MAX_LENGTH + 2];
+   const char *relative = NULL;
+   int index;
+   bool known = false;
+
+   if (!menu || !id || !*id || !settings)
+      return;
+   for (index = 0; index < menu->shader_count; ++index)
+      if (string_is_equal(menu->shader_ids[index], id))
+      {
+         relative = menu->shader_presets[index];
+         known = true;
+         break;
+      }
+   /* Not in this list. Other lists use the same action, and we handle their
+    * ids with each list. */
+   if (!known)
+      return;
+
+   absolute[0] = '\0';
+   if (relative && *relative && assets && *assets)
+      snprintf(absolute, sizeof(absolute), "%s/%s", assets, relative);
+
+   configuration_set_bool(settings, settings->bools.video_shader_enable,
+         absolute[0] != '\0');
+   {
+      bool applied;
+
+      if (absolute[0])
+         applied = video_shader_apply_shader(settings,
+               video_shader_parse_type(absolute), absolute, false);
+      else
+         applied = video_shader_apply_shader(settings, RARCH_SHADER_NONE, NULL, false);
+      /* To stderr, because we keep stderr in the launcher, and RARCH_LOG writes
+       * nothing without verbose logging. The line shows that we gave the
+       * preset to the driver. */
+      fprintf(stderr, "[RIB] shader '%s' %s: %s\n", id,
+            applied ? "applied" : "not applied",
+            absolute[0] ? absolute : "unfiltered");
+   }
+
+   if (data && *data)
+   {
+      snprintf(choice_path, sizeof(choice_path), "%s/shader-choice", data);
+      if (absolute[0])
+         snprintf(body, sizeof(body), "%s\n", absolute);
+      else
+         strlcpy(body, "\n", sizeof(body));
+      if (!filestream_write_file(choice_path, body, (int64_t)strlen(body)))
+         RARCH_ERR("[RIB] the shader is active, but %s could not be written. "
+               "The next launch will use the bundled starting shader.\n",
+               choice_path);
+   }
+   rib_rmlui_mark_row(id, menu->shader_state_on, menu->shader_state_off);
+}
+
 static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
 {
    settings_t *settings = config_get_ptr();
@@ -1153,6 +1430,34 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       rib_rmlui_play_action_sound(action);
       return;
    }
+   if (action == RIB_RMLUI_ACTION_LIST_CHOOSE)
+   {
+      const char *id = rib_rmlui_chosen_item();
+      int row;
+
+      rib_rmlui_play_action_sound(action);
+      rib_rmlui_apply_listed_shader(menu, id);
+      for (row = 0; row < rib_rmlui_visible_row_count(); ++row)
+         if (string_is_equal(rib_rmlui_list_row_id(row), id))
+         {
+            menu->list_focus = row;
+            break;
+         }
+      return;
+   }
+   if (action == RIB_RMLUI_ACTION_LIST_PAGE)
+   {
+      const char *which = rib_rmlui_chosen_item();
+      int delta = which && string_is_equal(which, "prev") ? -1 : 1;
+
+      rib_rmlui_play_action_sound(action);
+      if (rib_rmlui_turn_list_page(delta) >= 0)
+      {
+         menu->list_focus = 0;
+         rib_rmlui_focus_list_row(0);
+      }
+      return;
+   }
    if (action == RIB_RMLUI_ACTION_SHOW_SCREEN)
    {
       /* We pass the screen next to the action, so declaring a screen never
@@ -1161,13 +1466,13 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       const char *wanted = rib_rmlui_requested_screen();
       if (wanted && *wanted && rib_rmlui_show_screen(wanted))
       {
-         rib_rmlui_play_action_sound(action);
-         strlcpy(menu->screen, wanted, sizeof(menu->screen));
          /* The footer and the heading are in the design, with the screen.
           * Here we keep only the case of the controls screen, where capture
           * and navigation work differently. For any other screen there is
           * nothing to add here. */
+         strlcpy(menu->screen, wanted, sizeof(menu->screen));
          menu->controls_visible = string_is_equal(wanted, "controls");
+         menu->list_focus = 0;
          if (menu->controls_visible)
          {
             menu->control_focus = rib_control_first(menu);
@@ -1177,15 +1482,26 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
          }
          else if (menu->capture_active)
             rib_rmlui_cancel_capture(menu, "BINDING UNCHANGED");
-         if (!menu->controls_visible && !string_is_equal(wanted, "pause"))
+         else if (!string_is_equal(wanted, "pause"))
          {
             char ids[16][64];
             const char *panel = rib_rmlui_screen_panel(menu->screen);
-            if (rib_rmlui_focusables(panel, ids, 16) > 0)
+            int count = rib_rmlui_focusables(panel, ids, 16);
+            bool slider = false;
+            int index;
+
+            for (index = 0; index < count; ++index)
+               if (rib_rmlui_part_is_slider(ids[index]))
+                  slider = true;
+            /* A slider is the first thing a keyboard should land on: left and
+             * right move it. A list with no slider focuses its first row. */
+            if (slider)
             {
                menu->panel_focus = 0;
                rib_rmlui_mark_focused(panel, ids[0]);
             }
+            else
+               rib_rmlui_focus_list_row(0);
          }
          /* We measure the slider from the box of its track. While the panel
           * is hidden that width is zero, so a paint leaves the thumb where
@@ -1193,6 +1509,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
           * the screen is shown. */
          rib_paint_volume();
       }
+      rib_rmlui_play_action_sound(action);
       return;
    }
 
@@ -1334,6 +1651,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
                   menu->transfer_slot, false, false);
          break;
       case RIB_RMLUI_ACTION_CONTROLS:
+         strlcpy(menu->screen, "controls", sizeof(menu->screen));
          menu->controls_visible = true;
          strlcpy(menu->screen, "controls", sizeof(menu->screen));
          menu->control_focus = rib_control_first(menu);
@@ -1347,6 +1665,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       case RIB_RMLUI_ACTION_CONTROLS_BACK:
          if (menu->capture_active)
             rib_rmlui_cancel_capture(menu, "BINDING UNCHANGED");
+         strlcpy(menu->screen, "pause", sizeof(menu->screen));
          menu->controls_visible = false;
          menu->focused = RIB_RMLUI_ACTION_CONTROLS;
          strlcpy(menu->screen, "pause", sizeof(menu->screen));
@@ -1423,7 +1742,7 @@ static void rib_rmlui_free(void *data)
    if (menu && menu->capture_active)
       rib_rmlui_cancel_capture(menu, NULL);
    rib_rmlui_shutdown();
-   rib_splash_active = false;
+   rib_overlays_running = false;
    /* The call that frees userdata is in menu_driver_ctl, after this callback. */
 }
 
@@ -1443,6 +1762,11 @@ static void rib_rmlui_context_reset(void *data, bool video_is_threaded)
    (void)video_is_threaded;
    if (menu)
       menu->initialized = false;
+   /* With a new video driver the menu is switched off, so for anything still
+    * drawn over the game we ask for frames again. This happens, for example,
+    * when the player goes fullscreen during an overlay. */
+   if (rib_overlays_running)
+      rib_rmlui_draw_without_menu(true);
 }
 
 /* Drive the menu from ROMINABOX_MENU_SCRIPT, one element per frame.
@@ -1456,7 +1780,9 @@ static void rib_rmlui_context_reset(void *data, bool video_is_threaded)
  *
  * The script is a comma-separated list of element ids, for example
  * "controls,controls-device-current". We click one per frame, so there is
- * a frame for the menu to update before the next click.
+ * a frame for the menu to update before the next click. For a step written
+ * "wait:120" we wait that many frames instead, to take a picture of an
+ * overlay over a running game, or anything else timed, at a chosen moment.
  *
  * We stop the run at an id that is not in the document. A screenshot taken
  * after clicking nothing would show the wrong thing, which is worse than no
@@ -1466,6 +1792,16 @@ static void rib_rmlui_context_reset(void *data, bool video_is_threaded)
  * handle the queued click in the bridge one frame later, and we lay out a
  * picker that has just opened in the frame after that. */
 #define RIB_SCRIPT_SETTLE_FRAMES 8
+
+/* Keep frames coming while a script has not finished. Over a running game the
+ * menu driver gets frames only while an overlay is shown, which is shorter than
+ * a script that waits for an overlay to go away. */
+static bool rib_script_running;
+
+static bool rib_rmlui_script_wants_frames(void)
+{
+   return rib_script_running;
+}
 
 static void rib_rmlui_script_shot(void)
 {
@@ -1507,6 +1843,7 @@ static void rib_rmlui_run_script(void)
    static size_t at          = 0;
    static bool started       = false;
    static int settle         = RIB_SCRIPT_SETTLE_FRAMES;
+   static int waiting        = 0;
    char id[128];
    const char *comma;
    size_t length;
@@ -1515,11 +1852,18 @@ static void rib_rmlui_run_script(void)
    {
       script  = getenv("ROMINABOX_MENU_SCRIPT");
       started = true;
+      rib_script_running = script != NULL;
       if (script)
          RARCH_LOG("[RIB] menu script: %s\n", *script ? script : "(none)");
    }
    if (!script)
       return;
+
+   if (waiting > 0)
+   {
+      --waiting;
+      return;
+   }
 
    if (at >= strlen(script))
    {
@@ -1528,6 +1872,7 @@ static void rib_rmlui_run_script(void)
       if (settle-- <= 0)
       {
          settle = INT_MAX;
+         rib_script_running = false;
          rib_rmlui_script_shot();
       }
       return;
@@ -1541,12 +1886,19 @@ static void rib_rmlui_run_script(void)
    id[length] = '\0';
    at += length + (comma ? 1 : 0);
 
+   if (!strncmp(id, "wait:", 5))
    {
-      char *at = strchr(id, '@');
-      if (at)
+      waiting = atoi(id + 5);
+      RARCH_LOG("[RIB] menu script waiting %d frames.\n", waiting);
+      return;
+   }
+
+   {
+      char *mark = strchr(id, '@');
+      if (mark)
       {
-         *at = '\0';
-         if (!rib_rmlui_commit_slider(id, (float)strtof(at + 1, NULL)))
+         *mark = '\0';
+         if (!rib_rmlui_commit_slider(id, (float)strtof(mark + 1, NULL)))
          {
             RARCH_ERR("[RIB] menu script names no slider '%s'; stopping so no "
                   "screenshot is taken of the wrong screen.\n", id);
@@ -1556,6 +1908,7 @@ static void rib_rmlui_run_script(void)
       }
    }
 
+
    if (!rib_rmlui_click_element(id))
    {
       RARCH_ERR("[RIB] menu script names no element '%s'; stopping so no "
@@ -1564,6 +1917,91 @@ static void rib_rmlui_run_script(void)
       return;
    }
    RARCH_LOG("[RIB] menu script clicked '%s'.\n", id);
+}
+
+/* Advance every declared overlay by the clock, and nothing else.
+ *
+ * Each overlay waits, is shown, leaves and is done, at the times declared for
+ * it. In the player we set only which of those states an element is in. How it
+ * arrives, how it leaves and where it is are in the stylesheet of the design,
+ * and the leaving time in the stylesheet comes from this same declaration.
+ */
+/* When the clock for this overlay starts: at the start of the game, or when the
+ * overlay before it is done. Zero until then. */
+static retro_time_t rib_overlay_begins_at(const rib_overlay_t *overlay)
+{
+   int index;
+
+   if (!*overlay->follows)
+      return rib_overlays_started_at;
+   for (index = 0; index < rib_overlay_count; ++index)
+   {
+      const rib_overlay_t *before = &rib_overlays[index];
+      if (before == overlay)
+         break;
+      if (string_is_equal(before->id, overlay->follows))
+         return before->finished ? before->finished_at : 0;
+   }
+   /* No overlay before it has that name, so there is nothing to wait for. */
+   return rib_overlays_started_at;
+}
+
+static void rib_rmlui_run_overlays(void)
+{
+   retro_time_t now;
+   int index;
+   bool pending = false;
+
+   if (!rib_overlays_running)
+      return;
+
+   now = cpu_features_get_time_usec();
+   if (!rib_overlays_started_at)
+      rib_overlays_started_at = now;
+
+   for (index = 0; index < rib_overlay_count; ++index)
+   {
+      rib_overlay_t *overlay      = &rib_overlays[index];
+      enum rib_overlay_state want = RIB_OVERLAY_HIDDEN;
+      int elapsed;
+
+      if (overlay->finished)
+         continue;
+      if (!overlay->started_at)
+      {
+         overlay->started_at = rib_overlay_begins_at(overlay);
+         if (!overlay->started_at)
+         {
+            /* The overlay before it is not done yet. */
+            pending = true;
+            continue;
+         }
+      }
+      elapsed = (int)((now - overlay->started_at) / 1000);
+      if (elapsed >= overlay->after_ms + overlay->hold_ms + overlay->leave_ms)
+      {
+         overlay->finished    = true;
+         overlay->finished_at = now;
+      }
+      else if (elapsed >= overlay->after_ms + overlay->hold_ms)
+         want = RIB_OVERLAY_LEAVING;
+      else if (elapsed >= overlay->after_ms)
+         want = RIB_OVERLAY_SHOWING;
+
+      if (want != overlay->state)
+      {
+         overlay->state = want;
+         rib_rmlui_set_overlay(overlay->id, want);
+      }
+      if (!overlay->finished)
+         pending = true;
+   }
+
+   if (!pending && !rib_rmlui_script_wants_frames())
+   {
+      rib_overlays_running = false;
+      rib_rmlui_draw_without_menu(false);
+   }
 }
 
 static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
@@ -1586,13 +2024,14 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       {
          RARCH_ERR("[RmlUi] Failed to initialize menu from %s.\n",
                asset_directory);
-         rib_splash_active = false;
-         if (!rib_splash_keep_menu_open)
-            retroarch_menu_running_finished(false);
+         rib_overlays_running = false;
+         rib_rmlui_draw_without_menu(false);
          return;
       }
-      /* Read the screens in the design before we show any of them. */
+      /* Read the screens and overlays in the design before we show any. */
       rib_rmlui_discover_screens(asset_directory);
+      rib_rmlui_discover_overlays(asset_directory);
+      rib_rmlui_load_shaders(menu, asset_directory);
       rib_rmlui_set_selected_slot(menu->selected_slot);
       rib_rmlui_set_focused(menu->focused);
       rib_rmlui_refresh_slots();
@@ -1636,34 +2075,35 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       RARCH_LOG("[RmlUi] Loaded menu from %s.\n", asset_directory);
    }
 
-   if (rib_splash_active)
    {
-      const retro_time_t now = menu_driver_get_current_time();
-      retro_time_t elapsed;
-      float opacity = 1.0f;
-      if (!rib_splash_started_at)
-         rib_splash_started_at = now;
-      elapsed = now - rib_splash_started_at;
-      if (elapsed >= 800000)
+      const bool menu_alive = rib_rmlui_menu_alive();
+
+      /* When we draw this document while the menu is closed, the menu itself
+       * is not on screen, and we state that on the document for the design.
+       * We set it here and not with the overlays, because we may still draw
+       * the document after the last overlay has gone. */
+      if (rib_overlay_mode != !menu_alive)
       {
-         rib_splash_active = false;
-         rib_rmlui_set_splash(false, 0.0f);
-         if (!rib_splash_keep_menu_open)
-         {
-            retroarch_menu_running_finished(false);
-            return;
-         }
+         rib_overlay_mode = !menu_alive;
+         rib_rmlui_set_overlay_mode(rib_overlay_mode);
       }
-      else
+
+      if (!menu_alive)
       {
-         if (elapsed < 120000)
-            opacity = (float)elapsed / 120000.0f;
-         else if (elapsed > 550000)
-            opacity = 1.0f - (float)(elapsed - 550000) / 250000.0f;
-         rib_rmlui_set_splash(true, opacity);
+         /* The game is running and the player is playing it with the
+          * controller. Nothing below applies now: no pointer, no queued
+          * actions and no capture. We have a frame in this driver only to
+          * draw over the game.
+          *
+          * We run the script first, because from it we learn whether we still
+          * want frames after the overlays are done, and we can learn that only
+          * after asking it. */
+         rib_rmlui_run_script();
+         rib_rmlui_run_overlays();
          rib_rmlui_render((int)video_info->width, (int)video_info->height);
          return;
       }
+      rib_rmlui_run_overlays();
    }
 
    menu_input_get_pointer_state(&pointer);
@@ -1824,6 +2264,82 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
 
    if (!menu)
       return 0;
+
+   if (!string_is_equal(menu->screen, "pause") && !menu->controls_visible)
+   {
+      char ids[16][64];
+      const char *panel = rib_rmlui_screen_panel(menu->screen);
+      int parts = rib_rmlui_focusables(panel, ids, 16);
+      int rows = rib_rmlui_visible_row_count();
+      bool slider = false;
+      int part;
+
+      for (part = 0; part < parts; ++part)
+         if (rib_rmlui_part_is_slider(ids[part]))
+            slider = true;
+      /* Left and right move a slider. They page a list only when the panel
+       * has no slider, which is how a shader list turns its pages. */
+      if (slider)
+         return rib_part_navigate(menu, action);
+      if (rows <= 0)
+         return rib_part_navigate(menu, action);
+
+      switch (action)
+      {
+         case MENU_ACTION_UP:
+            if (rows > 0)
+            {
+               menu->list_focus = (menu->list_focus + rows - 1) % rows;
+               rib_rmlui_focus_list_row(menu->list_focus);
+#ifdef HAVE_AUDIOMIXER
+               audio_driver_mixer_play_scroll_sound(true);
+#endif
+            }
+            return 0;
+         case MENU_ACTION_DOWN:
+            if (rows > 0)
+            {
+               menu->list_focus = (menu->list_focus + 1) % rows;
+               rib_rmlui_focus_list_row(menu->list_focus);
+#ifdef HAVE_AUDIOMIXER
+               audio_driver_mixer_play_scroll_sound(false);
+#endif
+            }
+            return 0;
+         case MENU_ACTION_LEFT:
+            if (rib_rmlui_turn_list_page(-1) >= 0)
+            {
+               menu->list_focus = 0;
+               rib_rmlui_focus_list_row(0);
+               rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
+            }
+            return 0;
+         case MENU_ACTION_RIGHT:
+            if (rib_rmlui_turn_list_page(1) >= 0)
+            {
+               menu->list_focus = 0;
+               rib_rmlui_focus_list_row(0);
+               rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
+            }
+            return 0;
+         case MENU_ACTION_OK:
+         case MENU_ACTION_SELECT:
+            if (rows > 0)
+            {
+               rib_rmlui_remember_item(rib_rmlui_list_row_id(menu->list_focus));
+               rib_rmlui_perform_action(menu, RIB_RMLUI_ACTION_LIST_CHOOSE);
+            }
+            return 0;
+         case MENU_ACTION_CANCEL:
+         case MENU_ACTION_RESUME:
+         case MENU_ACTION_TOGGLE:
+            rib_rmlui_perform_action(menu, rib_rmlui_map_menu_toggle(
+                  true, false));
+            return 0;
+         default:
+            return 0;
+      }
+   }
 
    if (menu->controls_visible)
    {

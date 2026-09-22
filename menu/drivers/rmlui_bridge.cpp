@@ -591,6 +591,7 @@ bool load_document()
    rib_rmlui_wire_controls();
    rib_rmlui_wire_toggles();
    wire_arrows(document);
+   rib_rmlui_wire_lists();
    /* When a design declares screens, we replace these before the first frame,
     * and when it declares none we keep them. In both cases we attach the
     * listeners to the buttons before the player can press anything. */
@@ -786,6 +787,7 @@ extern "C" void rib_rmlui_set_status(const char *status)
 struct Screen { std::string id, panel, heading, footer, button; };
 std::vector<Screen> screens;
 std::string requested_screen;
+std::string chosen_item;
 /* Buttons that already have a listener. We replace the built-in screens with
  * the declaration in a design, and without this we would attach two listeners
  * to the same button, and every press would send two intents. */
@@ -860,6 +862,198 @@ extern "C" const char *rib_rmlui_requested_screen(void)
    return requested_screen.c_str();
 }
 
+extern "C" void rib_rmlui_remember_item(const char *id)
+{
+   chosen_item = id ? id : "";
+}
+
+extern "C" const char *rib_rmlui_chosen_item(void)
+{
+   return chosen_item.c_str();
+}
+
+/* A generated list is one class of row and one class of page. The list is on
+ * whichever panel is shown, and in the bridge we do not know whether the rows
+ * are shaders, achievements or anything else. */
+static bool rib_display_none(Rml::Element *element)
+{
+   const Rml::Property *property = element ? element->GetProperty("display") : nullptr;
+   return property && property->ToString() == "none";
+}
+
+static void rib_collect(Rml::Element *element, const char *class_name,
+      std::vector<Rml::Element*> &out)
+{
+   if (!element)
+      return;
+   if (element->IsClassSet(class_name))
+      out.push_back(element);
+   for (int index = 0; index < element->GetNumChildren(); ++index)
+      rib_collect(element->GetChild(index), class_name, out);
+}
+
+static bool rib_under_class_hidden(Rml::Element *element, const char *class_name)
+{
+   for (Rml::Element *cursor = element; cursor; cursor = cursor->GetParentNode())
+      if (cursor->IsClassSet(class_name) && rib_display_none(cursor))
+         return true;
+   return false;
+}
+
+static Rml::Element *rib_visible_list(void)
+{
+   if (!document)
+      return nullptr;
+   std::vector<Rml::Element*> lists;
+   rib_collect(document, "list", lists);
+   for (Rml::Element *list : lists)
+      if (!rib_under_class_hidden(list, "screen-panel"))
+         return list;
+   return nullptr;
+}
+
+static void rib_visible_rows(std::vector<Rml::Element*> &rows)
+{
+   rows.clear();
+   Rml::Element *list = rib_visible_list();
+   if (!list)
+      return;
+   std::vector<Rml::Element*> all;
+   rib_collect(list, "list-row", all);
+   for (Rml::Element *row : all)
+      if (!rib_under_class_hidden(row, "list-page"))
+         rows.push_back(row);
+}
+
+class ListListener : public Rml::EventListener
+{
+public:
+   enum Kind { Choose, Page };
+   ListListener(Kind kind, std::string page) : kind(kind), page(std::move(page)) {}
+   void ProcessEvent(Rml::Event& event) override
+   {
+      Rml::Element *element = event.GetCurrentElement();
+      if (!element)
+         return;
+      if (element->HasAttribute("disabled") || element->IsClassSet("disabled"))
+         return;
+      chosen_item = kind == Choose ? std::string(element->GetId()) : page;
+      ActionListener::queue_action(kind == Choose
+            ? RIB_RMLUI_ACTION_LIST_CHOOSE
+            : RIB_RMLUI_ACTION_LIST_PAGE);
+   }
+   void OnDetach(Rml::Element*) override { delete this; }
+private:
+   Kind kind;
+   std::string page;
+};
+
+extern "C" void rib_rmlui_wire_lists(void)
+{
+   if (!document)
+      return;
+   std::vector<Rml::Element*> rows;
+   rib_collect(document, "list-row", rows);
+   for (Rml::Element *row : rows)
+      row->AddEventListener(Rml::EventId::Click,
+            new ListListener(ListListener::Choose, ""));
+   std::vector<Rml::Element*> previous;
+   rib_collect(document, "list-pager-prev", previous);
+   for (Rml::Element *button : previous)
+      button->AddEventListener(Rml::EventId::Click,
+            new ListListener(ListListener::Page, "prev"));
+   std::vector<Rml::Element*> next;
+   rib_collect(document, "list-pager-next", next);
+   for (Rml::Element *button : next)
+      button->AddEventListener(Rml::EventId::Click,
+            new ListListener(ListListener::Page, "next"));
+}
+
+extern "C" int rib_rmlui_visible_row_count(void)
+{
+   std::vector<Rml::Element*> rows;
+   rib_visible_rows(rows);
+   return (int)rows.size();
+}
+
+extern "C" void rib_rmlui_focus_list_row(int index)
+{
+   if (!document)
+      return;
+   std::vector<Rml::Element*> all;
+   rib_collect(document, "list-row", all);
+   for (Rml::Element *row : all)
+      row->SetClass("focused", false);
+   std::vector<Rml::Element*> rows;
+   rib_visible_rows(rows);
+   if (index >= 0 && index < (int)rows.size())
+      rows[index]->SetClass("focused", true);
+}
+
+extern "C" const char *rib_rmlui_list_row_id(int index)
+{
+   static std::string id;
+   std::vector<Rml::Element*> rows;
+   rib_visible_rows(rows);
+   id.clear();
+   if (index >= 0 && index < (int)rows.size())
+      id = rows[index]->GetId();
+   return id.c_str();
+}
+
+extern "C" int rib_rmlui_turn_list_page(int delta)
+{
+   Rml::Element *list = rib_visible_list();
+   if (!list)
+      return -1;
+   std::vector<Rml::Element*> pages;
+   rib_collect(list, "list-page", pages);
+   if (pages.size() < 2)
+      return -1;
+   int current = 0;
+   for (size_t index = 0; index < pages.size(); ++index)
+      if (!rib_display_none(pages[index]))
+         current = (int)index;
+   int next = current + (delta < 0 ? -1 : 1);
+   if (next < 0)
+      next = (int)pages.size() - 1;
+   if (next >= (int)pages.size())
+      next = 0;
+   for (size_t index = 0; index < pages.size(); ++index)
+   {
+      if ((int)index == next)
+         pages[index]->RemoveProperty("display");
+      else
+         pages[index]->SetProperty("display", "none");
+   }
+   std::vector<Rml::Element*> counts;
+   rib_collect(list, "list-pager-count", counts);
+   if (!counts.empty())
+   {
+      char label[32];
+      snprintf(label, sizeof(label), "%d / %d", next + 1, (int)pages.size());
+      counts[0]->SetInnerRML(label);
+   }
+   return next;
+}
+
+extern "C" void rib_rmlui_mark_row(const char *id, const char *on, const char *off)
+{
+   Rml::Element *list = rib_visible_list();
+   if (!document || !list)
+      return;
+   std::vector<Rml::Element*> rows;
+   rib_collect(list, "list-row", rows);
+   for (Rml::Element *row : rows)
+   {
+      const bool selected = id && row->GetId() == id;
+      row->SetClass("selected", selected);
+      if (Rml::Element *state = document->GetElementById(row->GetId() + "-state"))
+         state->SetInnerRML(Rml::StringUtilities::EncodeRml(
+               selected ? (on ? on : "") : (off ? off : "")));
+   }
+}
+
 /* What we use for a design that declares nothing: the two built-in screens,
  * with the default wording of the player. They match
  * `built_in_screens()` in themes.rs, and we use them in the headless
@@ -876,24 +1070,30 @@ extern "C" void rib_rmlui_declare_screen(const char *id, const char *panel,
       return;
    screens.push_back(Screen{id, panel, heading ? heading : "",
          footer ? footer : "", button ? button : ""});
-   /* A screen may list more than one button, for example Back on Controls and
-    * Back on Volume both show Pause. We keep the ids in one field, separated
-    * by spaces, so a second back button is not a new kind of declaration. */
-   if (!document || !button || !*button)
-      return;
-   std::string buttons(button);
-   size_t start = 0;
-   while (start < buttons.size())
+   /* We load the document before we read a design, so we attach the listener
+    * to the button here and not during the load. A screen may list several
+    * buttons, separated by spaces. The BACK button of a list opens the screen
+    * it returns to, so we add that button to the declaration from the host. */
+   if (document && button && *button)
    {
-      size_t end = buttons.find(' ', start);
-      if (end == std::string::npos)
-         end = buttons.size();
-      std::string one = buttons.substr(start, end - start);
-      start = end + 1;
-      if (one.empty() || !wired_screen_buttons.insert(one).second)
-         continue;
-      if (Rml::Element *element = document->GetElementById(one))
-         element->AddEventListener(Rml::EventId::Click, new ScreenListener(id));
+      const char *cursor = button;
+      while (*cursor)
+      {
+         while (*cursor == ' ')
+            ++cursor;
+         const char *end = cursor;
+         while (*end && *end != ' ')
+            ++end;
+         if (end > cursor)
+         {
+            std::string one(cursor, end);
+            if (wired_screen_buttons.insert(one).second)
+               if (Rml::Element *element = document->GetElementById(one))
+                  element->AddEventListener(Rml::EventId::Click,
+                        new ScreenListener(id));
+         }
+         cursor = end;
+      }
    }
 }
 
@@ -1001,54 +1201,25 @@ extern "C" void rib_rmlui_set_footer_hint(const char *hint)
             hint ? hint : ""));
 }
 
-extern "C" void rib_rmlui_set_splash(bool visible, float opacity)
+extern "C" void rib_rmlui_set_overlay_mode(bool only_overlays)
 {
-   rib_rmlui_clear_intents();
+   if (only_overlays)
+      rib_rmlui_clear_intents();
    if (!document)
       return;
-   const char *hidden_ids[] = {"heading", "pause-panel", "footer"};
-   for (const char *id : hidden_ids)
-      if (Rml::Element *element = document->GetElementById(id))
-      {
-         if (visible)
-            element->SetProperty("display", "none");
-         else
-            element->RemoveProperty("display");
-      }
    if (Rml::Element *body = document->GetElementById("body"))
+      body->SetClass("overlay", only_overlays);
+}
+
+extern "C" void rib_rmlui_set_overlay(const char *element,
+      enum rib_overlay_state state)
+{
+   if (!document || !element || !*element)
+      return;
+   if (Rml::Element *overlay = document->GetElementById(element))
    {
-      if (visible)
-         body->SetProperty("background-color", "transparent");
-      else
-         body->RemoveProperty("background-color");
-   }
-   if (Rml::Element *screen = document->GetElementById("screen"))
-   {
-      if (visible)
-      {
-         screen->SetProperty("background-color", "transparent");
-         screen->SetProperty("border-color", "transparent");
-         screen->SetProperty("decorator", "none");
-      }
-      else
-      {
-         screen->RemoveProperty("background-color");
-         screen->RemoveProperty("border-color");
-         screen->RemoveProperty("decorator");
-      }
-   }
-   if (Rml::Element *splash = document->GetElementById("splash"))
-   {
-      if (visible)
-      {
-         if (Rml::Element *logo = document->GetElementById("splash-logo"))
-            if (!logo->HasAttribute("src"))
-               logo->SetAttribute("src", "splash-logo.png");
-         splash->SetProperty("display", "block");
-         splash->SetProperty("opacity", std::to_string(opacity));
-      }
-      else
-         splash->SetProperty("display", "none");
+      overlay->SetClass("showing", state == RIB_OVERLAY_SHOWING);
+      overlay->SetClass("leaving", state == RIB_OVERLAY_LEAVING);
    }
 }
 

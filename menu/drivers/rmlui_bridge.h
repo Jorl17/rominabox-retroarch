@@ -46,6 +46,11 @@ enum rib_rmlui_action
     * for each control. */
    RIB_RMLUI_ACTION_SLIDER,
    RIB_RMLUI_ACTION_TOGGLE,
+   /* The player chose a row in a generated list, or moved its pager. We pass
+    * the row and the direction next to the action. Lists add nothing to the
+    * enum, because shaders and achievements use the same kind of row. */
+   RIB_RMLUI_ACTION_LIST_CHOOSE,
+   RIB_RMLUI_ACTION_LIST_PAGE,
    /* The player asked for a declared screen. We pass which one next to the
     * action, through rib_rmlui_requested_screen(), so the number of screens
     * in a design is never part of this enum. We do the same for the
@@ -135,7 +140,25 @@ void rib_rmlui_set_controls_action_focus(
       bool reset, bool back, bool cancel);
 void rib_rmlui_set_controls_status(const char *status);
 void rib_rmlui_set_footer_hint(const char *hint);
-void rib_rmlui_set_splash(bool visible, float opacity);
+
+/* How we draw an overlay at this moment.
+ *
+ * An overlay is not a screen. Nobody asks for it by name, it has no input, it
+ * hides nothing, and it is over the game and not inside the menu. In the
+ * player we set only which of these states an element is in. How each state
+ * appears, and how long leaving lasts, is in the stylesheet of the design. */
+enum rib_overlay_state
+{
+   RIB_OVERLAY_HIDDEN = 0,
+   RIB_OVERLAY_SHOWING,
+   RIB_OVERLAY_LEAVING
+};
+
+/* The document drawn over a running game and not in front of it. What that
+ * means for the frame, heading and panels of the menu is up to the design, so
+ * there are no element ids here. */
+void rib_rmlui_set_overlay_mode(bool only_overlays);
+void rib_rmlui_set_overlay(const char *element, enum rib_overlay_state state);
 void rib_rmlui_pointer_move(int x, int y);
 void rib_rmlui_pointer_button(bool down);
 void rib_rmlui_pointer_leave(void);
@@ -209,6 +232,21 @@ bool rib_rmlui_slider_drag(const char **id, float *fraction);
 int rib_rmlui_focusables(const char *panel, char ids[][64], int capacity);
 void rib_rmlui_mark_focused(const char *panel, const char *id);
 bool rib_rmlui_part_is_slider(const char *id);
+
+/* The row id, or "prev" / "next", read with LIST_CHOOSE and LIST_PAGE. */
+void rib_rmlui_remember_item(const char *id);
+const char *rib_rmlui_chosen_item(void);
+
+/* Generated lists. The rows are what we drew from the row template in the
+ * design, with the list-row class, and we never make a second kind of row. */
+void rib_rmlui_wire_lists(void);
+int rib_rmlui_visible_row_count(void);
+void rib_rmlui_focus_list_row(int index);
+const char *rib_rmlui_list_row_id(int index);
+/* -1 when the visible list has a single page. Otherwise the new page index. */
+int rib_rmlui_turn_list_page(int delta);
+void rib_rmlui_mark_row(const char *id, const char *on, const char *off);
+
 /* Draw a different controller. The markup is a scene for that pad in the
  * export. Call wire_controls afterwards, because the elements with its
  * listeners are gone. */
@@ -218,8 +256,17 @@ void rib_rmlui_clear_intents(void);
 bool rib_rmlui_element_center(const char *id, int *x, int *y);
 bool rib_rmlui_element_disabled(const char *id);
 bool rib_rmlui_reload_if_changed(void);
-void rib_rmlui_begin_splash(bool keep_menu_open);
-bool rib_rmlui_splash_active(void);
+
+/* The game has started. Run the overlays declared in the design.
+ *
+ * We draw them over the running game, so the core is not paused and the
+ * player's controller mapping stays active. */
+void rib_rmlui_begin_overlays(void);
+
+/* Whether we still want frames for the menu driver while the menu is closed.
+ * In every video driver we skip the menu while it is closed, so without this
+ * we would never draw an overlay. */
+bool rib_rmlui_overlays_drawing(void);
 bool rib_rmlui_consume_menu_toggle(void *userdata);
 void rib_rmlui_notify_state_task(const char *path, int slot,
       bool is_save, bool success);
