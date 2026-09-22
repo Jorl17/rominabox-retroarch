@@ -304,6 +304,12 @@ void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
 /* Hide pages whose rows are all hidden, show the first page that has one,
  * and hide the pager when all of them fit on one page. */
 void rib_rmlui_retarget_pages(const char *list_id);
+/* How many OTHER control labels a rectangle would cover, in screen
+ * coordinates. We may cover a pad drawing, but not a callout or a stick
+ * group. Stick groups are control-group-l_stick, not a control id. */
+int rib_rmlui_controls_covered(const char *anchor_id,
+      int left, int top, int width, int height);
+
 bool rib_rmlui_pointer_inside(const char *id, int x, int y);
 bool rib_rmlui_move_pointer_to(const char *id);
 bool rib_rmlui_has_element(const char *id);
