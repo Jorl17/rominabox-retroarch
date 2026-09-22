@@ -1026,8 +1026,15 @@ static bool rib_page_has_row(Rml::Element *page)
    std::vector<Rml::Element*> rows;
    rib_collect(page, "list-row", rows);
    for (Rml::Element *row : rows)
-      if (!rib_display_none(row))
+   {
+      /* The page itself may be hidden. The computed display would then be none
+       * for every row on it, so a later page with a binding would look empty.
+       * We would never show the pager, and the player could not reach that
+       * binding. Only a display set on the row itself counts. */
+      const Rml::Property *property = row->GetLocalProperty("display");
+      if (!property || property->ToString() != "none")
          return true;
+   }
    return false;
 }
 
