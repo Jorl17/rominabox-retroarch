@@ -1551,9 +1551,14 @@ extern "C" unsigned rib_rmlui_test_texture_loads() { return test_texture_loads; 
 
 #ifdef RIB_RMLUI_HEADLESS
 extern "C" void rib_rmlui_test_advance(double seconds) { test_clock_offset += seconds; }
+/* A check for an element that is not there must fail, not crash. If we
+ * dereferenced the lookup, one wrong id would end the whole run and hide
+ * every check after it. */
 extern "C" const char *rib_rmlui_test_text(const char *id) {
    static std::string text;
-   text = document->GetElementById(id)->GetInnerRML(); return text.c_str();
+   Rml::Element *element = document ? document->GetElementById(id) : nullptr;
+   text = element ? element->GetInnerRML() : std::string("<no element ") + id + ">";
+   return text.c_str();
 }
 extern "C" float rib_rmlui_test_picture_aspect() {
    context->Update(); auto size = document->GetElementById("slot-image-1")->GetParentNode()->GetBox().GetSize(Rml::BoxArea::Content); return size.x / size.y;
