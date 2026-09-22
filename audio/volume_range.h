@@ -8,14 +8,16 @@
  * player can lower the volume but not boost it. The bottom is silence, and
  * there is no separate mute.
  *
- * We offer a few positions across that range in the menu, not one step per
- * decibel. The step is the gap between those positions, so a hotkey and an
- * arrow key move to the same positions. */
-#define RIB_VOLUME_POSITIONS    5
+ * We offer ten positions across that range in the menu, not one step per
+ * decibel, and the top one is normal volume. We write the step out as a
+ * literal because, when we check this header, we parse only digits and
+ * cannot evaluate a division. With this float value, nine steps reach
+ * -80 exactly. */
+#define RIB_VOLUME_POSITIONS    10
 #define AUDIO_VOLUME_MIN_DB     (-80.0f)
 #define AUDIO_VOLUME_MAX_DB     (0.0f)
 #define AUDIO_VOLUME_DEFAULT_DB (0.0f)
-#define AUDIO_VOLUME_STEP_DB    (20.0f)
+#define AUDIO_VOLUME_STEP_DB    (8.888888889f)
 
 /* The parts of the volume control. Each design has its own style for
  * `slider`, and we use these names to mark which part is which. */

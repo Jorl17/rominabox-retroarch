@@ -45,6 +45,9 @@ enum rib_rmlui_action
     * next to the action, as for a screen id, so the enum never gets a case
     * for each control. */
    RIB_RMLUI_ACTION_SLIDER,
+   /* We paint a part toggle where it is. For a list switch we pass its name
+    * through rib_rmlui_chosen_item() and store it here. One action for both,
+    * because a second switch is a line in a design, not another member. */
    RIB_RMLUI_ACTION_TOGGLE,
    /* The player chose a row in a generated list, or moved its pager. We pass
     * the row and the direction next to the action. Lists add nothing to the
@@ -55,11 +58,7 @@ enum rib_rmlui_action
     * action, through rib_rmlui_requested_screen(), so the number of screens
     * in a design is never part of this enum. We do the same for the
     * controller picker, for the same reason. */
-   RIB_RMLUI_ACTION_SHOW_SCREEN,
-   /* The player flipped a declared switch. We pass which one next to the
-    * action, through rib_rmlui_chosen_item(). A second switch is a line in a
-    * design, not another member here. */
-   RIB_RMLUI_ACTION_TOGGLE
+   RIB_RMLUI_ACTION_SHOW_SCREEN
 };
 
 /* How many control ids there are in the player, and each id in the order of
@@ -217,7 +216,6 @@ const char *rib_rmlui_screen_panel(const char *id);
 /* Draw a slider or a toggle. How they appear is up to the design, and here we
  * only move the fill, the thumb and the on/off class. */
 void rib_rmlui_set_slider(const char *id, float fraction, const char *readout);
-void rib_rmlui_set_toggle(const char *id, bool on);
 
 /* Set a slider the way a drag to that point would, and queue the change.
  * False when the document has no such slider. */

@@ -1641,15 +1641,6 @@ extern "C" void rib_rmlui_set_slider(const char *id, float fraction, const char 
          paint_slider(slider, fraction, readout);
 }
 
-extern "C" void rib_rmlui_set_toggle(const char *id, bool on)
-{
-   if (!document || !id)
-      return;
-   if (Rml::Element *toggle = document->GetElementById(id))
-      if (toggle->IsClassSet("toggle"))
-         toggle->SetClass("on", on);
-}
-
 extern "C" bool rib_rmlui_commit_slider(const char *id, float fraction);
 
 extern "C" void rib_rmlui_set_slider_step(const char *id, float step)
