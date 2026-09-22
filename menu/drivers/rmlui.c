@@ -18,6 +18,7 @@
 #include <file/config_file.h>
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
+#include <features/features_cpu.h>
 #include <libretro.h>
 #include "../menu_driver.h"
 #include "../menu_input.h"
@@ -42,6 +43,9 @@
  * ids at export, and we log any id beyond this number instead of applying it
  * to the wrong preset. */
 #define RIB_SHADER_MAX 32
+
+/* How many overlays one design can declare, the size of a buffer. */
+#define RIB_OVERLAY_MAX 8
 
 /* How many switches a design can declare, the size of a buffer like the others. */
 #define RIB_TOGGLE_MAX 8
@@ -120,9 +124,37 @@ typedef struct rib_rmlui_menu
    int toggle_count;
 } rib_rmlui_menu_t;
 
-static bool rib_splash_active;
-static bool rib_splash_keep_menu_open;
-static retro_time_t rib_splash_started_at;
+/* An overlay declared in the design: one element that we draw over the running
+ * game for a while and then remove. The overlays that exist are the ones in the
+ * design, and there are no overlay names in the player. */
+typedef struct rib_overlay
+{
+   char id[64];
+   /* An overlay declared before this one, which must finish first. We show
+    * the notice after the logo in this way, not after a fixed delay, so a slow
+    * start delays both and they never overlap. When this is empty, we wait
+    * only for the game to start. */
+   char follows[64];
+   /* A staged file that we require to draw the overlay. For the logo, we show
+    * it only when the export contains that file. We check the file itself and
+    * have no separate flag for it in the launcher. */
+   char needs[128];
+   int after_ms;
+   int hold_ms;
+   int leave_ms;
+   /* When the clock for this overlay started, after what it follows was done.
+    * Zero until then. */
+   retro_time_t started_at;
+   retro_time_t finished_at;
+   enum rib_overlay_state state;
+   bool finished;
+} rib_overlay_t;
+
+static rib_overlay_t rib_overlays[RIB_OVERLAY_MAX];
+static int rib_overlay_count;
+static bool rib_overlays_running;
+static bool rib_overlay_mode;
+static retro_time_t rib_overlays_started_at;
 static rib_rmlui_menu_t *rib_rmlui_active_menu;
 
 static void rib_rmlui_refresh_controls(rib_rmlui_menu_t *menu);
@@ -131,16 +163,38 @@ static void rib_rmlui_load_shaders(rib_rmlui_menu_t *menu,
       const char *asset_directory);
 static void rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id);
 
-void rib_rmlui_begin_splash(bool keep_menu_open)
+static bool rib_rmlui_menu_alive(void)
 {
-   rib_splash_active = true;
-   rib_splash_keep_menu_open = keep_menu_open;
-   rib_splash_started_at = 0;
+   struct menu_state *menu_st = menu_state_get_ptr();
+   return menu_st && (menu_st->flags & MENU_ST_FLAG_ALIVE);
 }
 
-bool rib_rmlui_splash_active(void)
+/* Keep frames going to the menu driver while the menu is closed. In every video
+ * driver we skip the menu while it is closed, so without this we would never
+ * draw an overlay. We use the same switch as for drawing the menu, so there is
+ * no code for overlays in the video drivers. */
+static void rib_rmlui_draw_without_menu(bool on)
 {
-   return rib_splash_active;
+   video_driver_state_t *video_st = video_state_get_ptr();
+   if (rib_rmlui_menu_alive())
+      return;
+   if (video_st && video_st->poke && video_st->poke->set_texture_enable)
+      video_st->poke->set_texture_enable(video_st->data, on, false);
+}
+
+void rib_rmlui_begin_overlays(void)
+{
+   /* Assume yes for now. We read the declarations in the design on the first
+    * frame, and there are no frames until we ask for them here. When a design
+    * declares no overlay, we stop asking for frames on that same frame. */
+   rib_overlays_running = true;
+   rib_overlays_started_at = 0;
+   rib_rmlui_draw_without_menu(true);
+}
+
+bool rib_rmlui_overlays_drawing(void)
+{
+   return rib_overlays_running;
 }
 
 /* Resolve a declared control id to its libretro bind.
@@ -307,6 +361,91 @@ static void rib_rmlui_discover_screens(const char *asset_directory)
       if (!config_get_array(config, key, button, sizeof(button)))
          button[0] = '\0';
       rib_rmlui_declare_screen(token, panel, heading, footer, button);
+   }
+   config_file_free(config);
+}
+
+/* Read the overlays declared in this design.
+ *
+ * They are declared like the screens and the controller list: a space-separated
+ * list of ids and one key per field. There are no overlay names in this code.
+ * When the export does not contain the file for an overlay, we do not declare
+ * the overlay at all, so it is never drawn empty.
+ */
+static void rib_rmlui_discover_overlays(const char *asset_directory)
+{
+   char path[PATH_MAX_LENGTH];
+   config_file_t *config;
+   char list[512];
+   char *cursor;
+   char *token;
+
+   rib_overlay_count = 0;
+   if (!asset_directory || !*asset_directory)
+      return;
+   snprintf(path, sizeof(path), "%s/design.cfg", asset_directory);
+   if (!(config = config_file_new_from_path_to_string(path)))
+      return;
+   if (!config_get_array(config, "overlays", list, sizeof(list)))
+   {
+      config_file_free(config);
+      return;
+   }
+
+   cursor = list;
+   while ((token = strtok_r(cursor, " ", &cursor)))
+   {
+      char key[96];
+      char needs[128];
+      char follows[64];
+      int after = 0;
+      int hold  = 0;
+      int leave = 0;
+      rib_overlay_t *overlay;
+
+      if (!*token)
+         continue;
+      if (rib_overlay_count >= RIB_OVERLAY_MAX)
+      {
+         RARCH_WARN("[RIB] the design declares more than %d overlays; '%s' and "
+               "anything after it will not be drawn.\n", RIB_OVERLAY_MAX, token);
+         break;
+      }
+      snprintf(key, sizeof(key), "overlay_after_%s", token);
+      config_get_int(config, key, &after);
+      snprintf(key, sizeof(key), "overlay_hold_%s", token);
+      if (!config_get_int(config, key, &hold) || hold <= 0)
+         continue;
+      snprintf(key, sizeof(key), "overlay_leave_%s", token);
+      config_get_int(config, key, &leave);
+      snprintf(key, sizeof(key), "overlay_follows_%s", token);
+      if (!config_get_array(config, key, follows, sizeof(follows)))
+         follows[0] = '\0';
+      snprintf(key, sizeof(key), "overlay_needs_%s", token);
+      if (!config_get_array(config, key, needs, sizeof(needs)))
+         needs[0] = '\0';
+      if (*needs)
+      {
+         char required[PATH_MAX_LENGTH];
+         snprintf(required, sizeof(required), "%s/%s", asset_directory, needs);
+         if (!path_is_valid(required))
+         {
+            RARCH_LOG("[RIB] overlay '%s' needs %s, which this game does not "
+                  "carry; it will not be drawn.\n", token, needs);
+            continue;
+         }
+      }
+      overlay = &rib_overlays[rib_overlay_count++];
+      strlcpy(overlay->id, token, sizeof(overlay->id));
+      strlcpy(overlay->needs, needs, sizeof(overlay->needs));
+      strlcpy(overlay->follows, follows, sizeof(overlay->follows));
+      overlay->after_ms    = after;
+      overlay->hold_ms     = hold;
+      overlay->leave_ms    = leave;
+      overlay->started_at  = 0;
+      overlay->finished_at = 0;
+      overlay->state       = RIB_OVERLAY_HIDDEN;
+      overlay->finished    = false;
    }
    config_file_free(config);
 }
@@ -1722,7 +1861,7 @@ static void rib_rmlui_free(void *data)
    if (menu && menu->capture_active)
       rib_rmlui_cancel_capture(menu, NULL);
    rib_rmlui_shutdown();
-   rib_splash_active = false;
+   rib_overlays_running = false;
    /* The call that frees userdata is in menu_driver_ctl, after this callback. */
 }
 
@@ -1742,6 +1881,11 @@ static void rib_rmlui_context_reset(void *data, bool video_is_threaded)
    (void)video_is_threaded;
    if (menu)
       menu->initialized = false;
+   /* With a new video driver the menu is switched off, so for anything still
+    * drawn over the game we ask for frames again. This happens, for example,
+    * when the player goes fullscreen during an overlay. */
+   if (rib_overlays_running)
+      rib_rmlui_draw_without_menu(true);
 }
 
 /* Drive the menu from ROMINABOX_MENU_SCRIPT, one element per frame.
@@ -1755,7 +1899,9 @@ static void rib_rmlui_context_reset(void *data, bool video_is_threaded)
  *
  * The script is a comma-separated list of element ids, for example
  * "controls,controls-device-current". We click one per frame, so there is
- * a frame for the menu to update before the next click.
+ * a frame for the menu to update before the next click. For a step written
+ * "wait:120" we wait that many frames instead, to take a picture of an
+ * overlay over a running game, or anything else timed, at a chosen moment.
  *
  * We stop the run at an id that is not in the document. A screenshot taken
  * after clicking nothing would show the wrong thing, which is worse than no
@@ -1765,6 +1911,16 @@ static void rib_rmlui_context_reset(void *data, bool video_is_threaded)
  * handle the queued click in the bridge one frame later, and we lay out a
  * picker that has just opened in the frame after that. */
 #define RIB_SCRIPT_SETTLE_FRAMES 8
+
+/* Keep frames coming while a script has not finished. Over a running game the
+ * menu driver gets frames only while an overlay is shown, which is shorter than
+ * a script that waits for an overlay to go away. */
+static bool rib_script_running;
+
+static bool rib_rmlui_script_wants_frames(void)
+{
+   return rib_script_running;
+}
 
 static void rib_rmlui_script_shot(void)
 {
@@ -1806,6 +1962,7 @@ static void rib_rmlui_run_script(void)
    static size_t at          = 0;
    static bool started       = false;
    static int settle         = RIB_SCRIPT_SETTLE_FRAMES;
+   static int waiting        = 0;
    char id[128];
    const char *comma;
    size_t length;
@@ -1814,11 +1971,18 @@ static void rib_rmlui_run_script(void)
    {
       script  = getenv("ROMINABOX_MENU_SCRIPT");
       started = true;
+      rib_script_running = script != NULL;
       if (script)
          RARCH_LOG("[RIB] menu script: %s\n", *script ? script : "(none)");
    }
    if (!script)
       return;
+
+   if (waiting > 0)
+   {
+      --waiting;
+      return;
+   }
 
    if (at >= strlen(script))
    {
@@ -1827,6 +1991,7 @@ static void rib_rmlui_run_script(void)
       if (settle-- <= 0)
       {
          settle = INT_MAX;
+         rib_script_running = false;
          rib_rmlui_script_shot();
       }
       return;
@@ -1840,6 +2005,13 @@ static void rib_rmlui_run_script(void)
    id[length] = '\0';
    at += length + (comma ? 1 : 0);
 
+   if (!strncmp(id, "wait:", 5))
+   {
+      waiting = atoi(id + 5);
+      RARCH_LOG("[RIB] menu script waiting %d frames.\n", waiting);
+      return;
+   }
+
    if (!rib_rmlui_click_element(id))
    {
       RARCH_ERR("[RIB] menu script names no element '%s'; stopping so no "
@@ -1848,6 +2020,91 @@ static void rib_rmlui_run_script(void)
       return;
    }
    RARCH_LOG("[RIB] menu script clicked '%s'.\n", id);
+}
+
+/* Advance every declared overlay by the clock, and nothing else.
+ *
+ * Each overlay waits, is shown, leaves and is done, at the times declared for
+ * it. In the player we set only which of those states an element is in. How it
+ * arrives, how it leaves and where it is are in the stylesheet of the design,
+ * and the leaving time in the stylesheet comes from this same declaration.
+ */
+/* When the clock for this overlay starts: at the start of the game, or when the
+ * overlay before it is done. Zero until then. */
+static retro_time_t rib_overlay_begins_at(const rib_overlay_t *overlay)
+{
+   int index;
+
+   if (!*overlay->follows)
+      return rib_overlays_started_at;
+   for (index = 0; index < rib_overlay_count; ++index)
+   {
+      const rib_overlay_t *before = &rib_overlays[index];
+      if (before == overlay)
+         break;
+      if (string_is_equal(before->id, overlay->follows))
+         return before->finished ? before->finished_at : 0;
+   }
+   /* No overlay before it has that name, so there is nothing to wait for. */
+   return rib_overlays_started_at;
+}
+
+static void rib_rmlui_run_overlays(void)
+{
+   retro_time_t now;
+   int index;
+   bool pending = false;
+
+   if (!rib_overlays_running)
+      return;
+
+   now = cpu_features_get_time_usec();
+   if (!rib_overlays_started_at)
+      rib_overlays_started_at = now;
+
+   for (index = 0; index < rib_overlay_count; ++index)
+   {
+      rib_overlay_t *overlay      = &rib_overlays[index];
+      enum rib_overlay_state want = RIB_OVERLAY_HIDDEN;
+      int elapsed;
+
+      if (overlay->finished)
+         continue;
+      if (!overlay->started_at)
+      {
+         overlay->started_at = rib_overlay_begins_at(overlay);
+         if (!overlay->started_at)
+         {
+            /* The overlay before it is not done yet. */
+            pending = true;
+            continue;
+         }
+      }
+      elapsed = (int)((now - overlay->started_at) / 1000);
+      if (elapsed >= overlay->after_ms + overlay->hold_ms + overlay->leave_ms)
+      {
+         overlay->finished    = true;
+         overlay->finished_at = now;
+      }
+      else if (elapsed >= overlay->after_ms + overlay->hold_ms)
+         want = RIB_OVERLAY_LEAVING;
+      else if (elapsed >= overlay->after_ms)
+         want = RIB_OVERLAY_SHOWING;
+
+      if (want != overlay->state)
+      {
+         overlay->state = want;
+         rib_rmlui_set_overlay(overlay->id, want);
+      }
+      if (!overlay->finished)
+         pending = true;
+   }
+
+   if (!pending && !rib_rmlui_script_wants_frames())
+   {
+      rib_overlays_running = false;
+      rib_rmlui_draw_without_menu(false);
+   }
 }
 
 static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
@@ -1870,14 +2127,14 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       {
          RARCH_ERR("[RmlUi] Failed to initialize menu from %s.\n",
                asset_directory);
-         rib_splash_active = false;
-         if (!rib_splash_keep_menu_open)
-            retroarch_menu_running_finished(false);
+         rib_overlays_running = false;
+         rib_rmlui_draw_without_menu(false);
          return;
       }
-      /* Read the screens in the design before we show any of them. */
+      /* Read the screens and overlays in the design before we show any. */
       rib_rmlui_discover_screens(asset_directory);
       rib_rmlui_discover_toggles(menu, asset_directory);
+      rib_rmlui_discover_overlays(asset_directory);
       rib_rmlui_load_shaders(menu, asset_directory);
       rib_rmlui_set_selected_slot(menu->selected_slot);
       rib_rmlui_set_focused(menu->focused);
@@ -1908,34 +2165,35 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       RARCH_LOG("[RmlUi] Loaded menu from %s.\n", asset_directory);
    }
 
-   if (rib_splash_active)
    {
-      const retro_time_t now = menu_driver_get_current_time();
-      retro_time_t elapsed;
-      float opacity = 1.0f;
-      if (!rib_splash_started_at)
-         rib_splash_started_at = now;
-      elapsed = now - rib_splash_started_at;
-      if (elapsed >= 800000)
+      const bool menu_alive = rib_rmlui_menu_alive();
+
+      /* When we draw this document while the menu is closed, the menu itself
+       * is not on screen, and we state that on the document for the design.
+       * We set it here and not with the overlays, because we may still draw
+       * the document after the last overlay has gone. */
+      if (rib_overlay_mode != !menu_alive)
       {
-         rib_splash_active = false;
-         rib_rmlui_set_splash(false, 0.0f);
-         if (!rib_splash_keep_menu_open)
-         {
-            retroarch_menu_running_finished(false);
-            return;
-         }
+         rib_overlay_mode = !menu_alive;
+         rib_rmlui_set_overlay_mode(rib_overlay_mode);
       }
-      else
+
+      if (!menu_alive)
       {
-         if (elapsed < 120000)
-            opacity = (float)elapsed / 120000.0f;
-         else if (elapsed > 550000)
-            opacity = 1.0f - (float)(elapsed - 550000) / 250000.0f;
-         rib_rmlui_set_splash(true, opacity);
+         /* The game is running and the player is playing it with the
+          * controller. Nothing below applies now: no pointer, no queued
+          * actions and no capture. We have a frame in this driver only to
+          * draw over the game.
+          *
+          * We run the script first, because from it we learn whether we still
+          * want frames after the overlays are done, and we can learn that only
+          * after asking it. */
+         rib_rmlui_run_script();
+         rib_rmlui_run_overlays();
          rib_rmlui_render((int)video_info->width, (int)video_info->height);
          return;
       }
+      rib_rmlui_run_overlays();
    }
 
    menu_input_get_pointer_state(&pointer);

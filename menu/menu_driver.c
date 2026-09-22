@@ -4377,7 +4377,14 @@ void menu_display_handle_wallpaper_upload(
 void menu_driver_frame(bool menu_is_alive, video_frame_info_t *video_info)
 {
    struct menu_state    *menu_st = &menu_driver_state;
-   if (menu_is_alive && menu_st->driver_ctx->frame)
+#ifdef HAVE_RMLUI
+   /* We draw an overlay over a running game, so we want frames while the
+    * menu is closed. Opening the menu would pause the core and take the
+    * controller away from the game. */
+   if (!menu_is_alive)
+      menu_is_alive = rib_rmlui_overlays_drawing();
+#endif
+   if (menu_is_alive && menu_st->driver_ctx && menu_st->driver_ctx->frame)
       menu_st->driver_ctx->frame(menu_st->userdata, video_info);
 }
 
@@ -6552,10 +6559,6 @@ void menu_driver_toggle(
 #else
       menu_pause_libretro             = settings->bools.menu_pause_libretro;
 #endif
-#ifdef HAVE_RMLUI
-      if (rib_rmlui_splash_active())
-         menu_pause_libretro = false;
-#endif
 #ifdef HAVE_AUDIOMIXER
       audio_enable_menu               = settings->bools.audio_enable_menu;
 #endif
@@ -6848,7 +6851,16 @@ void retroarch_menu_running_finished(bool quit)
    }
    if (video_st->poke && video_st->poke->set_texture_enable)
       video_st->poke->set_texture_enable(video_st->data,
-            false, false);
+#ifdef HAVE_RMLUI
+            /* Unless we are still drawing over the running game. With this
+             * switch we decide whether to draw the menu driver at all, and we
+             * draw overlays with the menu driver, so closing the menu during
+             * an overlay must not end it. */
+            rib_rmlui_overlays_drawing(),
+#else
+            false,
+#endif
+            false);
 #ifdef HAVE_OVERLAY
    if (!quit)
       if (settings && settings->bools.input_overlay_hide_in_menu)
