@@ -15268,7 +15268,9 @@ static bool setting_append_list(
                general_write_handler,
                general_read_handler);
          (*list)[list_info->index - 1].action_ok = &setting_action_ok_uint;
-         menu_settings_list_current_add_range(list, list_info, -80, 12, 1.0, true, true);
+         menu_settings_list_current_add_range(list, list_info,
+               AUDIO_VOLUME_MIN_DB, AUDIO_VOLUME_MAX_DB, AUDIO_VOLUME_STEP_DB,
+               true, true);
 
 #ifdef HAVE_AUDIOMIXER
          CONFIG_FLOAT(
@@ -15284,7 +15286,9 @@ static bool setting_append_list(
                general_write_handler,
                general_read_handler);
          (*list)[list_info->index - 1].action_ok = &setting_action_ok_uint;
-         menu_settings_list_current_add_range(list, list_info, -80, 12, 1.0, true, true);
+         menu_settings_list_current_add_range(list, list_info,
+               AUDIO_VOLUME_MIN_DB, AUDIO_VOLUME_MAX_DB, AUDIO_VOLUME_STEP_DB,
+               true, true);
          SETTINGS_DATA_LIST_CURRENT_ADD_FLAGS(list, list_info, SD_FLAG_LAKKA_ADVANCED);
 #endif
 

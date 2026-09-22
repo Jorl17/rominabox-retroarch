@@ -18,6 +18,7 @@
 #define __AUDIO_DEFINES__H
 
 #include <retro_common_api.h>
+#include "volume_range.h"
 
 RETRO_BEGIN_DECLS
 
