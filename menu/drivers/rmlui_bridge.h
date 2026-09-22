@@ -207,6 +207,31 @@ const char *rib_rmlui_list_row_id(int index);
 int rib_rmlui_turn_list_page(int delta);
 void rib_rmlui_mark_row(const char *id, const char *on, const char *off);
 
+/* A row of the shared list, by the id we wrote at export. Title, detail and
+ * state are the places to fill in the row template. To show a row we remove
+ * `display: none`, and to hide it we put it back. In the player we fill rows
+ * and never create them. */
+void rib_rmlui_set_row_text(const char *id, const char *title,
+      const char *detail, const char *state);
+void rib_rmlui_set_shown(const char *id, bool shown);
+int rib_rmlui_rows_in(const char *list_id);
+const char *rib_rmlui_row_in(const char *list_id, int index);
+/* Put a list next to an anchor and keep it on the screen. The width is from
+ * the design, in dp. With zero we keep the width in the stylesheet. */
+void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
+      int width_dp);
+/* Hide pages whose rows are all hidden, show the first page that has one,
+ * and hide the pager when all of them fit on one page. */
+void rib_rmlui_retarget_pages(const char *list_id);
+bool rib_rmlui_pointer_inside(const char *id, int x, int y);
+bool rib_rmlui_move_pointer_to(const char *id);
+bool rib_rmlui_has_element(const char *id);
+/* The group of a control, or NULL. A stick is several controls and one box,
+ * and in the bridge we attach listeners to that box from the group and not
+ * from a second list of ids. */
+const char *rib_rmlui_control_group(int index);
+void rib_rmlui_focus_group(const char *group);
+
 /* Draw a different controller. The markup is a scene for that pad in the
  * export. Call wire_controls afterwards, because the elements with its
  * listeners are gone. */

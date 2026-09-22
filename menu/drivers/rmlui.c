@@ -50,6 +50,9 @@
 typedef struct rib_control
 {
    char id[32];
+   /* Empty when we draw the control by itself. The directions of a stick have
+    * one name, and the list for any of them contains every direction. */
+   char group[32];
    unsigned bind_index;
 } rib_control_t;
 
@@ -130,11 +133,23 @@ static bool rib_overlay_mode;
 static retro_time_t rib_overlays_started_at;
 static rib_rmlui_menu_t *rib_rmlui_active_menu;
 
+/* The bind list. The element, and how long a control stays current before we
+ * open the list, are in the design. Here we only keep the time. */
+static char rib_binds_list[64];
+static int rib_binds_after_ms;
+static int rib_binds_width;
+static int rib_binds_for = -1;
+static retro_time_t rib_binds_since;
+static bool rib_binds_open;
+static char rib_script_hover[128];
+static retro_time_t rib_script_wait_until;
+static bool rib_script_running;
+
 static void rib_rmlui_refresh_controls(rib_rmlui_menu_t *menu);
 static void rib_rmlui_cancel_capture(rib_rmlui_menu_t *menu, const char *status);
 static void rib_rmlui_load_shaders(rib_rmlui_menu_t *menu,
       const char *asset_directory);
-static void rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id);
+static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id);
 
 static bool rib_rmlui_menu_alive(void)
 {
@@ -274,6 +289,14 @@ static void rib_rmlui_discover_controls(rib_rmlui_menu_t *menu,
       }
       strlcpy(menu->controls[menu->control_count].id, id,
             sizeof(menu->controls[menu->control_count].id));
+      menu->controls[menu->control_count].group[0] = '\0';
+      {
+         char group_key[96];
+         snprintf(group_key, sizeof(group_key), "rib_group_%s", id);
+         config_get_array(config, group_key,
+               menu->controls[menu->control_count].group,
+               sizeof(menu->controls[menu->control_count].group));
+      }
       menu->controls[menu->control_count].bind_index = bind_index;
       ++menu->control_count;
    }
@@ -423,6 +446,26 @@ static void rib_rmlui_discover_overlays(const char *asset_directory)
    config_file_free(config);
 }
 
+static void rib_rmlui_discover_binds(const char *asset_directory)
+{
+   char path[PATH_MAX_LENGTH];
+   config_file_t *config;
+
+   rib_binds_list[0] = '\0';
+   rib_binds_after_ms = 0;
+   rib_binds_width = 0;
+   if (!asset_directory || !*asset_directory)
+      return;
+   snprintf(path, sizeof(path), "%s/design.cfg", asset_directory);
+   if (!(config = config_file_new_from_path_to_string(path)))
+      return;
+   if (!config_get_array(config, "binds_list", rib_binds_list, sizeof(rib_binds_list)))
+      rib_binds_list[0] = '\0';
+   config_get_int(config, "binds_after", &rib_binds_after_ms);
+   config_get_int(config, "binds_width", &rib_binds_width);
+   config_file_free(config);
+}
+
 /* Read the controllers available for this console.
  *
  * `controls_variants` is a space-separated list of ids that we write at
@@ -510,6 +553,16 @@ const char *rib_rmlui_control_id(int index)
    if (!menu || index < 0 || index >= menu->control_count)
       return NULL;
    return menu->controls[index].id;
+}
+
+const char *rib_rmlui_control_group(int index)
+{
+   const rib_rmlui_menu_t *menu = rib_rmlui_active_menu;
+   if (!menu || index < 0 || index >= menu->control_count)
+      return NULL;
+   if (!menu->controls[index].group[0])
+      return NULL;
+   return menu->controls[index].group;
 }
 
 static bool rib_control_is_active(const rib_rmlui_menu_t *menu, int index)
@@ -974,6 +1027,12 @@ static void rib_rmlui_refresh_controls(rib_rmlui_menu_t *menu)
          menu && menu->controls_visible && menu->control_focus == RIB_CONTROL_MAX,
          menu && menu->controls_visible && menu->control_focus == RIB_CONTROL_MAX + 1,
          menu && menu->capture_active);
+   if (menu && menu->controls_visible && menu->control_focus >= 0
+         && menu->control_focus < menu->control_count
+         && menu->controls[menu->control_focus].group[0])
+      rib_rmlui_focus_group(menu->controls[menu->control_focus].group);
+   else
+      rib_rmlui_focus_group(NULL);
 }
 
 static void rib_rmlui_reset_interaction(rib_rmlui_menu_t *menu, bool opening)
@@ -1273,7 +1332,7 @@ static void rib_rmlui_load_shaders(rib_rmlui_menu_t *menu,
    config_file_free(config);
 }
 
-static void rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id)
+static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id)
 {
    settings_t *settings = config_get_ptr();
    const char *assets = getenv("ROMINABOX_RML_ASSETS");
@@ -1286,7 +1345,7 @@ static void rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id
    bool known = false;
 
    if (!menu || !id || !*id || !settings)
-      return;
+      return false;
    for (index = 0; index < menu->shader_count; ++index)
       if (string_is_equal(menu->shader_ids[index], id))
       {
@@ -1297,7 +1356,7 @@ static void rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id
    /* Not in this list. Other lists use the same action, and we handle their
     * ids with each list. */
    if (!known)
-      return;
+      return false;
 
    absolute[0] = '\0';
    if (relative && *relative && assets && *assets)
@@ -1334,6 +1393,7 @@ static void rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id
                choice_path);
    }
    rib_rmlui_mark_row(id, menu->shader_state_on, menu->shader_state_off);
+   return true;
 }
 
 static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
@@ -1361,8 +1421,8 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       const char *id = rib_rmlui_chosen_item();
       int row;
 
-      rib_rmlui_play_action_sound(action);
-      rib_rmlui_apply_listed_shader(menu, id);
+      if (rib_rmlui_apply_listed_shader(menu, id))
+         rib_rmlui_play_action_sound(action);
       for (row = 0; row < rib_rmlui_visible_row_count(); ++row)
          if (string_is_equal(rib_rmlui_list_row_id(row), id))
          {
@@ -1696,8 +1756,6 @@ static void rib_rmlui_context_reset(void *data, bool video_is_threaded)
 /* Keep frames coming while a script has not finished. Over a running game the
  * menu driver gets frames only while an overlay is shown, which is shorter than
  * a script that waits for an overlay to go away. */
-static bool rib_script_running;
-
 static bool rib_rmlui_script_wants_frames(void)
 {
    return rib_script_running;
@@ -1759,6 +1817,13 @@ static void rib_rmlui_run_script(void)
    if (!script)
       return;
 
+   if (rib_script_wait_until)
+   {
+      if (cpu_features_get_time_usec() < rib_script_wait_until)
+         return;
+      rib_script_wait_until = 0;
+   }
+
    if (waiting > 0)
    {
       --waiting;
@@ -1790,6 +1855,26 @@ static void rib_rmlui_run_script(void)
    {
       waiting = atoi(id + 5);
       RARCH_LOG("[RIB] menu script waiting %d frames.\n", waiting);
+      return;
+   }
+
+   if (!strncmp(id, "wait-ms:", 8))
+   {
+      rib_script_wait_until = cpu_features_get_time_usec()
+            + (retro_time_t)atoi(id + 8) * 1000;
+      RARCH_LOG("[RIB] menu script waiting %s ms.\n", id + 8);
+      return;
+   }
+
+   if (!strncmp(id, "hover:", 6))
+   {
+      strlcpy(rib_script_hover, id + 6, sizeof(rib_script_hover));
+      if (!rib_rmlui_move_pointer_to(rib_script_hover))
+      {
+         RARCH_ERR("[RIB] menu script cannot hover '%s'; stopping so no "
+               "screenshot is taken of the wrong screen.\n", rib_script_hover);
+         command_event(CMD_EVENT_QUIT, NULL);
+      }
       return;
    }
 
@@ -1888,6 +1973,219 @@ static void rib_rmlui_run_overlays(void)
    }
 }
 
+}
+
+/* One line for each input in a retro_keybind. We read each field separately,
+ * because with a comma inside a name, splitting a joined string would be
+ * ambiguous. */
+#define RIB_BIND_LINE_MAX 64
+
+static void rib_mouse_label(uint16_t button, char *out, size_t length)
+{
+   const char *label = NULL;
+   switch (button)
+   {
+      case RETRO_DEVICE_ID_MOUSE_LEFT: label = "Left"; break;
+      case RETRO_DEVICE_ID_MOUSE_RIGHT: label = "Right"; break;
+      case RETRO_DEVICE_ID_MOUSE_MIDDLE: label = "Middle"; break;
+      case RETRO_DEVICE_ID_MOUSE_BUTTON_4: label = "Button 4"; break;
+      case RETRO_DEVICE_ID_MOUSE_BUTTON_5: label = "Button 5"; break;
+      case RETRO_DEVICE_ID_MOUSE_WHEELUP: label = "Wheel up"; break;
+      case RETRO_DEVICE_ID_MOUSE_WHEELDOWN: label = "Wheel down"; break;
+      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELUP: label = "Wheel left"; break;
+      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELDOWN: label = "Wheel right"; break;
+      default: break;
+   }
+   if (label)
+      strlcpy(out, label, length);
+   else
+      out[0] = '\0';
+}
+
+static void rib_push_bind_line(char details[][64], char kinds[][8], int *count,
+      const char *kind, const char *text)
+{
+   if (!text || !*text || *count >= RIB_BIND_LINE_MAX)
+      return;
+   strlcpy(kinds[*count], kind, 8);
+   strlcpy(details[*count], text, 64);
+   (*count)++;
+}
+
+static void rib_lines_from_bind(const struct retro_keybind *bind,
+      char details[][64], char kinds[][8], int *count)
+{
+   char text[64];
+
+   if (!bind)
+      return;
+   text[0] = '\0';
+   input_keymaps_translate_rk_to_str(bind->key, text, sizeof(text));
+   if (text[0] && strcmp(text, "nul") != 0)
+      rib_push_bind_line(details, kinds, count, "KEY", text);
+   if (bind->joykey != NO_BTN)
+   {
+      input_config_get_bind_string_joykey(false, text, "", bind, sizeof(text));
+      rib_push_bind_line(details, kinds, count, "PAD", text);
+   }
+   if (bind->joyaxis != AXIS_NONE)
+   {
+      input_config_get_bind_string_joyaxis(false, text, "", bind, sizeof(text));
+      rib_push_bind_line(details, kinds, count, "AXIS", text);
+   }
+   if (bind->mbutton != NO_BTN)
+   {
+      rib_mouse_label(bind->mbutton, text, sizeof(text));
+      rib_push_bind_line(details, kinds, count, "MOUSE", text);
+   }
+}
+
+static bool rib_same_bind_target(const rib_rmlui_menu_t *menu, int left, int right)
+{
+   const char *group_left;
+   const char *group_right;
+   if (left == right)
+      return true;
+   if (!menu || left < 0 || right < 0
+         || left >= menu->control_count || right >= menu->control_count)
+      return false;
+   group_left = menu->controls[left].group;
+   group_right = menu->controls[right].group;
+   return group_left[0] && group_right[0] && string_is_equal(group_left, group_right);
+}
+
+static void rib_bind_anchor(const rib_rmlui_menu_t *menu, int index,
+      char *out, size_t length)
+{
+   if (menu->controls[index].group[0])
+   {
+      snprintf(out, length, "control-group-%s", menu->controls[index].group);
+      if (rib_rmlui_has_element(out))
+         return;
+   }
+   snprintf(out, length, "control-%s", menu->controls[index].id);
+   if (rib_rmlui_has_element(out))
+      return;
+   snprintf(out, length, "control-hit-%s", menu->controls[index].id);
+}
+
+static void rib_show_binds(rib_rmlui_menu_t *menu, int index)
+{
+   int members[RIB_CONTROL_MAX];
+   int member_count = 0;
+   char details[RIB_BIND_LINE_MAX][64];
+   char kinds[RIB_BIND_LINE_MAX][8];
+   char titles[RIB_BIND_LINE_MAX][NAME_MAX_LENGTH];
+   int lines = 0;
+   int rows;
+   int slot;
+   int member;
+   char anchor[96];
+
+   if (menu->controls[index].group[0])
+   {
+      int cursor;
+      for (cursor = 0; cursor < menu->control_count; ++cursor)
+         if (rib_control_is_active(menu, cursor)
+               && string_is_equal(menu->controls[cursor].group,
+                     menu->controls[index].group))
+            members[member_count++] = cursor;
+   }
+   else
+      members[member_count++] = index;
+
+   for (member = 0; member < member_count; ++member)
+   {
+      int before = lines;
+      const struct retro_keybind *bind =
+         &input_config_binds[0][menu->controls[members[member]].bind_index];
+      rib_lines_from_bind(bind, details, kinds, &lines);
+      for (slot = before; slot < lines; ++slot)
+      {
+         const char *label = menu->control_labels[members[member]];
+         if (!label[0])
+            label = menu->controls[members[member]].id;
+         strlcpy(titles[slot], label, sizeof(titles[slot]));
+      }
+   }
+
+   rows = rib_rmlui_rows_in(rib_binds_list);
+   if (lines > rows)
+      RARCH_ERR("[RIB] '%s' has %d binds and the menu was built with %d rows; "
+            "the rest are not shown.\n",
+            menu->controls[index].id, lines, rows);
+   for (slot = 0; slot < rows; ++slot)
+   {
+      const char *id = rib_rmlui_row_in(rib_binds_list, slot);
+      char row[64];
+      if (!id || !*id)
+         break;
+      strlcpy(row, id, sizeof(row));
+      if (slot < lines)
+      {
+         rib_rmlui_set_row_text(row, titles[slot], details[slot], kinds[slot]);
+         rib_rmlui_set_shown(row, true);
+      }
+      else
+         rib_rmlui_set_shown(row, false);
+   }
+   rib_rmlui_retarget_pages(rib_binds_list);
+   rib_bind_anchor(menu, index, anchor, sizeof(anchor));
+   rib_rmlui_place_list(rib_binds_list, anchor, rib_binds_width);
+   rib_binds_open = true;
+}
+
+static void rib_hide_binds(void)
+{
+   if (rib_binds_list[0])
+      rib_rmlui_set_shown(rib_binds_list, false);
+   rib_binds_open = false;
+}
+
+static void rib_rmlui_update_binds(rib_rmlui_menu_t *menu, int x, int y)
+{
+   int current = -1;
+   int hovered;
+   retro_time_t now;
+
+   if (!menu || !rib_binds_list[0] || !menu->controls_visible
+         || menu->capture_active || menu->device_picker_open)
+   {
+      rib_hide_binds();
+      rib_binds_for = -1;
+      return;
+   }
+
+   if (!rib_script_running
+         && rib_rmlui_pointer_inside(rib_binds_list, x, y)
+         && rib_binds_for >= 0)
+      current = rib_binds_for;
+   else if (!rib_script_running || rib_script_hover[0])
+   {
+      hovered = rib_rmlui_hovered_action();
+      if (hovered >= RIB_RMLUI_ACTION_CONTROL_FIRST
+            && hovered <= RIB_RMLUI_ACTION_CONTROL_LAST)
+         current = hovered - RIB_RMLUI_ACTION_CONTROL_FIRST;
+   }
+   if (current < 0 && menu->control_focus >= 0
+         && menu->control_focus < menu->control_count)
+      current = menu->control_focus;
+   if (!rib_control_is_active(menu, current))
+      current = -1;
+
+   if (!rib_same_bind_target(menu, current, rib_binds_for))
+   {
+      rib_hide_binds();
+      rib_binds_for = current;
+      rib_binds_since = cpu_features_get_time_usec();
+   }
+   if (current < 0 || rib_binds_open)
+      return;
+   now = cpu_features_get_time_usec();
+   if (now - rib_binds_since >= (retro_time_t)rib_binds_after_ms * 1000)
+      rib_show_binds(menu, current);
+}
+
 static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
 {
    rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)data;
@@ -1915,6 +2213,7 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       /* Read the screens and overlays in the design before we show any. */
       rib_rmlui_discover_screens(asset_directory);
       rib_rmlui_discover_overlays(asset_directory);
+      rib_rmlui_discover_binds(asset_directory);
       rib_rmlui_load_shaders(menu, asset_directory);
       rib_rmlui_set_selected_slot(menu->selected_slot);
       rib_rmlui_set_focused(menu->focused);
@@ -1980,6 +2279,8 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
             (pointer.flags & MENU_INP_PTR_FLG_PRESSED) != 0;
 
       rib_rmlui_pointer_move(pointer.x, pointer.y);
+      if (rib_script_running && rib_script_hover[0])
+         rib_rmlui_move_pointer_to(rib_script_hover);
       rib_rmlui_pointer_button(pointer_pressed);
 
       if (menu->capture_active && pointer_pressed && !menu->pointer_pressed &&
@@ -1992,8 +2293,12 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
    }
 
    /* Before we empty the queue, so we handle a scripted click in this frame,
-    * in the same loop as a click from the player. */
+    * in the same loop as a click from the player. We put back a hover from
+    * the script after the click, because the pointer move above followed the
+    * mouse and would have removed the hover. */
    rib_rmlui_run_script();
+   if (rib_script_running && rib_script_hover[0])
+      rib_rmlui_move_pointer_to(rib_script_hover);
 
    for (;;)
    {
@@ -2052,6 +2357,7 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
 
    rib_rmlui_reload_if_changed();
    rib_rmlui_refresh_slots();
+   rib_rmlui_update_binds(menu, (int)pointer.x, (int)pointer.y);
    rib_rmlui_render((int)video_info->width, (int)video_info->height);
 
 }

@@ -505,6 +505,7 @@ extern "C" void rib_rmlui_wire_controls(void)
     * We generate the scene markup from the console package, so the elements
     * in the document are the declared controls, however many there are, and
     * their names are not in this code. */
+   std::vector<std::string> wired_groups;
    for (int index = 0; index < rib_rmlui_control_capacity(); ++index)
    {
       const char *control_id = rib_rmlui_control_id(index);
@@ -525,6 +526,26 @@ extern "C" void rib_rmlui_wire_controls(void)
             element->AddEventListener(Rml::EventId::Mouseout,
                   new HoverListener(action));
          }
+      const char *group = rib_rmlui_control_group(index);
+      if (!group || !*group)
+         continue;
+      const std::string name(group);
+      bool seen = false;
+      for (const std::string& wired : wired_groups)
+         if (wired == name)
+            seen = true;
+      if (seen)
+         continue;
+      wired_groups.push_back(name);
+      if (Rml::Element *element = document->GetElementById("control-group-" + name))
+      {
+         element->AddEventListener(Rml::EventId::Click,
+               new ActionListener(action));
+         element->AddEventListener(Rml::EventId::Mouseover,
+               new HoverListener(action));
+         element->AddEventListener(Rml::EventId::Mouseout,
+               new HoverListener(action));
+      }
    }
 
 }
@@ -872,6 +893,14 @@ static bool rib_display_none(Rml::Element *element)
    return property && property->ToString() == "none";
 }
 
+static bool rib_hidden(Rml::Element *element)
+{
+   for (Rml::Element *cursor = element; cursor; cursor = cursor->GetParentNode())
+      if (rib_display_none(cursor))
+         return true;
+   return false;
+}
+
 static void rib_collect(Rml::Element *element, const char *class_name,
       std::vector<Rml::Element*> &out)
 {
@@ -898,7 +927,7 @@ static Rml::Element *rib_visible_list(void)
    std::vector<Rml::Element*> lists;
    rib_collect(document, "list", lists);
    for (Rml::Element *list : lists)
-      if (!rib_under_class_hidden(list, "screen-panel"))
+      if (!rib_hidden(list))
          return list;
    return nullptr;
 }
@@ -912,7 +941,7 @@ static void rib_visible_rows(std::vector<Rml::Element*> &rows)
    std::vector<Rml::Element*> all;
    rib_collect(list, "list-row", all);
    for (Rml::Element *row : all)
-      if (!rib_under_class_hidden(row, "list-page"))
+      if (!rib_under_class_hidden(row, "list-page") && !rib_display_none(row))
          rows.push_back(row);
 }
 
@@ -992,6 +1021,16 @@ extern "C" const char *rib_rmlui_list_row_id(int index)
    return id.c_str();
 }
 
+static bool rib_page_has_row(Rml::Element *page)
+{
+   std::vector<Rml::Element*> rows;
+   rib_collect(page, "list-row", rows);
+   for (Rml::Element *row : rows)
+      if (!rib_display_none(row))
+         return true;
+   return false;
+}
+
 extern "C" int rib_rmlui_turn_list_page(int delta)
 {
    Rml::Element *list = rib_visible_list();
@@ -999,30 +1038,34 @@ extern "C" int rib_rmlui_turn_list_page(int delta)
       return -1;
    std::vector<Rml::Element*> pages;
    rib_collect(list, "list-page", pages);
-   if (pages.size() < 2)
+   std::vector<Rml::Element*> usable;
+   for (Rml::Element *page : pages)
+      if (rib_page_has_row(page))
+         usable.push_back(page);
+   if (usable.size() < 2)
       return -1;
    int current = 0;
-   for (size_t index = 0; index < pages.size(); ++index)
-      if (!rib_display_none(pages[index]))
+   for (size_t index = 0; index < usable.size(); ++index)
+      if (!rib_display_none(usable[index]))
          current = (int)index;
    int next = current + (delta < 0 ? -1 : 1);
    if (next < 0)
-      next = (int)pages.size() - 1;
-   if (next >= (int)pages.size())
+      next = (int)usable.size() - 1;
+   if (next >= (int)usable.size())
       next = 0;
-   for (size_t index = 0; index < pages.size(); ++index)
+   for (size_t index = 0; index < usable.size(); ++index)
    {
       if ((int)index == next)
-         pages[index]->RemoveProperty("display");
+         usable[index]->RemoveProperty("display");
       else
-         pages[index]->SetProperty("display", "none");
+         usable[index]->SetProperty("display", "none");
    }
    std::vector<Rml::Element*> counts;
    rib_collect(list, "list-pager-count", counts);
    if (!counts.empty())
    {
       char label[32];
-      snprintf(label, sizeof(label), "%d / %d", next + 1, (int)pages.size());
+      snprintf(label, sizeof(label), "%d / %d", next + 1, (int)usable.size());
       counts[0]->SetInnerRML(label);
    }
    return next;
@@ -1299,6 +1342,179 @@ extern "C" bool rib_rmlui_reload_if_changed(void)
    document = nullptr;
    Rml::Factory::ClearStyleSheetCache();
    return load_document();
+}
+
+static void rib_set_text(const std::string& id, const char *text)
+{
+   if (!document)
+      return;
+   if (Rml::Element *element = document->GetElementById(id))
+      element->SetInnerRML(Rml::StringUtilities::EncodeRml(text ? text : ""));
+}
+
+extern "C" void rib_rmlui_set_row_text(const char *id, const char *title,
+      const char *detail, const char *state)
+{
+   if (!id || !*id)
+      return;
+   const std::string row(id);
+   rib_set_text(row + "-title", title);
+   rib_set_text(row + "-detail", detail);
+   rib_set_text(row + "-state", state);
+}
+
+extern "C" void rib_rmlui_set_shown(const char *id, bool shown)
+{
+   if (!document || !id)
+      return;
+   if (Rml::Element *element = document->GetElementById(id))
+   {
+      if (shown)
+         element->RemoveProperty("display");
+      else
+         element->SetProperty("display", "none");
+   }
+}
+
+static Rml::Element *rib_list_element(const char *list_id)
+{
+   if (!document || !list_id || !*list_id)
+      return nullptr;
+   return document->GetElementById(list_id);
+}
+
+extern "C" int rib_rmlui_rows_in(const char *list_id)
+{
+   std::vector<Rml::Element*> rows;
+   rib_collect(rib_list_element(list_id), "list-row", rows);
+   return (int)rows.size();
+}
+
+extern "C" const char *rib_rmlui_row_in(const char *list_id, int index)
+{
+   static std::string id;
+   std::vector<Rml::Element*> rows;
+   rib_collect(rib_list_element(list_id), "list-row", rows);
+   id.clear();
+   if (index >= 0 && index < (int)rows.size())
+      id = rows[index]->GetId();
+   return id.c_str();
+}
+
+extern "C" void rib_rmlui_retarget_pages(const char *list_id)
+{
+   Rml::Element *list = rib_list_element(list_id);
+   if (!list)
+      return;
+   std::vector<Rml::Element*> pages;
+   rib_collect(list, "list-page", pages);
+   std::vector<Rml::Element*> usable;
+   for (Rml::Element *page : pages)
+   {
+      if (rib_page_has_row(page))
+         usable.push_back(page);
+      else
+         page->SetProperty("display", "none");
+   }
+   for (size_t index = 0; index < usable.size(); ++index)
+   {
+      if (index == 0)
+         usable[index]->RemoveProperty("display");
+      else
+         usable[index]->SetProperty("display", "none");
+   }
+   std::vector<Rml::Element*> pagers;
+   rib_collect(list, "list-pager", pagers);
+   if (pagers.empty())
+      return;
+   if (usable.size() < 2)
+   {
+      pagers[0]->SetProperty("display", "none");
+      return;
+   }
+   pagers[0]->RemoveProperty("display");
+   std::vector<Rml::Element*> counts;
+   rib_collect(list, "list-pager-count", counts);
+   if (!counts.empty())
+   {
+      char label[32];
+      snprintf(label, sizeof(label), "1 / %d", (int)usable.size());
+      counts[0]->SetInnerRML(label);
+   }
+}
+
+extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
+      int width_dp)
+{
+   Rml::Element *list = rib_list_element(list_id);
+   Rml::Element *anchor = document && anchor_id ? document->GetElementById(anchor_id) : nullptr;
+   Rml::Element *screen = document ? document->GetElementById("screen") : nullptr;
+   if (!list || !context)
+      return;
+   list->RemoveProperty("display");
+   if (width_dp > 0)
+      list->SetProperty("width", std::to_string(width_dp) + "dp");
+   if (!anchor || !screen)
+      return;
+   context->Update();
+   const Rml::Vector2f screen_at = screen->GetAbsoluteOffset(Rml::BoxArea::Border);
+   const Rml::Vector2f anchor_at = anchor->GetAbsoluteOffset(Rml::BoxArea::Border);
+   const Rml::Vector2f anchor_size = anchor->GetBox().GetSize(Rml::BoxArea::Border);
+   const Rml::Vector2f list_size = list->GetBox().GetSize(Rml::BoxArea::Border);
+   const Rml::Vector2f screen_size = screen->GetBox().GetSize(Rml::BoxArea::Border);
+   float left = anchor_at.x - screen_at.x;
+   float top = anchor_at.y - screen_at.y + anchor_size.y + 4.f;
+   if (top + list_size.y > screen_size.y - 8.f)
+      top = anchor_at.y - screen_at.y - list_size.y - 4.f;
+   if (top < 8.f)
+      top = 8.f;
+   if (left + list_size.x > screen_size.x - 8.f)
+      left = screen_size.x - list_size.x - 8.f;
+   if (left < 8.f)
+      left = 8.f;
+   list->SetProperty("left", std::to_string((int)left) + "px");
+   list->SetProperty("top", std::to_string((int)top) + "px");
+}
+
+extern "C" bool rib_rmlui_pointer_inside(const char *id, int x, int y)
+{
+   if (!document || !context || !id)
+      return false;
+   Rml::Element *element = document->GetElementById(id);
+   if (!element || rib_hidden(element))
+      return false;
+   context->Update();
+   const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+   const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
+   return x >= (int)offset.x && x < (int)(offset.x + size.x)
+         && y >= (int)offset.y && y < (int)(offset.y + size.y);
+}
+
+extern "C" bool rib_rmlui_move_pointer_to(const char *id)
+{
+   int x = 0;
+   int y = 0;
+   if (!rib_rmlui_element_center(id, &x, &y))
+      return false;
+   rib_rmlui_pointer_move(x, y);
+   return true;
+}
+
+extern "C" bool rib_rmlui_has_element(const char *id)
+{
+   return document && id && document->GetElementById(id);
+}
+
+extern "C" void rib_rmlui_focus_group(const char *group)
+{
+   if (!document)
+      return;
+   std::vector<Rml::Element*> groups;
+   rib_collect(document, "control-group", groups);
+   const std::string wanted = group && *group
+         ? std::string("control-group-") + group : std::string();
+   for (Rml::Element *element : groups)
+      element->SetClass("focused", !wanted.empty() && element->GetId() == wanted);
 }
 
 #ifdef RIB_RMLUI_HEADLESS
