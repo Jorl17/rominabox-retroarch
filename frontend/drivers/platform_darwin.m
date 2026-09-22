@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -406,6 +407,14 @@ static void frontend_darwin_get_env(int *argc, char *argv[],
    char documents_dir_buf[DIR_MAX_LENGTH]  = {0};
    char application_data[PATH_MAX_LENGTH]  = {0};
    const char *data_root                    = getenv("ROMINABOX_DATA_DIR");
+#if defined(OSX)
+   if (!data_root || data_root[0] != '/')
+   {
+      fprintf(stderr,
+            "ROM-in-a-Box: ROMINABOX_DATA_DIR must be set to an absolute path.\n");
+      exit(1);
+   }
+#endif
    bool data_root_override                  = data_root && data_root[0] == '/';
    CFBundleRef bundle                      = CFBundleGetMainBundle();
 

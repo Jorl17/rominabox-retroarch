@@ -498,10 +498,19 @@ static void rib_rmlui_discover_binds(const char *asset_directory)
    config_file_free(config);
 }
 
+static const char *rib_absolute_data_dir(void)
+{
+   const char *data = getenv("ROMINABOX_DATA_DIR");
+
+   if (!data || data[0] != '/')
+      return NULL;
+   return data;
+}
+
 /* Where we store the position of a switch, in the game's storage. */
 static bool rib_toggle_path(const char *id, char *out, size_t length)
 {
-   const char *data = getenv("ROMINABOX_DATA_DIR");
+   const char *data = rib_absolute_data_dir();
 
    if (!data || !*data || !id || !*id)
       return false;
@@ -1570,7 +1579,7 @@ static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id
 {
    settings_t *settings = config_get_ptr();
    const char *assets = getenv("ROMINABOX_RML_ASSETS");
-   const char *data = getenv("ROMINABOX_DATA_DIR");
+   const char *data = rib_absolute_data_dir();
    char absolute[PATH_MAX_LENGTH];
    char choice_path[PATH_MAX_LENGTH];
    char body[PATH_MAX_LENGTH + 2];
@@ -2595,7 +2604,7 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
    rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)data;
    menu_input_pointer_t pointer;
    const char *asset_directory = getenv("ROMINABOX_RML_ASSETS");
-   const char *data_directory = getenv("ROMINABOX_DATA_DIR");
+   const char *data_directory = rib_absolute_data_dir();
 
    if (!menu || !video_info)
       return;
