@@ -200,6 +200,12 @@ bool rib_rmlui_slots_guarded(void);
 void rib_rmlui_wire_lists(void);
 int rib_rmlui_visible_row_count(void);
 void rib_rmlui_focus_list_row(int index);
+/* The controls on a list screen that are not rows: its switch and its back
+ * button, in the order we draw them. With the keyboard the player moves past
+ * the last row onto these, so a switch is not only for a pointer. */
+int rib_rmlui_list_control_count(void);
+const char *rib_rmlui_list_control_id(int index);
+void rib_rmlui_focus_list_control(int index);
 const char *rib_rmlui_list_row_id(int index);
 /* -1 when the visible list has a single page. Otherwise the new page index. */
 int rib_rmlui_turn_list_page(int delta);

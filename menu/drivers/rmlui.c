@@ -1365,6 +1365,26 @@ static void rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id
    rib_rmlui_mark_row(id, menu->shader_state_on, menu->shader_state_off);
 }
 
+/* The position of the keyboard focus on a list screen. The rows come first, then
+ * the other controls of the screen, so moving down past the last row reaches the
+ * switch and BACK. A player with a pad could not use a switch that only a
+ * pointer can reach. */
+static void rib_rmlui_focus_list(rib_rmlui_menu_t *menu)
+{
+   const int rows = rib_rmlui_visible_row_count();
+
+   if (!menu)
+      return;
+   if (menu->list_focus < rows)
+   {
+      rib_rmlui_focus_list_row(menu->list_focus);
+      rib_rmlui_focus_list_control(-1);
+      return;
+   }
+   rib_rmlui_focus_list_row(-1);
+   rib_rmlui_focus_list_control(menu->list_focus - rows);
+}
+
 static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
 {
    settings_t *settings = config_get_ptr();
@@ -1409,7 +1429,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       if (rib_rmlui_turn_list_page(delta) >= 0)
       {
          menu->list_focus = 0;
-         rib_rmlui_focus_list_row(0);
+         rib_rmlui_focus_list(menu);
       }
       return;
    }
@@ -1457,7 +1477,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
          else if (menu->capture_active)
             rib_rmlui_cancel_capture(menu, "BINDING UNCHANGED");
          else if (!string_is_equal(wanted, "pause"))
-            rib_rmlui_focus_list_row(0);
+            rib_rmlui_focus_list(menu);
       }
       rib_rmlui_play_action_sound(action);
       return;
@@ -2004,23 +2024,25 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
    {
       int rows = rib_rmlui_visible_row_count();
 
+      const int stops = rows + rib_rmlui_list_control_count();
+
       switch (action)
       {
          case MENU_ACTION_UP:
-            if (rows > 0)
+            if (stops > 0)
             {
-               menu->list_focus = (menu->list_focus + rows - 1) % rows;
-               rib_rmlui_focus_list_row(menu->list_focus);
+               menu->list_focus = (menu->list_focus + stops - 1) % stops;
+               rib_rmlui_focus_list(menu);
 #ifdef HAVE_AUDIOMIXER
                audio_driver_mixer_play_scroll_sound(true);
 #endif
             }
             return 0;
          case MENU_ACTION_DOWN:
-            if (rows > 0)
+            if (stops > 0)
             {
-               menu->list_focus = (menu->list_focus + 1) % rows;
-               rib_rmlui_focus_list_row(menu->list_focus);
+               menu->list_focus = (menu->list_focus + 1) % stops;
+               rib_rmlui_focus_list(menu);
 #ifdef HAVE_AUDIOMIXER
                audio_driver_mixer_play_scroll_sound(false);
 #endif
@@ -2030,7 +2052,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
             if (rib_rmlui_turn_list_page(-1) >= 0)
             {
                menu->list_focus = 0;
-               rib_rmlui_focus_list_row(0);
+               rib_rmlui_focus_list(menu);
                rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
             }
             return 0;
@@ -2038,13 +2060,20 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
             if (rib_rmlui_turn_list_page(1) >= 0)
             {
                menu->list_focus = 0;
-               rib_rmlui_focus_list_row(0);
+               rib_rmlui_focus_list(menu);
                rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
             }
             return 0;
          case MENU_ACTION_OK:
          case MENU_ACTION_SELECT:
-            if (rows > 0)
+            if (menu->list_focus >= rows)
+            {
+               /* Through the listener on the element, the same path as for a
+                * pointer, which already has the code for the switch and BACK. */
+               rib_rmlui_click_element(
+                     rib_rmlui_list_control_id(menu->list_focus - rows));
+            }
+            else if (rows > 0)
             {
                rib_rmlui_remember_item(rib_rmlui_list_row_id(menu->list_focus));
                rib_rmlui_perform_action(menu, RIB_RMLUI_ACTION_LIST_CHOOSE);

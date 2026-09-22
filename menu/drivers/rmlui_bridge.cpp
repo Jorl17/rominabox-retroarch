@@ -1048,6 +1048,45 @@ extern "C" void rib_rmlui_focus_list_row(int index)
       rows[index]->SetClass("focused", true);
 }
 
+/* The panel of the visible list, so a control is part of the screen shown. */
+static void rib_visible_controls(std::vector<Rml::Element*> &out)
+{
+   out.clear();
+   Rml::Element *panel = rib_visible_list();
+   while (panel && !panel->IsClassSet("screen-panel"))
+      panel = panel->GetParentNode();
+   if (!panel)
+      return;
+   rib_collect(panel, "list-toggle", out);
+   rib_collect(panel, "list-back", out);
+}
+
+extern "C" int rib_rmlui_list_control_count(void)
+{
+   std::vector<Rml::Element*> controls;
+   rib_visible_controls(controls);
+   return (int)controls.size();
+}
+
+extern "C" const char *rib_rmlui_list_control_id(int index)
+{
+   static std::string id;
+   std::vector<Rml::Element*> controls;
+   rib_visible_controls(controls);
+   id.clear();
+   if (index >= 0 && index < (int)controls.size())
+      id = controls[index]->GetId();
+   return id.c_str();
+}
+
+extern "C" void rib_rmlui_focus_list_control(int index)
+{
+   std::vector<Rml::Element*> controls;
+   rib_visible_controls(controls);
+   for (size_t at = 0; at < controls.size(); ++at)
+      controls[at]->SetClass("focused", (int)at == index);
+}
+
 extern "C" const char *rib_rmlui_list_row_id(int index)
 {
    static std::string id;
