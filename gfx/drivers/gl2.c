@@ -3109,8 +3109,22 @@ static bool gl2_shader_init(gl2_t *gl, const gfx_ctx_driver_t *ctx_driver,
 
 #ifdef HAVE_GLSL
    if (type == RARCH_SHADER_GLSL)
+   {
+      unsigned major = hwr->version_major;
+      unsigned minor = hwr->version_minor;
+
+      /* Pass the version from glGetString, as in gl3. On macOS the context
+       * can have a different version from the one requested for the core
+       * (for example 4.1 for a request for 3.2), and the shader version
+       * has to be one that the context supports. */
+      if ((gl->flags & GL2_FLAG_CORE_CONTEXT_IN_USE) && gl->version_major > 0)
+      {
+         major = (unsigned)gl->version_major;
+         minor = (unsigned)gl->version_minor;
+      }
       gl_glsl_set_context_type(gl->flags & GL2_FLAG_CORE_CONTEXT_IN_USE,
-            hwr->version_major, hwr->version_minor);
+            major, minor);
+   }
 #endif
 
    init_data.gl.core_context_enabled = (gl->flags & GL2_FLAG_CORE_CONTEXT_IN_USE) ? true : false;
