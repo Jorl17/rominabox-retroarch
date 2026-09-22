@@ -1973,8 +1973,6 @@ static void rib_rmlui_run_overlays(void)
    }
 }
 
-}
-
 /* One line for each input in a retro_keybind. We read each field separately,
  * because with a comma inside a name, splitting a joined string would be
  * ambiguous. */
