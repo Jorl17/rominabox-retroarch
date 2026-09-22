@@ -180,6 +180,7 @@ static retro_time_t rib_script_wait_until;
 static bool rib_script_running;
 
 static void rib_rmlui_refresh_controls(rib_rmlui_menu_t *menu);
+static void rib_focus_control(rib_rmlui_menu_t *menu, int index);
 static void rib_callout_text(const rib_rmlui_menu_t *menu, int index,
       char *out, size_t length);
 static void rib_rmlui_cancel_capture(rib_rmlui_menu_t *menu, const char *status);
@@ -1135,8 +1136,7 @@ static void rib_rmlui_reload_controls(rib_rmlui_menu_t *menu)
    if (menu->controls_path[0])
       rib_rmlui_load_controls_file(menu, menu->controls_path, false);
    rib_rmlui_wire_controls();
-   menu->control_focus = rib_control_first(menu);
-   menu->selected_control = menu->control_focus;
+   rib_focus_control(menu, rib_control_first(menu));
    rib_rmlui_refresh_controls(menu);
 }
 
@@ -1879,8 +1879,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
          menu->list_focus = 0;
          if (menu->controls_visible)
          {
-            menu->control_focus = rib_control_first(menu);
-            menu->selected_control = menu->control_focus;
+            rib_focus_control(menu, rib_control_first(menu));
             rib_rmlui_set_controls_status("SELECT A CONTROL TO REBIND");
             rib_rmlui_refresh_controls(menu);
          }
@@ -2007,9 +2006,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       if (rib_control_is_active(menu, control_index))
       {
          rib_rmlui_play_action_sound(action);
-         menu->control_focus = control_index;
-         menu->selected_control = control_index;
-         rib_rmlui_refresh_controls(menu);
+         rib_focus_control(menu, control_index);
          rib_rmlui_start_capture(menu, control_index);
       }
       return;
@@ -2073,8 +2070,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
          strlcpy(menu->screen, "controls", sizeof(menu->screen));
          menu->controls_visible = true;
          strlcpy(menu->screen, "controls", sizeof(menu->screen));
-         menu->control_focus = rib_control_first(menu);
-         menu->selected_control = menu->control_focus;
+         rib_focus_control(menu, rib_control_first(menu));
          /* The heading and the footer are in the design, with the
           * screen. */
          rib_rmlui_show_screen("controls");
@@ -2728,6 +2724,26 @@ static void rib_hide_binds(void)
    rib_binds_open = false;
 }
 
+/* The one place where we set which control is current, as for the pause row.
+ *
+ * There is one selection for the keys and the pointer. As in the pause row,
+ * we write the index from the pointer and read it for the keys, so only one
+ * control looks selected. We play no scroll sound for the pointer, because
+ * moving the pointer is not a key press. */
+static void rib_focus_control(rib_rmlui_menu_t *menu, int index)
+{
+   if (!menu || index == menu->control_focus)
+      return;
+   if (index < 0 || index > RIB_CONTROL_MAX + 1)
+      return;
+   if (index < RIB_CONTROL_MAX && !rib_control_is_active(menu, index))
+      return;
+   menu->control_focus = index;
+   if (index < RIB_CONTROL_MAX)
+      menu->selected_control = index;
+   rib_rmlui_refresh_controls(menu);
+}
+
 static void rib_rmlui_update_binds(rib_rmlui_menu_t *menu, int x, int y)
 {
    int current = -1;
@@ -2751,7 +2767,21 @@ static void rib_rmlui_update_binds(rib_rmlui_menu_t *menu, int x, int y)
       hovered = rib_rmlui_hovered_action();
       if (hovered >= RIB_RMLUI_ACTION_CONTROL_FIRST
             && hovered <= RIB_RMLUI_ACTION_CONTROL_LAST)
-         current = hovered - RIB_RMLUI_ACTION_CONTROL_FIRST;
+      {
+         const int index = hovered - RIB_RMLUI_ACTION_CONTROL_FIRST;
+         if (rib_control_is_active(menu, index))
+         {
+            rib_focus_control(menu, index);
+            current = index;
+         }
+      }
+      else if (hovered == RIB_RMLUI_ACTION_CONTROLS_RESET
+            || hovered == RIB_RMLUI_ACTION_CONTROLS_BACK)
+      {
+         rib_focus_control(menu, hovered == RIB_RMLUI_ACTION_CONTROLS_RESET
+               ? RIB_CONTROL_MAX : RIB_CONTROL_MAX + 1);
+         current = -1;
+      }
    }
    if (current < 0 && menu->control_focus >= 0
          && menu->control_focus < menu->control_count)
@@ -2825,8 +2855,7 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
          }
          menu->controls_loaded = true;
       }
-      menu->control_focus = rib_control_first(menu);
-      menu->selected_control = menu->control_focus;
+      rib_focus_control(menu, rib_control_first(menu));
       rib_rmlui_refresh_controls(menu);
       rib_rmlui_set_slider_step(RIB_VOLUME_SLIDER_ID,
             AUDIO_VOLUME_STEP_DB
@@ -3147,25 +3176,19 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
       {
          case MENU_ACTION_UP:
          case MENU_ACTION_LEFT:
-            menu->control_focus = rib_control_step(menu,
-                  menu->control_focus, -1);
 #ifdef HAVE_AUDIOMIXER
             audio_driver_mixer_play_scroll_sound(true);
 #endif
-            if (menu->control_focus < RIB_CONTROL_MAX)
-               menu->selected_control = menu->control_focus;
-            rib_rmlui_refresh_controls(menu);
+            rib_focus_control(menu, rib_control_step(menu,
+                  menu->control_focus, -1));
             return 0;
          case MENU_ACTION_DOWN:
          case MENU_ACTION_RIGHT:
-            menu->control_focus = rib_control_step(menu,
-                  menu->control_focus, 1);
 #ifdef HAVE_AUDIOMIXER
             audio_driver_mixer_play_scroll_sound(false);
 #endif
-            if (menu->control_focus < RIB_CONTROL_MAX)
-               menu->selected_control = menu->control_focus;
-            rib_rmlui_refresh_controls(menu);
+            rib_focus_control(menu, rib_control_step(menu,
+                  menu->control_focus, 1));
             return 0;
          case MENU_ACTION_OK:
          case MENU_ACTION_SELECT:

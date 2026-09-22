@@ -2244,18 +2244,55 @@ static void rib_clamp_border(float &x, float &y, float w, float h,
       y = min_y;
 }
 
-static int rib_labels_covered(const char *anchor_id,
-      float left, float top, float width, float height)
+/* What a list must not cover.
+ *
+ * A callout or a stick group is a label. When every side covers one, we put
+ * the list on the side that covers the fewest. The buttons of the screen, the
+ * status line and the footer are not labels, and the list may never cover
+ * them. We skip the pager, also a menu-action, because it is in the list. */
+struct rib_keep_clear
 {
-   int covered = 0;
+   const char *name;
+   bool id;
+   bool label;
+};
+
+static const rib_keep_clear rib_keep_clear_rules[] = {
+   {"control-callout", false, true},
+   {"control-group", false, true},
+   {"menu-action", false, false},
+   {"controls-status", true, false},
+   {"footer", true, false},
+};
+
+static bool rib_under(Rml::Element *ancestor, Rml::Element *element)
+{
+   for (Rml::Element *node = element; node; node = node->GetParentNode())
+      if (node == ancestor)
+         return true;
+   return false;
+}
+
+static void rib_count_covered(Rml::Element *list, const char *anchor_id,
+      float left, float top, float width, float height,
+      int &labels, int &chrome)
+{
+   labels = 0;
+   chrome = 0;
    std::set<Rml::String> seen;
-   for (const char *cls : {"control-callout", "control-group"})
+   for (const rib_keep_clear &rule : rib_keep_clear_rules)
    {
       std::vector<Rml::Element*> found;
-      rib_collect(document, cls, found);
+      if (rule.id)
+      {
+         if (Rml::Element *element = document->GetElementById(rule.name))
+            found.push_back(element);
+      }
+      else
+         rib_collect(document, rule.name, found);
       for (Rml::Element *element : found)
       {
-         if (!element || rib_hidden(element))
+         if (!element || rib_hidden(element) || (list && rib_under(list, element)))
             continue;
          const Rml::String id = element->GetId();
          if (id.empty() || (anchor_id && id == anchor_id) || !seen.insert(id).second)
@@ -2264,10 +2301,14 @@ static int rib_labels_covered(const char *anchor_id,
          const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
          if (at.x < left + width && at.x + size.x > left
                && at.y < top + height && at.y + size.y > top)
-            ++covered;
+         {
+            if (rule.label)
+               ++labels;
+            else
+               ++chrome;
+         }
       }
    }
-   return covered;
 }
 
 extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
@@ -2308,21 +2349,27 @@ extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
    const float beside_x = scene_cx >= anchor_cx
          ? anchor_at.x + anchor_size.x + gap
          : anchor_at.x - list_size.x - gap;
-   const float spots[][2] = {
+   const float away_x = scene_cx >= anchor_cx
+         ? anchor_at.x - list_size.x - gap
+         : anchor_at.x + anchor_size.x + gap;
+   std::vector<std::pair<float, float>> spots = {
       {beside_x, anchor_at.y},
       {anchor_at.x, anchor_at.y + anchor_size.y + gap},
       {anchor_at.x, anchor_at.y - list_size.y - gap},
+      {away_x, anchor_at.y},
    };
 
    float best_x = anchor_at.x;
    float best_y = anchor_at.y + anchor_size.y + gap;
-   int best_cover = 1000000;
+   int best_labels = 1000000;
+   int best_chrome = 1000000;
    bool best_inside = false;
-   bool chosen = false;
-   for (const float (&spot)[2] : spots)
+   bool have = false;
+   bool settled = false;
+   for (size_t index = 0; index < spots.size() && !settled; ++index)
    {
-      float x = spot[0];
-      float y = spot[1];
+      float x = spots[index].first;
+      float y = spots[index].second;
       rib_clamp_border(x, y, paint_w, paint_h, screen_at, screen_size);
       /* Clamping moves the border box of the list. Children that extend past
        * it must stay inside the same margin, so we test the painted area. */
@@ -2333,22 +2380,65 @@ extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
             && paint_y >= screen_at.y + 8.f - 0.5f
             && paint_x + paint_w <= screen_at.x + screen_size.x - 8.f + 0.5f
             && paint_y + paint_h <= screen_at.y + screen_size.y - 8.f + 0.5f;
-      const int cover = rib_labels_covered(anchor_id, paint_x, paint_y,
-            paint_w, paint_h);
-      if (inside && cover == 0)
+      int labels = 0;
+      int chrome = 0;
+      rib_count_covered(list, anchor_id, paint_x, paint_y, paint_w, paint_h,
+            labels, chrome);
+      if (inside && chrome == 0 && labels == 0)
       {
          best_x = x;
          best_y = y;
-         chosen = true;
+         settled = true;
          break;
       }
-      if (!chosen && (best_cover == 1000000 || (inside && !best_inside)
-            || (inside == best_inside && cover < best_cover)))
+      const bool better = !have
+            || (inside && !best_inside)
+            || (inside == best_inside && chrome < best_chrome)
+            || (inside == best_inside && chrome == best_chrome && labels < best_labels);
+      if (better)
       {
          best_x = x;
          best_y = y;
-         best_cover = cover;
+         best_labels = labels;
+         best_chrome = chrome;
          best_inside = inside;
+         have = true;
+      }
+      /* We try the three sides first. Only when each of them covers a button,
+       * the status line or the footer do we look for a place clear of those.
+       * When we count what a side covers, we still count only labels. */
+      if (index == 3 && (best_chrome > 0 || best_labels > 0))
+      {
+         for (const rib_keep_clear &rule : rib_keep_clear_rules)
+         {
+            if (rule.label)
+               continue;
+            std::vector<Rml::Element*> found;
+            if (rule.id)
+            {
+               if (Rml::Element *element = document->GetElementById(rule.name))
+                  found.push_back(element);
+            }
+            else
+               rib_collect(document, rule.name, found);
+            for (Rml::Element *element : found)
+            {
+               if (!element || rib_hidden(element) || rib_under(list, element))
+                  continue;
+               const float top = element->GetAbsoluteOffset(Rml::BoxArea::Border).y;
+               spots.emplace_back(beside_x, top - paint_h - gap);
+               spots.emplace_back(anchor_at.x, top - paint_h - gap);
+               spots.emplace_back(away_x, top - paint_h - gap);
+            }
+         }
+         const float min_y = screen_at.y + 8.f;
+         const float max_y = screen_at.y + screen_size.y - 8.f - paint_h;
+         for (float scan_y = min_y; scan_y <= max_y; scan_y += 24.f)
+         {
+            spots.emplace_back(beside_x, scan_y);
+            spots.emplace_back(anchor_at.x, scan_y);
+            spots.emplace_back(away_x, scan_y);
+         }
       }
    }
    rib_set_border_position(list, best_x, best_y);
@@ -2367,9 +2457,12 @@ extern "C" int rib_rmlui_controls_covered(const char *anchor_id,
    if (!screen)
       return 0;
    const Rml::Vector2f origin = screen->GetAbsoluteOffset(Rml::BoxArea::Border);
-   return rib_labels_covered(anchor_id,
+   int labels = 0;
+   int chrome = 0;
+   rib_count_covered(nullptr, anchor_id,
          origin.x + (float)left, origin.y + (float)top,
-         (float)width, (float)height);
+         (float)width, (float)height, labels, chrome);
+   return labels;
 }
 
 extern "C" bool rib_rmlui_pointer_inside(const char *id, int x, int y)
