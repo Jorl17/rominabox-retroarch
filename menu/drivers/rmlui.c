@@ -94,6 +94,9 @@ typedef struct rib_rmlui_menu
    bool controls_visible;
    bool controls_loaded;
    int panel_focus;
+   /* Which button of the pause row is focused, as an index into that row,
+    * or -1 while a save slot is focused instead. */
+   int row_focus;
    char volume_path[PATH_MAX_LENGTH];
    bool capture_active;
    int capture_control;
@@ -798,6 +801,64 @@ static int rib_control_step(const rib_rmlui_menu_t *menu,
    return sequence[position];
 }
 
+/* The buttons of the pause row, in document order, without the disabled
+ * ones.
+ *
+ * The pause row contains what the design and the export put in it. With
+ * Options on, Options is the fourth button, and a game without Options has
+ * one button fewer.
+ *
+ * We leave disabled buttons out of the list and do not skip them when the
+ * focus reaches them, because LOAD is disabled until there is a save.
+ */
+static int rib_pause_row(char ids[][64], int capacity)
+{
+   char all[16][64];
+   int found = rib_rmlui_focusables("pause-panel", all, 16);
+   int count = 0;
+   int index;
+
+   for (index = 0; index < found && count < capacity; ++index)
+   {
+      if (rib_rmlui_element_disabled(all[index]))
+         continue;
+      strlcpy(ids[count], all[index], 64);
+      ++count;
+   }
+   return count;
+}
+
+/* The position of the focused button in that row now. The row can change while
+ * a button is focused, for example LOAD becomes usable once a slot has a save,
+ * so we look it up on every move and do not store it. */
+static int rib_pause_row_index(const char ids[][64], int count)
+{
+   const char *focused = rib_rmlui_focused_element();
+   int index;
+
+   if (focused && *focused)
+      for (index = 0; index < count; ++index)
+         if (string_is_equal(ids[index], focused))
+            return index;
+   return 0;
+}
+
+static void rib_pause_focus_row(rib_rmlui_menu_t *menu, int index,
+      bool direction_up)
+{
+   char ids[16][64];
+   const int count = rib_pause_row(ids, 16);
+
+   if (count <= 0)
+      return;
+   index = ((index % count) + count) % count;
+   menu->row_focus = index;
+   rib_rmlui_focus_element(ids[index]);
+#ifdef HAVE_AUDIOMIXER
+   audio_driver_mixer_play_scroll_sound(direction_up);
+#endif
+}
+
 static bool rib_rmlui_focus_is_slot(int focused)
 {
    return focused >= RIB_RMLUI_ACTION_SELECT_SLOT_1 &&
@@ -832,6 +893,9 @@ static void rib_rmlui_focus(rib_rmlui_menu_t *menu, int focused,
             RIB_RMLUI_ACTION_CONTROLS;
    changed = menu->focused != focused;
    menu->focused = focused;
+   /* Focusing an action or a slot here moves the focus off the row. We track
+    * the row by id, not by this enum. */
+   menu->row_focus = -1;
    rib_rmlui_set_focused(focused);
    if (rib_rmlui_focus_is_slot(focused))
       rib_rmlui_select_slot(menu, rib_rmlui_focus_slot(focused));
@@ -1232,6 +1296,8 @@ static void rib_rmlui_reset_interaction(rib_rmlui_menu_t *menu, bool opening)
    menu->pointer_pressed = false;
    menu->capture_ignore_pointer = false;
    menu->focused = RIB_RMLUI_ACTION_RESUME;
+   /* When the menu opens, we focus the first button of the row, not a slot. */
+   menu->row_focus = 0;
    rib_rmlui_clear_intents();
    rib_rmlui_pointer_leave();
    if (opening)
@@ -2022,6 +2088,7 @@ static void *rib_rmlui_menu_init(void **userdata, bool video_is_threaded)
 
    menu->selected_slot = 1;
    menu->focused = RIB_RMLUI_ACTION_RESUME;
+   menu->row_focus = 0;
    strlcpy(menu->screen, "pause", sizeof(menu->screen));
    rib_rmlui_active_menu = menu;
    *userdata = menu;
@@ -3027,41 +3094,54 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
    switch (action)
    {
       case MENU_ACTION_UP:
-         if (rib_rmlui_focus_is_slot(menu->focused))
+         if (menu->row_focus < 0)
          {
             int slot = rib_rmlui_focus_slot(menu->focused);
             if (slot > 3)
                rib_rmlui_focus(menu, menu->focused - 3, true);
             else
-               rib_rmlui_focus(menu, RIB_RMLUI_ACTION_RESUME + slot - 1, true);
+            {
+               /* From the top row of slots to the buttons, in the column of
+                * the slot. When the row has fewer than three buttons, we
+                * focus its last button. */
+               char ids[16][64];
+               const int count = rib_pause_row(ids, 16);
+               rib_pause_focus_row(menu,
+                     slot - 1 < count ? slot - 1 : count - 1, true);
+            }
          }
          else
          {
-            int action_index = menu->focused - RIB_RMLUI_ACTION_RESUME;
-            int slot = 4 + (action_index > 2 ? 2 : action_index);
+            const int column = menu->row_focus > 2 ? 2 : menu->row_focus;
+            menu->row_focus = -1;
             rib_rmlui_focus(menu,
-                  RIB_RMLUI_ACTION_SELECT_SLOT_1 + slot - 1, true);
+                  RIB_RMLUI_ACTION_SELECT_SLOT_1 + 3 + column, true);
          }
          return 0;
       case MENU_ACTION_DOWN:
-         if (rib_rmlui_focus_is_slot(menu->focused))
+         if (menu->row_focus < 0)
          {
             int slot = rib_rmlui_focus_slot(menu->focused);
             if (slot <= 3)
                rib_rmlui_focus(menu, menu->focused + 3, false);
             else
-               rib_rmlui_focus(menu, RIB_RMLUI_ACTION_RESUME + slot - 4, false);
+            {
+               char ids[16][64];
+               const int count = rib_pause_row(ids, 16);
+               rib_pause_focus_row(menu,
+                     slot - 4 < count ? slot - 4 : count - 1, false);
+            }
          }
          else
          {
-            int action_index = menu->focused - RIB_RMLUI_ACTION_RESUME;
-            int slot = 1 + (action_index > 2 ? 2 : action_index);
+            const int column = menu->row_focus > 2 ? 2 : menu->row_focus;
+            menu->row_focus = -1;
             rib_rmlui_focus(menu,
-                  RIB_RMLUI_ACTION_SELECT_SLOT_1 + slot - 1, false);
+                  RIB_RMLUI_ACTION_SELECT_SLOT_1 + column, false);
          }
          return 0;
       case MENU_ACTION_LEFT:
-         if (rib_rmlui_focus_is_slot(menu->focused))
+         if (menu->row_focus < 0)
          {
             int slot = rib_rmlui_focus_slot(menu->focused);
             int row_start = slot <= 3 ? 1 : 4;
@@ -3070,11 +3150,15 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
                   RIB_RMLUI_ACTION_SELECT_SLOT_1 + slot - 1, true);
          }
          else
-            rib_rmlui_focus(menu, menu->focused == RIB_RMLUI_ACTION_RESUME
-                  ? RIB_RMLUI_ACTION_QUIT : menu->focused - 1, true);
+         {
+            char ids[16][64];
+            const int count = rib_pause_row(ids, 16);
+            rib_pause_focus_row(menu,
+                  rib_pause_row_index((const char (*)[64])ids, count) - 1, true);
+         }
          return 0;
       case MENU_ACTION_RIGHT:
-         if (rib_rmlui_focus_is_slot(menu->focused))
+         if (menu->row_focus < 0)
          {
             int slot = rib_rmlui_focus_slot(menu->focused);
             int row_end = slot <= 3 ? 3 : 6;
@@ -3083,12 +3167,28 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
                   RIB_RMLUI_ACTION_SELECT_SLOT_1 + slot - 1, false);
          }
          else
-            rib_rmlui_focus(menu, menu->focused == RIB_RMLUI_ACTION_QUIT
-                  ? RIB_RMLUI_ACTION_RESUME : menu->focused + 1, false);
+         {
+            char ids[16][64];
+            const int count = rib_pause_row(ids, 16);
+            rib_pause_focus_row(menu,
+                  rib_pause_row_index((const char (*)[64])ids, count) + 1, false);
+         }
          return 0;
       case MENU_ACTION_OK:
       case MENU_ACTION_SELECT:
-         rib_rmlui_perform_action(menu, menu->focused);
+         if (menu->row_focus < 0)
+            rib_rmlui_perform_action(menu, menu->focused);
+         else
+         {
+            /* Press the element itself, so a button from the design opens what
+             * its listener opens, without its name in this code. */
+            char ids[16][64];
+            const int count = rib_pause_row(ids, 16);
+            const int index =
+                  rib_pause_row_index((const char (*)[64])ids, count);
+            if (count > 0)
+               rib_rmlui_click_element(ids[index]);
+         }
          return 0;
       case MENU_ACTION_CANCEL:
       case MENU_ACTION_RESUME:

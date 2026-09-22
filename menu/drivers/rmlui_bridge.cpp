@@ -308,6 +308,12 @@ void expire_status(StatusMessage& message, const char *id)
 float game_aspect = 4.0f / 3.0f;
 int selected_slot = 1;
 int focused_item = RIB_RMLUI_ACTION_RESUME;
+/* Which button on the pause row is focused, by id.
+ *
+ * The pause row contains what the design and the export put in it. With
+ * Options on, the fourth button is `options`, not `controls`. So we track the
+ * focus by element id and not by a fixed table of actions. */
+std::string focused_element = "resume";
 struct SlotState
 {
    bool occupied = false;
@@ -379,18 +385,12 @@ void update_document_state()
    if (!document)
       return;
 
-   struct ActionElement { const char *id; int action; };
-   const ActionElement action_elements[] = {
-      {"resume", RIB_RMLUI_ACTION_RESUME},
-      {"save", RIB_RMLUI_ACTION_SAVE},
-      {"load", RIB_RMLUI_ACTION_LOAD},
-      {"controls", RIB_RMLUI_ACTION_CONTROLS},
-      {"quit", RIB_RMLUI_ACTION_QUIT}
-   };
-
-   for (const ActionElement& action : action_elements)
-      if (Rml::Element *element = document->GetElementById(action.id))
-         element->SetClass("focused", action.action == focused_item);
+   /* The contents of the pause panel, in document order. */
+   char row[16][64];
+   const int row_count = rib_rmlui_focusables("pause-panel", row, 16);
+   for (int index = 0; index < row_count; ++index)
+      if (Rml::Element *element = document->GetElementById(row[index]))
+         element->SetClass("focused", focused_element == row[index]);
 
    for (int index = 0; index < 6; ++index)
    {
@@ -785,7 +785,24 @@ extern "C" void rib_rmlui_set_selected_slot(int slot)
 extern "C" void rib_rmlui_set_focused(int focused)
 {
    focused_item = focused;
+   /* A slot has the focus, so no button on the row does. */
+   focused_element.clear();
    update_document_state();
+}
+
+/* Focus one button of the pause row, by its id in the document. */
+extern "C" void rib_rmlui_focus_element(const char *id)
+{
+   focused_element = id ? id : "";
+   /* No slot is focused either. The slot ids start after the row actions, so
+    * any value outside that range means "none of them". */
+   focused_item = RIB_RMLUI_ACTION_RESUME;
+   update_document_state();
+}
+
+extern "C" const char *rib_rmlui_focused_element(void)
+{
+   return focused_element.c_str();
 }
 
 extern "C" void rib_rmlui_set_slot_state(int slot, bool occupied,
@@ -2129,6 +2146,13 @@ extern "C" const char *rib_rmlui_test_text(const char *id) {
    Rml::Element *element = document ? document->GetElementById(id) : nullptr;
    text = element ? element->GetInnerRML() : std::string("<no element ") + id + ">";
    return text.c_str();
+}
+/* Which element has a class, so in a check we test what the player can see
+ * and not the internal state of the driver. The focus record in the driver and
+ * the classes in the document can differ, and we draw only the classes. */
+extern "C" bool rib_rmlui_test_has_class(const char *id, const char *name) {
+   Rml::Element *element = document && id ? document->GetElementById(id) : nullptr;
+   return element && name && element->IsClassSet(name);
 }
 extern "C" float rib_rmlui_test_picture_aspect() {
    context->Update(); auto size = document->GetElementById("slot-image-1")->GetParentNode()->GetBox().GetSize(Rml::BoxArea::Content); return size.x / size.y;

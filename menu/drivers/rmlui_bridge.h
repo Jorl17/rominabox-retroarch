@@ -233,6 +233,12 @@ bool rib_rmlui_slider_drag(const char **id, float *fraction);
 /* Focusable parts inside a panel, in document order: sliders, toggles and
  * buttons. We write the ids into storage from the caller. */
 int rib_rmlui_focusables(const char *panel, char ids[][64], int capacity);
+
+/* Focus one button of the pause row by its id, and read which one is focused.
+ * The row contains what the design and the export put in the pause panel, so
+ * we cannot name its buttons with a fixed set of actions. */
+void rib_rmlui_focus_element(const char *id);
+const char *rib_rmlui_focused_element(void);
 void rib_rmlui_mark_focused(const char *panel, const char *id);
 bool rib_rmlui_part_is_slider(const char *id);
 
