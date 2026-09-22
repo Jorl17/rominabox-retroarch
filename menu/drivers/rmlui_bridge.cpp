@@ -1059,6 +1059,24 @@ extern "C" const char *rib_rmlui_list_row_id(int index)
    return id.c_str();
 }
 
+/* We draw an arrow with no page behind it as inactive, and it has no effect.
+ * With wrapping, both arrows would look active on every page. */
+static void rib_mark_pager(Rml::Element *list, int page, int pages)
+{
+   struct Arrow { const char *name; bool dead; };
+   const Arrow arrows[] = {
+      {"list-pager-prev", page <= 0},
+      {"list-pager-next", page >= pages - 1}
+   };
+   for (const Arrow& arrow : arrows)
+   {
+      std::vector<Rml::Element*> found;
+      rib_collect(list, arrow.name, found);
+      for (Rml::Element *element : found)
+         element->SetClass("disabled", arrow.dead);
+   }
+}
+
 extern "C" int rib_rmlui_turn_list_page(int delta)
 {
    Rml::Element *list = rib_visible_list();
@@ -1073,10 +1091,8 @@ extern "C" int rib_rmlui_turn_list_page(int delta)
       if (!rib_display_none(pages[index]))
          current = (int)index;
    int next = current + (delta < 0 ? -1 : 1);
-   if (next < 0)
-      next = (int)pages.size() - 1;
-   if (next >= (int)pages.size())
-      next = 0;
+   if (next < 0 || next >= (int)pages.size())
+      return -1;
    for (size_t index = 0; index < pages.size(); ++index)
    {
       if ((int)index == next)
@@ -1089,9 +1105,10 @@ extern "C" int rib_rmlui_turn_list_page(int delta)
    if (!counts.empty())
    {
       char label[32];
-      snprintf(label, sizeof(label), "%d / %d", next + 1, (int)pages.size());
+      snprintf(label, sizeof(label), "%d/%d", next + 1, (int)pages.size());
       counts[0]->SetInnerRML(label);
    }
+   rib_mark_pager(list, next, (int)pages.size());
    return next;
 }
 
