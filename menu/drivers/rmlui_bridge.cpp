@@ -2246,10 +2246,13 @@ static void rib_clamp_border(float &x, float &y, float w, float h,
 
 /* What a list must not cover.
  *
- * A callout or a stick group is a label. When every side covers one, we put
- * the list on the side that covers the fewest. The buttons of the screen, the
- * status line and the footer are not labels, and the list may never cover
- * them. We skip the pager, also a menu-action, because it is in the list. */
+ * A callout or a stick group is a label, except the one the list is for.
+ * The player is reading that box, so it counts as chrome, which the list
+ * may never cover. The leader line and the hit ring are not in this table.
+ * The heading, the label and button of the controller picker, the buttons
+ * of the screen, the status line and the footer are chrome too. The option
+ * list of the picker is display:none while a bind list is open, and we
+ * skip the pager, a menu-action inside the list. */
 struct rib_keep_clear
 {
    const char *name;
@@ -2261,6 +2264,9 @@ static const rib_keep_clear rib_keep_clear_rules[] = {
    {"control-callout", false, true},
    {"control-group", false, true},
    {"menu-action", false, false},
+   {"heading", true, false},
+   {"control-picker-label", false, false},
+   {"control-picker-current", false, false},
    {"controls-status", true, false},
    {"footer", true, false},
 };
@@ -2295,14 +2301,16 @@ static void rib_count_covered(Rml::Element *list, const char *anchor_id,
          if (!element || rib_hidden(element) || (list && rib_under(list, element)))
             continue;
          const Rml::String id = element->GetId();
-         if (id.empty() || (anchor_id && id == anchor_id) || !seen.insert(id).second)
+         if (id.empty() || !seen.insert(id).second)
             continue;
          const Rml::Vector2f at = element->GetAbsoluteOffset(Rml::BoxArea::Border);
          const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
          if (at.x < left + width && at.x + size.x > left
                && at.y < top + height && at.y + size.y > top)
          {
-            if (rule.label)
+            /* The anchor matches a label rule. Count it as chrome, so we
+             * prefer a spot that leaves the control being read uncovered. */
+            if (rule.label && !(anchor_id && id == anchor_id))
                ++labels;
             else
                ++chrome;
@@ -2352,6 +2360,24 @@ extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
    const float away_x = scene_cx >= anchor_cx
          ? anchor_at.x - list_size.x - gap
          : anchor_at.x + anchor_size.x + gap;
+   /* Clamping can move the spots beside and away back onto the anchor. We
+    * may cover the drawing, so once each of the four sides covers something,
+    * we also try the middle of the pad and the screen margins. */
+   std::vector<float> columns = {
+      beside_x,
+      anchor_at.x,
+      away_x,
+      screen_at.x + 8.f,
+      screen_at.x + screen_size.x - list_size.x - 8.f,
+   };
+   if (Rml::Element *scene = document->GetElementById("controller-scene"))
+   {
+      const Rml::Vector2f scene_at = scene->GetAbsoluteOffset(Rml::BoxArea::Border);
+      const Rml::Vector2f scene_size = scene->GetBox().GetSize(Rml::BoxArea::Border);
+      columns.push_back(scene_at.x + gap);
+      columns.push_back(scene_at.x + (scene_size.x - list_size.x) * 0.5f);
+      columns.push_back(scene_at.x + scene_size.x - list_size.x - gap);
+   }
    std::vector<std::pair<float, float>> spots = {
       {beside_x, anchor_at.y},
       {anchor_at.x, anchor_at.y + anchor_size.y + gap},
@@ -2426,19 +2452,15 @@ extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
                if (!element || rib_hidden(element) || rib_under(list, element))
                   continue;
                const float top = element->GetAbsoluteOffset(Rml::BoxArea::Border).y;
-               spots.emplace_back(beside_x, top - paint_h - gap);
-               spots.emplace_back(anchor_at.x, top - paint_h - gap);
-               spots.emplace_back(away_x, top - paint_h - gap);
+               for (float column : columns)
+                  spots.emplace_back(column, top - paint_h - gap);
             }
          }
          const float min_y = screen_at.y + 8.f;
          const float max_y = screen_at.y + screen_size.y - 8.f - paint_h;
          for (float scan_y = min_y; scan_y <= max_y; scan_y += 24.f)
-         {
-            spots.emplace_back(beside_x, scan_y);
-            spots.emplace_back(anchor_at.x, scan_y);
-            spots.emplace_back(away_x, scan_y);
-         }
+            for (float column : columns)
+               spots.emplace_back(column, scan_y);
       }
    }
    rib_set_border_position(list, best_x, best_y);
