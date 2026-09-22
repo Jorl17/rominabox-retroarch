@@ -1127,6 +1127,11 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
                rib_rmlui_mark_focused(panel, ids[0]);
             }
          }
+         /* We measure the slider from the box of its track. While the panel
+          * is hidden that width is zero, so a paint leaves the thumb where
+          * the stylesheet put it, at the quiet end, under a readout that
+          * already shows 0 dB. Paint it again now that the screen is shown. */
+         rib_paint_volume();
       }
       return;
    }
@@ -1589,6 +1594,11 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
             && string_is_equal(drag_id, RIB_VOLUME_SLIDER_ID))
          rib_set_volume_db(menu,
                rib_volume_db_from_fraction(drag_fraction), false);
+      /* In the frame where a screen appears, the track may not be laid out yet,
+       * and a fill set from that width stays too short after the track grows.
+       * We paint again on the next frames, with the width the player sees. */
+      else if (string_is_equal(menu->screen, "volume"))
+         rib_paint_volume();
    }
 
    /* Before we empty the queue, so we handle a scripted click in this frame,
