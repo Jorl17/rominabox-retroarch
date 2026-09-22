@@ -179,6 +179,11 @@ void rarch_stop_draw_observer(void)
     iterate_observer = NULL;
 }
 
+bool rarch_draw_observer_is_active(void)
+{
+   return iterate_observer && CFRunLoopObserverIsValid(iterate_observer);
+}
+
 @implementation CocoaView
 
 #if defined(OSX)
