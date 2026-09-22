@@ -398,8 +398,20 @@ static void cocoa_gl_gfx_ctx_swap_buffers(void *data)
    {
       rominabox_center_window_on_screen(window);
       [window setAlphaValue:0.0];
-      [window makeKeyAndOrderFront:nil];
-      rib_window_prepared = true;
+      /* In a run for a screenshot only, we need the drawable but not
+       * focus, so we neither make the window key nor bring it to the front.
+       * We still order it in, because otherwise the GL context has no
+       * drawable, and we leave it at alpha zero. */
+      if (getenv("ROMINABOX_MENU_SHOT"))
+      {
+         [window orderFront:nil];
+         rib_window_prepared = false;
+      }
+      else
+      {
+         [window makeKeyAndOrderFront:nil];
+         rib_window_prepared = true;
+      }
       prepared_this_frame = true;
    }
    rib_first_show_pending = false;
