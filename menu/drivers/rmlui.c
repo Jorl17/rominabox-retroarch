@@ -25,6 +25,7 @@
 #include "../menu_input.h"
 #include "../menu_cbs.h"
 #include "rmlui_bridge.h"
+#include "rmlui_shader_mark.h"
 
 #ifndef RIB_RMLUI_DEFAULT_ASSETS
 #define RIB_RMLUI_DEFAULT_ASSETS "."
@@ -1653,6 +1654,51 @@ static void rib_rmlui_load_shaders(rib_rmlui_menu_t *menu,
    config_file_free(config);
 }
 
+/* In the staged document the author's starting preset is still marked on.
+ * The preset that is on is the one running in RetroArch, which we load at
+ * launch after a restart, or apply when the player clicks a row. Mark that
+ * row only when this list is on screen, because every list uses this action. */
+static void rib_rmlui_show_running_shader(rib_rmlui_menu_t *menu)
+{
+   const char *relatives[RIB_SHADER_MAX];
+   const char *current;
+   int index;
+   int row;
+   int rows;
+   int matched = -1;
+   bool ours   = false;
+
+   if (!menu || menu->shader_count <= 0)
+      return;
+   rows = rib_rmlui_visible_row_count();
+   for (row = 0; row < rows && !ours; ++row)
+   {
+      const char *id = rib_rmlui_list_row_id(row);
+
+      for (index = 0; index < menu->shader_count; ++index)
+         if (id && string_is_equal(id, menu->shader_ids[index]))
+            ours = true;
+   }
+   if (!ours)
+      return;
+
+   for (index = 0; index < menu->shader_count; ++index)
+      relatives[index] = menu->shader_presets[index];
+   current = video_shader_get_current_shader_preset();
+   matched = rib_shader_mark_index(current, relatives, menu->shader_count);
+   if (matched < 0)
+   {
+      fprintf(stderr, "[RIB] no bundled shader matches the one running: %s\n",
+            current && current[0] ? current : "none");
+      rib_rmlui_mark_row("", menu->shader_state_on, menu->shader_state_off);
+      return;
+   }
+   fprintf(stderr, "[RIB] shader row '%s' is the one running\n",
+         menu->shader_ids[matched]);
+   rib_rmlui_mark_row(menu->shader_ids[matched],
+         menu->shader_state_on, menu->shader_state_off);
+}
+
 static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id)
 {
    settings_t *settings = config_get_ptr();
@@ -1713,7 +1759,7 @@ static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id
                "The next launch will use the bundled starting shader.\n",
                choice_path);
    }
-   rib_rmlui_mark_row(id, menu->shader_state_on, menu->shader_state_off);
+   rib_rmlui_show_running_shader(menu);
    return true;
 }
 
@@ -1867,6 +1913,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
           * the stylesheet put it, at the quiet end. Paint it again now that
           * the screen is shown. */
          rib_paint_volume();
+         rib_rmlui_show_running_shader(menu);
       }
       rib_rmlui_play_action_sound(action);
       return;
