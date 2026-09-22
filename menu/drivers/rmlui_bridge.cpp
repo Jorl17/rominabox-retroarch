@@ -26,6 +26,7 @@
 #include <vector>
 
 extern "C" void rib_rmlui_wire_toggles(void);
+static void wire_arrows(Rml::Element *node);
 
 namespace
 {
@@ -541,11 +542,9 @@ static void rib_rmlui_built_in_screens(void)
    /* The same path as for the declaration in a design, so we attach the
     * listeners to the buttons in the same way and only once. */
    rib_rmlui_declare_screen("pause", "pause-panel", "GAME PAUSED",
-         "ESC  CONTINUE", "controls-back volume-back");
+         "ESC  CONTINUE", "controls-back");
    rib_rmlui_declare_screen("controls", "controls-panel", "CONTROLS",
          "ESC  BACK", "controls");
-   rib_rmlui_declare_screen("volume", "volume-panel", "VOLUME",
-         "ESC  BACK", "volume");
 }
 
 bool load_document()
@@ -591,6 +590,7 @@ bool load_document()
 
    rib_rmlui_wire_controls();
    rib_rmlui_wire_toggles();
+   wire_arrows(document);
    /* When a design declares screens, we replace these before the first frame,
     * and when it declares none we keep them. In both cases we attach the
     * listeners to the buttons before the player can press anything. */
@@ -1172,6 +1172,59 @@ static void wire_toggles(Rml::Element *node)
    const int count = node->GetNumChildren();
    for (int index = 0; index < count; ++index)
       wire_toggles(node->GetChild(index));
+}
+
+/* An arrow next to a slider. A click on it moves the slider by the step of
+ * that slider, the same change as with a key. Direction is a class because it
+ * is one of two, not a number written into the markup. */
+class ArrowListener : public Rml::EventListener
+{
+public:
+   ArrowListener(std::string slider, int direction)
+      : slider(std::move(slider)), direction(direction) {}
+   void ProcessEvent(Rml::Event &event) override
+   {
+      Rml::Element *element = event.GetCurrentElement();
+      if (!element || element->HasAttribute("disabled")
+            || element->IsClassSet("disabled") || direction == 0)
+         return;
+      rib_rmlui_nudge_slider(slider.c_str(), direction);
+   }
+   void OnDetach(Rml::Element *) override { delete this; }
+private:
+   std::string slider;
+   int direction;
+};
+
+static Rml::Element *find_slider(Rml::Element *node)
+{
+   if (!node)
+      return nullptr;
+   if (node->IsClassSet("slider") && !node->GetId().empty())
+      return node;
+   const int count = node->GetNumChildren();
+   for (int index = 0; index < count; ++index)
+      if (Rml::Element *found = find_slider(node->GetChild(index)))
+         return found;
+   return nullptr;
+}
+
+static void wire_arrows(Rml::Element *node)
+{
+   if (!node)
+      return;
+   if (node->IsClassSet("volume-arrow"))
+   {
+      const int direction = node->IsClassSet("arrow-down") ? -1
+            : node->IsClassSet("arrow-up") ? 1 : 0;
+      Rml::Element *slider = find_slider(node->GetParentNode());
+      if (slider && direction != 0)
+         node->AddEventListener(Rml::EventId::Click,
+               new ArrowListener(slider->GetId(), direction));
+   }
+   const int count = node->GetNumChildren();
+   for (int index = 0; index < count; ++index)
+      wire_arrows(node->GetChild(index));
 }
 
 extern "C" void rib_rmlui_wire_toggles(void)

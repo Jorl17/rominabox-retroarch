@@ -1062,7 +1062,7 @@ static bool rib_rmlui_persist_libretro_device(unsigned device)
    return ok;
 }
 
-static bool rib_save_volume(const rib_rmlui_menu_t *menu, float db, bool muted)
+static bool rib_save_volume(const rib_rmlui_menu_t *menu, float db)
 {
    char temporary[PATH_MAX_LENGTH];
    FILE *file;
@@ -1072,9 +1072,7 @@ static bool rib_save_volume(const rib_rmlui_menu_t *menu, float db, bool muted)
    snprintf(temporary, sizeof(temporary), "%s.tmp", menu->volume_path);
    if (!(file = fopen(temporary, "w")))
       return false;
-   fprintf(file, "%s = \"%.1f\"\n%s = \"%s\"\n",
-         RIB_VOLUME_KEY, db,
-         RIB_VOLUME_MUTE_KEY, muted ? "true" : "false");
+   fprintf(file, "%s = \"%.1f\"\n", RIB_VOLUME_KEY, db);
    if (fclose(file) != 0)
    {
       filestream_delete(temporary);
@@ -1095,15 +1093,13 @@ static bool rib_save_volume(const rib_rmlui_menu_t *menu, float db, bool muted)
 static void rib_paint_volume(void)
 {
    settings_t *settings = config_get_ptr();
-   bool *muted_flag = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
    float db = settings ? settings->floats.audio_volume : AUDIO_VOLUME_DEFAULT_DB;
-   char readout[32];
 
    db = rib_volume_quantize_db(db);
-   snprintf(readout, sizeof(readout), "%.1f dB", db);
+   /* No readout. Low and high are in the design, and the position of the
+    * thumb is the value. With an empty string we clear what we wrote before. */
    rib_rmlui_set_slider(RIB_VOLUME_SLIDER_ID,
-         rib_volume_fraction_from_db(db), readout);
-   rib_rmlui_set_toggle(RIB_VOLUME_TOGGLE_ID, muted_flag && *muted_flag);
+         rib_volume_fraction_from_db(db), "");
 }
 
 static void rib_set_volume_db(rib_rmlui_menu_t *menu, float db, bool persist)
@@ -1112,24 +1108,15 @@ static void rib_set_volume_db(rib_rmlui_menu_t *menu, float db, bool persist)
    bool *muted_flag = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
 
    db = rib_volume_quantize_db(db);
+   /* There is no control for mute, but a file or a hotkey may have set it.
+    * The player chooses only the level, so we turn mute off. */
+   if (muted_flag)
+      *muted_flag = false;
    if (settings)
       configuration_set_float(settings, settings->floats.audio_volume, db);
    audio_set_float(AUDIO_ACTION_VOLUME_GAIN, db);
    if (persist)
-      rib_save_volume(menu, db, muted_flag && *muted_flag);
-   rib_paint_volume();
-}
-
-static void rib_set_muted(rib_rmlui_menu_t *menu, bool muted, bool persist)
-{
-   settings_t *settings = config_get_ptr();
-   bool *muted_flag = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
-   float db = settings ? settings->floats.audio_volume : AUDIO_VOLUME_DEFAULT_DB;
-
-   if (muted_flag)
-      *muted_flag = muted;
-   if (persist)
-      rib_save_volume(menu, rib_volume_quantize_db(db), muted);
+      rib_save_volume(menu, db);
    rib_paint_volume();
 }
 
@@ -1164,8 +1151,6 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
    if (action == RIB_RMLUI_ACTION_TOGGLE)
    {
       rib_rmlui_play_action_sound(action);
-      if (string_is_equal(rib_rmlui_changed_part(), RIB_VOLUME_TOGGLE_ID))
-         rib_set_muted(menu, rib_rmlui_changed_on(), true);
       return;
    }
    if (action == RIB_RMLUI_ACTION_SHOW_SCREEN)
@@ -1194,9 +1179,9 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
             rib_rmlui_cancel_capture(menu, "BINDING UNCHANGED");
          if (!menu->controls_visible && !string_is_equal(wanted, "pause"))
          {
-            char ids[8][64];
+            char ids[16][64];
             const char *panel = rib_rmlui_screen_panel(menu->screen);
-            if (rib_rmlui_focusables(panel, ids, 8) > 0)
+            if (rib_rmlui_focusables(panel, ids, 16) > 0)
             {
                menu->panel_focus = 0;
                rib_rmlui_mark_focused(panel, ids[0]);
@@ -1204,8 +1189,8 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
          }
          /* We measure the slider from the box of its track. While the panel
           * is hidden that width is zero, so a paint leaves the thumb where
-          * the stylesheet put it, at the quiet end, under a readout that
-          * already shows 0 dB. Paint it again now that the screen is shown. */
+          * the stylesheet put it, at the quiet end. Paint it again now that
+          * the screen is shown. */
          rib_paint_volume();
       }
       return;
@@ -1637,7 +1622,17 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       rib_rmlui_set_slider_step(RIB_VOLUME_SLIDER_ID,
             AUDIO_VOLUME_STEP_DB
             / (AUDIO_VOLUME_MAX_DB - AUDIO_VOLUME_MIN_DB));
-      rib_paint_volume();
+      /* A file may have mute on, or a level in decibels above the top. We use
+       * the quiet end in place of mute and clamp anything above normal to
+       * normal. Write the file again only when that changes its contents. */
+      {
+         settings_t *settings = config_get_ptr();
+         bool *muted_flag = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
+         float db = settings ? settings->floats.audio_volume : AUDIO_VOLUME_DEFAULT_DB;
+         bool muted = muted_flag && *muted_flag;
+         float snapped = rib_volume_quantize_db(muted ? AUDIO_VOLUME_MIN_DB : db);
+         rib_set_volume_db(menu, snapped, muted || snapped != db);
+      }
       RARCH_LOG("[RmlUi] Loaded menu from %s.\n", asset_directory);
    }
 
@@ -1698,7 +1693,7 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       /* In the frame where a screen appears, the track may not be laid out yet,
        * and a fill set from that width stays too short after the track grows.
        * We paint again on the next frames, with the width the player sees. */
-      else if (string_is_equal(menu->screen, "volume"))
+      else
          rib_paint_volume();
    }
 
@@ -1772,9 +1767,9 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
  * the design, such as a slider, a toggle or a button, in document order. */
 static int rib_part_navigate(rib_rmlui_menu_t *menu, enum menu_action action)
 {
-   char ids[8][64];
+   char ids[16][64];
    const char *panel = rib_rmlui_screen_panel(menu->screen);
-   int count = rib_rmlui_focusables(panel, ids, 8);
+   int count = rib_rmlui_focusables(panel, ids, 16);
 
    if (count <= 0)
       return 0;
