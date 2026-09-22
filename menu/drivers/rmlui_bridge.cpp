@@ -20,6 +20,7 @@
 #include <memory>
 #include <cstdio>
 #include <cstring>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -528,35 +529,55 @@ extern "C" void rib_rmlui_wire_controls(void)
 
 }
 
+/* What we use for a design that declares nothing: the two built-in screens,
+ * with the default wording of the player. They match
+ * `built_in_screens()` in themes.rs. We use them in the headless interaction
+ * tests, which load a document with no design declarations next to it. */
+static void rib_rmlui_built_in_screens(void)
+{
+   /* The same path as for the declaration in a design, so we attach the
+    * listeners to the buttons in the same way and only once. */
+   rib_rmlui_declare_screen("pause", "pause-panel", "GAME PAUSED",
+         "ESC  CONTINUE", "controls-back");
+   rib_rmlui_declare_screen("controls", "controls-panel", "CONTROLS",
+         "ESC  BACK", "controls");
+}
+
 bool load_document()
 {
    document = context ? context->LoadDocument(asset_path("menu.rml")) : nullptr;
    if (!document)
       return false;
 
-   struct Binding { const char *id; int action; };
+   /* `opens_screen` means we handle the click through the screen declaration
+    * in the design, not through this table. Hover still comes from here,
+    * because we track keyboard focus by action, and the player can also reach
+    * the two buttons that change screen with the arrow keys. There is nothing
+    * to add here for a screen that a design declares later. */
+   struct Binding { const char *id; int action; bool opens_screen; };
    const Binding bindings[] = {
-      {"resume", RIB_RMLUI_ACTION_RESUME},
-      {"save", RIB_RMLUI_ACTION_SAVE},
-      {"load", RIB_RMLUI_ACTION_LOAD},
-      {"controls", RIB_RMLUI_ACTION_CONTROLS},
-      {"quit", RIB_RMLUI_ACTION_QUIT},
-      {"slot-1", RIB_RMLUI_ACTION_SELECT_SLOT_1},
-      {"slot-2", RIB_RMLUI_ACTION_SELECT_SLOT_2},
-      {"slot-3", RIB_RMLUI_ACTION_SELECT_SLOT_3},
-      {"slot-4", RIB_RMLUI_ACTION_SELECT_SLOT_4},
-      {"slot-5", RIB_RMLUI_ACTION_SELECT_SLOT_5},
-      {"slot-6", RIB_RMLUI_ACTION_SELECT_SLOT_6},
-      {"controls-back", RIB_RMLUI_ACTION_CONTROLS_BACK},
-      {"controls-reset", RIB_RMLUI_ACTION_CONTROLS_RESET},
-      {"controls-cancel", RIB_RMLUI_ACTION_CONTROLS_CANCEL}
+      {"resume", RIB_RMLUI_ACTION_RESUME, false},
+      {"save", RIB_RMLUI_ACTION_SAVE, false},
+      {"load", RIB_RMLUI_ACTION_LOAD, false},
+      {"controls", RIB_RMLUI_ACTION_CONTROLS, true},
+      {"quit", RIB_RMLUI_ACTION_QUIT, false},
+      {"slot-1", RIB_RMLUI_ACTION_SELECT_SLOT_1, false},
+      {"slot-2", RIB_RMLUI_ACTION_SELECT_SLOT_2, false},
+      {"slot-3", RIB_RMLUI_ACTION_SELECT_SLOT_3, false},
+      {"slot-4", RIB_RMLUI_ACTION_SELECT_SLOT_4, false},
+      {"slot-5", RIB_RMLUI_ACTION_SELECT_SLOT_5, false},
+      {"slot-6", RIB_RMLUI_ACTION_SELECT_SLOT_6, false},
+      {"controls-back", RIB_RMLUI_ACTION_CONTROLS_BACK, true},
+      {"controls-reset", RIB_RMLUI_ACTION_CONTROLS_RESET, false},
+      {"controls-cancel", RIB_RMLUI_ACTION_CONTROLS_CANCEL, false}
    };
 
    for (const Binding& binding : bindings)
       if (Rml::Element *element = document->GetElementById(binding.id))
       {
-         element->AddEventListener(Rml::EventId::Click,
-               new ActionListener(binding.action));
+         if (!binding.opens_screen)
+            element->AddEventListener(Rml::EventId::Click,
+                  new ActionListener(binding.action));
          element->AddEventListener(Rml::EventId::Mouseover,
                new HoverListener(binding.action));
          element->AddEventListener(Rml::EventId::Mouseout,
@@ -564,6 +585,10 @@ bool load_document()
       }
 
    rib_rmlui_wire_controls();
+   /* When a design declares screens, we replace these before the first frame,
+    * and when it declares none we keep them. In both cases we attach the
+    * listeners to the buttons before the player can press anything. */
+   rib_rmlui_built_in_screens();
 
    update_document_state();
    document->Show();
@@ -748,27 +773,134 @@ extern "C" void rib_rmlui_set_status(const char *status)
    show_status(main_status, "status", status);
 }
 
+/* The screens declared in a design, in the order of declaration. */
+struct Screen { std::string id, panel, heading, footer, button; };
+std::vector<Screen> screens;
+std::string requested_screen;
+/* Buttons that already have a listener. We replace the built-in screens with
+ * the declaration in a design, and without this we would attach two listeners
+ * to the same button, and every press would send two intents. */
+std::set<std::string> wired_screen_buttons;
+
+/* Pressing the button for a screen. We pass the id next to the action, not
+ * inside it, so declaring a screen never adds to the action enum. */
+class ScreenListener : public Rml::EventListener
+{
+public:
+   explicit ScreenListener(std::string id) : id(std::move(id)) {}
+   void ProcessEvent(Rml::Event&) override
+   {
+      requested_screen = id;
+      ActionListener::queue_action(RIB_RMLUI_ACTION_SHOW_SCREEN);
+   }
+   void OnDetach(Rml::Element*) override { delete this; }
+private:
+   std::string id;
+};
+
+/* The sound for an intent.
+ *
+ * We play a sound for every action and list the silent exceptions by name, so
+ * an action added later has a sound by default, and we always make silence an
+ * explicit choice.
+ */
+extern "C" enum rib_menu_sound rib_rmlui_action_sound(int action)
+{
+   switch (action)
+   {
+      case RIB_RMLUI_ACTION_NONE:
+         return RIB_MENU_SOUND_NONE;
+      /* Leaving a screen, rather than choosing something on it. */
+      case RIB_RMLUI_ACTION_RESUME:
+      case RIB_RMLUI_ACTION_CONTROLS_BACK:
+      case RIB_RMLUI_ACTION_CONTROLS_CANCEL:
+         return RIB_MENU_SOUND_CANCEL;
+      /* Moving the highlight between save slots is navigation, and we already
+       * play the movement cue for it, so a second sound would be one too many. */
+      case RIB_RMLUI_ACTION_SELECT_SLOT_1:
+      case RIB_RMLUI_ACTION_SELECT_SLOT_2:
+      case RIB_RMLUI_ACTION_SELECT_SLOT_3:
+      case RIB_RMLUI_ACTION_SELECT_SLOT_4:
+      case RIB_RMLUI_ACTION_SELECT_SLOT_5:
+      case RIB_RMLUI_ACTION_SELECT_SLOT_6:
+         return RIB_MENU_SOUND_NONE;
+      default:
+         return RIB_MENU_SOUND_OK;
+   }
+}
+
+extern "C" const char *rib_rmlui_requested_screen(void)
+{
+   return requested_screen.c_str();
+}
+
+/* What we use for a design that declares nothing: the two built-in screens,
+ * with the default wording of the player. They match
+ * `built_in_screens()` in themes.rs, and we use them in the headless
+ * interaction tests, which load a document with no design declarations. */
+extern "C" void rib_rmlui_clear_screens(void)
+{
+   screens.clear();
+}
+
+extern "C" void rib_rmlui_declare_screen(const char *id, const char *panel,
+      const char *heading, const char *footer, const char *button)
+{
+   if (!id || !*id || !panel || !*panel)
+      return;
+   screens.push_back(Screen{id, panel, heading ? heading : "",
+         footer ? footer : "", button ? button : ""});
+   /* We load the document before we read a design, so we attach the listener
+    * to the button here and not during the load. */
+   if (document && button && *button
+         && wired_screen_buttons.insert(button).second)
+      if (Rml::Element *element = document->GetElementById(button))
+         element->AddEventListener(Rml::EventId::Click, new ScreenListener(id));
+}
+
+/* Show one screen and hide the rest.
+ *
+ * We find screens by id, so there is nothing to change here for a new screen.
+ *
+ * The words of the heading and the footer are in the design. The player
+ * contains none of them, just as it contains no control or controller names.
+ * The text is in the design for the screen.
+ */
+extern "C" bool rib_rmlui_show_screen(const char *id)
+{
+   if (!document || !id || !*id)
+      return false;
+   const Screen *wanted = nullptr;
+   for (const Screen& screen : screens)
+      if (screen.id == id)
+      {
+         wanted = &screen;
+         break;
+      }
+   if (!wanted)
+      return false;
+
+   rib_rmlui_clear_intents();
+   for (const Screen& screen : screens)
+      if (Rml::Element *panel = document->GetElementById(screen.panel))
+      {
+         if (&screen == wanted)
+            panel->RemoveProperty("display");
+         else
+            panel->SetProperty("display", "none");
+      }
+   if (Rml::Element *heading = document->GetElementById("heading"))
+      heading->SetInnerRML(Rml::StringUtilities::EncodeRml(wanted->heading));
+   if (!wanted->footer.empty())
+      if (Rml::Element *footer = document->GetElementById("footer-hint"))
+         footer->SetInnerRML(Rml::StringUtilities::EncodeRml(wanted->footer));
+   return true;
+}
+
+/* An alias: both names have the same behaviour. */
 extern "C" void rib_rmlui_show_controls(bool visible)
 {
-   rib_rmlui_clear_intents();
-   if (!document)
-      return;
-   if (Rml::Element *pause = document->GetElementById("pause-panel"))
-   {
-      if (visible)
-         pause->SetProperty("display", "none");
-      else
-         pause->RemoveProperty("display");
-   }
-   if (Rml::Element *controls = document->GetElementById("controls-panel"))
-   {
-      if (visible)
-         controls->RemoveProperty("display");
-      else
-         controls->SetProperty("display", "none");
-   }
-   if (Rml::Element *heading = document->GetElementById("heading"))
-      heading->SetInnerRML(visible ? "CONTROLS" : "GAME PAUSED");
+   rib_rmlui_show_screen(visible ? "controls" : "pause");
 }
 
 extern "C" void rib_rmlui_set_control_state(const char *id,

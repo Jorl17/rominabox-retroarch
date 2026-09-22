@@ -169,6 +169,65 @@ static void rib_rmlui_discover_controls(rib_rmlui_menu_t *menu,
    }
 }
 
+/* Read the screens declared in the design.
+ *
+ * `screens` is a space-separated list of ids that we write at export from the
+ * declaration in the design, with the block of markup, the heading and the
+ * footer hint for each. There are no screens in the player itself, so to add
+ * one we change a design and not this file.
+ */
+static void rib_rmlui_discover_screens(const char *asset_directory)
+{
+   char path[PATH_MAX_LENGTH];
+   config_file_t *config;
+   char list[512];
+   char *cursor;
+   char *token;
+
+   rib_rmlui_clear_screens();
+   if (!asset_directory || !*asset_directory)
+      return;
+   snprintf(path, sizeof(path), "%s/design.cfg", asset_directory);
+   if (!(config = config_file_new_from_path_to_string(path)))
+   {
+      RARCH_LOG("[RIB] no design declarations at %s; the menu has no screens "
+            "and nothing will switch.\n", path);
+      return;
+   }
+   if (!config_get_array(config, "screens", list, sizeof(list)))
+   {
+      config_file_free(config);
+      return;
+   }
+
+   cursor = list;
+   while ((token = strtok_r(cursor, " ", &cursor)))
+   {
+      char key[96];
+      char panel[128];
+      char heading[128];
+      char footer[128];
+      char button[128];
+
+      if (!*token)
+         continue;
+      snprintf(key, sizeof(key), "screen_panel_%s", token);
+      if (!config_get_array(config, key, panel, sizeof(panel)))
+         continue;
+      snprintf(key, sizeof(key), "screen_heading_%s", token);
+      if (!config_get_array(config, key, heading, sizeof(heading)))
+         heading[0] = '\0';
+      snprintf(key, sizeof(key), "screen_footer_%s", token);
+      if (!config_get_array(config, key, footer, sizeof(footer)))
+         footer[0] = '\0';
+      snprintf(key, sizeof(key), "screen_button_%s", token);
+      if (!config_get_array(config, key, button, sizeof(button)))
+         button[0] = '\0';
+      rib_rmlui_declare_screen(token, panel, heading, footer, button);
+   }
+   config_file_free(config);
+}
+
 /* Read the controllers available for this console.
  *
  * `controls_variants` is a space-separated list of ids that we write at
@@ -778,26 +837,15 @@ static int rib_rmlui_find_binding_conflict(
 static void rib_rmlui_play_action_sound(int action)
 {
 #ifdef HAVE_AUDIOMIXER
-   switch (action)
+   switch (rib_rmlui_action_sound(action))
    {
-      case RIB_RMLUI_ACTION_RESUME:
-      case RIB_RMLUI_ACTION_CONTROLS_BACK:
-      case RIB_RMLUI_ACTION_CONTROLS_CANCEL:
-         audio_driver_mixer_play_menu_sound(AUDIO_MIXER_SYSTEM_SLOT_CANCEL);
-         break;
-      case RIB_RMLUI_ACTION_SAVE:
-      case RIB_RMLUI_ACTION_LOAD:
-      case RIB_RMLUI_ACTION_CONTROLS:
-      case RIB_RMLUI_ACTION_CONTROLS_RESET:
-      case RIB_RMLUI_ACTION_QUIT:
-      case RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE:
-      case RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE:
+      case RIB_MENU_SOUND_OK:
          audio_driver_mixer_play_menu_sound(AUDIO_MIXER_SYSTEM_SLOT_OK);
          break;
-      default:
-         if (action >= RIB_RMLUI_ACTION_CONTROL_FIRST &&
-               action <= RIB_RMLUI_ACTION_CONTROL_LAST)
-            audio_driver_mixer_play_menu_sound(AUDIO_MIXER_SYSTEM_SLOT_OK);
+      case RIB_MENU_SOUND_CANCEL:
+         audio_driver_mixer_play_menu_sound(AUDIO_MIXER_SYSTEM_SLOT_CANCEL);
+         break;
+      case RIB_MENU_SOUND_NONE:
          break;
    }
 #endif
@@ -955,6 +1003,32 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       rib_rmlui_set_device_picker(menu->device_picker_open, menu->profile_id);
       return;
    }
+   if (action == RIB_RMLUI_ACTION_SHOW_SCREEN)
+   {
+      /* We pass the screen next to the action, so declaring a screen never
+       * adds to the enum. We still record whether the controls screen is
+       * open, because capture and navigation work differently there. */
+      const char *wanted = rib_rmlui_requested_screen();
+      if (wanted && *wanted && rib_rmlui_show_screen(wanted))
+      {
+         /* The footer and the heading are in the design, with the screen.
+          * Here we keep only the case of the controls screen, where capture
+          * and navigation work differently. For any other screen there is
+          * nothing to add here. */
+         menu->controls_visible = string_is_equal(wanted, "controls");
+         if (menu->controls_visible)
+         {
+            menu->control_focus = rib_control_first(menu);
+            menu->selected_control = menu->control_focus;
+            rib_rmlui_set_controls_status("SELECT A CONTROL TO REBIND");
+            rib_rmlui_refresh_controls(menu);
+         }
+         else if (menu->capture_active)
+            rib_rmlui_cancel_capture(menu, "BINDING UNCHANGED");
+      }
+      return;
+   }
+
    if (action == RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE)
    {
       /* We pass the chosen id next to the action, not inside it, so the number
@@ -1070,8 +1144,9 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
          menu->controls_visible = true;
          menu->control_focus = rib_control_first(menu);
          menu->selected_control = menu->control_focus;
-         rib_rmlui_show_controls(true);
-         rib_rmlui_set_footer_hint("ESC  BACK");
+         /* The heading and the footer are in the design, with the
+          * screen. */
+         rib_rmlui_show_screen("controls");
          rib_rmlui_set_controls_status("SELECT A CONTROL TO REBIND");
          rib_rmlui_refresh_controls(menu);
          break;
@@ -1080,8 +1155,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
             rib_rmlui_cancel_capture(menu, "BINDING UNCHANGED");
          menu->controls_visible = false;
          menu->focused = RIB_RMLUI_ACTION_CONTROLS;
-         rib_rmlui_show_controls(false);
-         rib_rmlui_set_footer_hint("ESC  CONTINUE");
+         rib_rmlui_show_screen("pause");
          rib_rmlui_set_focused(menu->focused);
          break;
       case RIB_RMLUI_ACTION_CONTROLS_CANCEL:
@@ -1306,6 +1380,8 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
             retroarch_menu_running_finished(false);
          return;
       }
+      /* Read the screens in the design before we show any of them. */
+      rib_rmlui_discover_screens(asset_directory);
       rib_rmlui_set_selected_slot(menu->selected_slot);
       rib_rmlui_set_focused(menu->focused);
       rib_rmlui_refresh_slots();

@@ -38,7 +38,12 @@ enum rib_rmlui_action
     * "select slot N", so we do not add a range for every new list in the
     * menu. */
    RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE,
-   RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE
+   RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE,
+   /* The player asked for a declared screen. We pass which one next to the
+    * action, through rib_rmlui_requested_screen(), so the number of screens
+    * in a design is never part of this enum. We do the same for the
+    * controller picker, for the same reason. */
+   RIB_RMLUI_ACTION_SHOW_SCREEN
 };
 
 /* How many control ids there are in the player, and each id in the order of
@@ -139,6 +144,31 @@ bool rib_rmlui_click_element(const char *id);
  * before the buffer is presented. A read from the runloop returns an empty
  * buffer, so the result is a black picture written without an error. */
 void rib_rmlui_capture_next(const char *path);
+
+/* The screens declared in a design. We clear and declare them again when we
+ * load the document, and there are no screens in the player itself. */
+void rib_rmlui_clear_screens(void);
+void rib_rmlui_declare_screen(const char *id, const char *panel,
+      const char *heading, const char *footer, const char *button);
+
+/* Show one declared screen and hide the rest. False when there is no screen
+ * with that name, because the design did not declare it. */
+bool rib_rmlui_show_screen(const char *id);
+
+/* The cue for an intent. We name it, so we can check it in a test without an
+ * audio device, and so a new action is never silent by accident. */
+enum rib_menu_sound
+{
+   RIB_MENU_SOUND_NONE = 0,
+   RIB_MENU_SOUND_OK,
+   RIB_MENU_SOUND_CANCEL
+};
+
+enum rib_menu_sound rib_rmlui_action_sound(int action);
+
+/* The screen whose button the player pressed, which we read when we take
+ * RIB_RMLUI_ACTION_SHOW_SCREEN from the queue. */
+const char *rib_rmlui_requested_screen(void);
 int rib_rmlui_hovered_action(void);
 void rib_rmlui_clear_intents(void);
 bool rib_rmlui_element_center(const char *id, int *x, int *y);
