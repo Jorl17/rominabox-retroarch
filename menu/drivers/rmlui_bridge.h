@@ -5,64 +5,14 @@
 #include <string.h>
 
 #include "../../audio/volume_range.h"
+#include "rmlui/events.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-enum rib_rmlui_action
-{
-   RIB_RMLUI_ACTION_NONE = 0,
-   RIB_RMLUI_ACTION_RESUME,
-   RIB_RMLUI_ACTION_SAVE,
-   RIB_RMLUI_ACTION_LOAD,
-   RIB_RMLUI_ACTION_CONTROLS,
-   RIB_RMLUI_ACTION_QUIT,
-   RIB_RMLUI_ACTION_SELECT_SLOT_1,
-   RIB_RMLUI_ACTION_SELECT_SLOT_2,
-   RIB_RMLUI_ACTION_SELECT_SLOT_3,
-   RIB_RMLUI_ACTION_SELECT_SLOT_4,
-   RIB_RMLUI_ACTION_SELECT_SLOT_5,
-   RIB_RMLUI_ACTION_SELECT_SLOT_6,
-   RIB_RMLUI_ACTION_CONTROLS_BACK,
-   RIB_RMLUI_ACTION_CONTROLS_RESET,
-   RIB_RMLUI_ACTION_CONTROLS_CANCEL,
-   RIB_RMLUI_ACTION_CONTROL_FIRST,
-   /* The size of a buffer: how many control actions fit in the mailbox, not
-    * which controls exist. It must be enough for every control a console
-    * declares, and a PlayStation DualShock declares twenty-four. In the menu
-    * we read the controls declared for the console from rmlui.c, through
-    * rib_rmlui_control_id. */
-   RIB_RMLUI_ACTION_CONTROL_LAST = RIB_RMLUI_ACTION_CONTROL_FIRST + 47,
-
-   /* Opening and closing the controller picker. We pass the chosen option
-    * as a string next to the action, not as another range of enum values like
-    * "select slot N", so we do not add a range for every new list in the
-    * menu. */
-   RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE,
-   RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE,
-   /* The player moved a slider or a toggle. We pass the part and the value
-    * next to the action, as for a screen id, so the enum never gets a case
-    * for each control. */
-   RIB_RMLUI_ACTION_SLIDER,
-   /* We paint a part toggle where it is. For a list switch we pass its name
-    * through rib_rmlui_chosen_item() and store it here. One action for both,
-    * because a second switch is a line in a design, not another member. */
-   RIB_RMLUI_ACTION_TOGGLE,
-   /* The player chose a row in a generated list, or moved its pager. We pass
-    * the row and the direction next to the action. Lists add nothing to the
-    * enum, because shaders and achievements use the same kind of row. */
-   RIB_RMLUI_ACTION_LIST_CHOOSE,
-   RIB_RMLUI_ACTION_LIST_PAGE,
-   /* The player asked for a declared screen. We pass which one next to the
-    * action, through rib_rmlui_requested_screen(), so the number of screens
-    * in a design is never part of this enum. We do the same for the
-    * controller picker, for the same reason. */
-   RIB_RMLUI_ACTION_SHOW_SCREEN
-};
-
 /* How many control ids there are in the player, and each id in the order of
- * the console declaration. The code is in rmlui.c, where we read the list
+ * the console declaration. The code is in the menu, where we read the list
  * from the exported controls configuration. On purpose, there are no control
  * names in the bridge. */
 /* Attach listeners to control elements. Call it after we know the control
@@ -79,14 +29,11 @@ int rib_rmlui_device_count(void);
 const char *rib_rmlui_device_id(int index);
 const char *rib_rmlui_device_name(int index);
 
-/* The option the player chose with a click, valid until the next action. */
-const char *rib_rmlui_chosen_device(void);
-
 int rib_rmlui_control_capacity(void);
 const char *rib_rmlui_control_id(int index);
 
 /* Escape/menu-toggle: cancel capture, then leave Controls, then resume. */
-static inline int rib_rmlui_map_menu_toggle(
+static inline enum rib_rmlui_action rib_rmlui_map_menu_toggle(
       bool controls_visible, bool capture_active)
 {
    if (capture_active)
@@ -169,7 +116,6 @@ void rib_rmlui_set_overlay(const char *element, enum rib_overlay_state state);
 void rib_rmlui_pointer_move(int x, int y);
 void rib_rmlui_pointer_button(bool down);
 void rib_rmlui_pointer_leave(void);
-int rib_rmlui_take_action(void);
 
 /* Click an element by id, as with a pointer. False when there is no such element
  * in the document. Treat that as a failure, because after clicking nothing,
@@ -215,16 +161,6 @@ enum rib_menu_sound rib_rmlui_action_sound(int action);
  * the level as it is, because a step past either end is not a move. */
 void rib_rmlui_play_move_sound(int direction);
 
-/* The screen whose button the player pressed, which we read when we take
- * RIB_RMLUI_ACTION_SHOW_SCREEN from the queue. */
-const char *rib_rmlui_requested_screen(void);
-
-/* The part a slider or toggle just changed, and the value it changed to.
- * Valid until the next such change. */
-const char *rib_rmlui_changed_part(void);
-float rib_rmlui_changed_fraction(void);
-bool rib_rmlui_changed_on(void);
-
 /* The panel for a declared screen. Empty when there is no screen with that
  * name in the design. */
 const char *rib_rmlui_screen_panel(const char *id);
@@ -256,10 +192,6 @@ void rib_rmlui_focus_element(const char *id);
 const char *rib_rmlui_focused_element(void);
 void rib_rmlui_mark_focused(const char *panel, const char *id);
 bool rib_rmlui_part_is_slider(const char *id);
-
-/* The row id, or "prev" / "next", read with LIST_CHOOSE and LIST_PAGE. */
-void rib_rmlui_remember_item(const char *id);
-const char *rib_rmlui_chosen_item(void);
 
 /* Declared switches. Every element with the list-toggle class is one, and
  * there are no switch names in the bridge. */

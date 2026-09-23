@@ -1,5 +1,9 @@
 #include "host.h"
 #include "files.h"
+#include "bind_lines.h"
+#include "../../menu_input.h"
+#include <gfx/gl_capabilities.h>
+#include <features/features_cpu.h>
 #include "../../../command.h"
 #include "../../../audio/audio_driver.h"
 #include "../../../audio/volume_range.h"
@@ -12,6 +16,7 @@
 #include "../../../gfx/video_shader_parse.h"
 #include "../../../input/input_driver.h"
 #include "../../../input/input_keymaps.h"
+#include "../../../input/input_remapping.h"
 #include "../../../verbosity.h"
 #include "../../menu_driver.h"
 #include "../../menu_cbs.h"
@@ -264,4 +269,187 @@ void rib_host_apply_shader(const char *id, const char *path)
       applied = video_shader_apply_shader(settings, RARCH_SHADER_NONE, NULL, false);
    fprintf(stderr, "[RIB] shader '%s' %s: %s\n", id,
          applied ? "applied" : "not applied", path[0] ? path : "unfiltered");
+}
+
+void rib_host_load_bind(config_file_t *config, const char *id, unsigned index)
+{
+   char base[64];
+   struct config_entry_list *entry;
+   struct retro_keybind *bind;
+
+   if (!config || !id)
+      return;
+
+   bind = &input_config_binds[0][index];
+   snprintf(base, sizeof(base), "input_player1_%s", id);
+   entry = config_get_entry(config, base);
+   if (entry && entry->value && *entry->value)
+   {
+      input_keyboard_mapping_bits(0, bind->key);
+      bind->key = input_config_translate_str_to_rk(
+            entry->value, strlen(entry->value));
+      input_keyboard_mapping_bits(1, bind->key);
+   }
+   input_config_parse_joy_button(base, config, "input_player1",
+         id, bind);
+   input_config_parse_joy_axis(base, config, "input_player1",
+         id, bind);
+   input_config_parse_mouse_button(base, config, "input_player1",
+         id, bind);
+}
+
+static void rib_rmlui_save_joy_button(config_file_t *config,
+      const char *key, uint16_t joykey)
+{
+   char value[32];
+   if (joykey == NO_BTN)
+      config_set_string(config, key, "nul");
+   else if (GET_HAT_DIR(joykey))
+   {
+      const char *direction = "";
+      switch (GET_HAT_DIR(joykey))
+      {
+         case HAT_UP_MASK: direction = "up"; break;
+         case HAT_DOWN_MASK: direction = "down"; break;
+         case HAT_LEFT_MASK: direction = "left"; break;
+         case HAT_RIGHT_MASK: direction = "right"; break;
+         default: break;
+      }
+      snprintf(value, sizeof(value), "h%u%s", GET_HAT(joykey), direction);
+      config_set_string(config, key, value);
+   }
+   else
+      config_set_uint(config, key, joykey);
+}
+
+static void rib_rmlui_save_axis(config_file_t *config,
+      const char *key, uint32_t axis)
+{
+   char value[24];
+   if (axis == AXIS_NONE)
+      config_set_string(config, key, "nul");
+   else if (AXIS_NEG_GET(axis) != AXIS_DIR_NONE)
+   {
+      snprintf(value, sizeof(value), "-%lu",
+            (unsigned long)AXIS_NEG_GET(axis));
+      config_set_string(config, key, value);
+   }
+   else
+   {
+      snprintf(value, sizeof(value), "+%lu",
+            (unsigned long)AXIS_POS_GET(axis));
+      config_set_string(config, key, value);
+   }
+}
+
+static void rib_rmlui_save_mouse_button(config_file_t *config,
+      const char *key, uint16_t mouse_button)
+{
+   switch (mouse_button)
+   {
+      case RETRO_DEVICE_ID_MOUSE_LEFT: config_set_uint(config, key, 1); break;
+      case RETRO_DEVICE_ID_MOUSE_RIGHT: config_set_uint(config, key, 2); break;
+      case RETRO_DEVICE_ID_MOUSE_MIDDLE: config_set_uint(config, key, 3); break;
+      case RETRO_DEVICE_ID_MOUSE_BUTTON_4: config_set_uint(config, key, 4); break;
+      case RETRO_DEVICE_ID_MOUSE_BUTTON_5: config_set_uint(config, key, 5); break;
+      case RETRO_DEVICE_ID_MOUSE_WHEELUP: config_set_string(config, key, "wu"); break;
+      case RETRO_DEVICE_ID_MOUSE_WHEELDOWN: config_set_string(config, key, "wd"); break;
+      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELUP: config_set_string(config, key, "whu"); break;
+      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELDOWN: config_set_string(config, key, "whd"); break;
+      default: config_set_string(config, key, "nul"); break;
+   }
+}
+
+void rib_host_clear_bind(unsigned index)
+{
+   struct retro_keybind *bind = &input_config_binds[0][index];
+   input_keyboard_mapping_bits(0, bind->key);
+   bind->key = RETROK_UNKNOWN;
+   bind->joykey = NO_BTN;
+   bind->joyaxis = AXIS_NONE;
+   bind->mbutton = NO_BTN;
+}
+
+void rib_host_write_bind(config_file_t *config, const char *id, unsigned index)
+{
+   const struct retro_keybind *bind = &input_config_binds[0][index];
+   char key[96];
+   char value[64];
+   snprintf(key, sizeof(key), "input_player1_%s", id);
+   input_keymaps_translate_rk_to_str(bind->key, value, sizeof(value));
+   config_set_string(config, key, value);
+   snprintf(key, sizeof(key), "input_player1_%s_btn", id);
+   rib_rmlui_save_joy_button(config, key, bind->joykey);
+   snprintf(key, sizeof(key), "input_player1_%s_axis", id);
+   rib_rmlui_save_axis(config, key, bind->joyaxis);
+   snprintf(key, sizeof(key), "input_player1_%s_mbtn", id);
+   rib_rmlui_save_mouse_button(config, key, bind->mbutton);
+}
+
+bool rib_host_bind_conflicts(unsigned left, unsigned right)
+{
+   const struct retro_keybind *changed = &input_config_binds[0][left];
+   const struct retro_keybind *candidate = &input_config_binds[0][right];
+   return (changed->key != RETROK_UNKNOWN && changed->key == candidate->key) ||
+          (changed->joykey != NO_BTN && changed->joykey == candidate->joykey) ||
+          (changed->joyaxis != AXIS_NONE && changed->joyaxis == candidate->joyaxis) ||
+          (changed->mbutton != NO_BTN && changed->mbutton == candidate->mbutton);
+}
+
+void rib_host_bind_lines(unsigned index, char details[][64], char kinds[][8], int *lines)
+{
+   rib_lines_from_bind(&input_config_binds[0][index], &input_autoconf_binds[0][index],
+         details, kinds, lines);
+}
+
+bool rib_host_capture_start(unsigned index, unsigned seconds)
+{
+   return menu_input_rib_bind_start(index, seconds);
+}
+
+void rib_host_capture_cancel(void) { menu_input_rib_bind_cancel(); }
+
+enum rib_capture_result rib_host_capture_poll(bool allow_pointer, float *remaining)
+{
+   switch (menu_input_rib_bind_poll(menu_driver_get_current_time(), remaining, allow_pointer))
+   {
+      case MENU_RIB_BIND_CAPTURED: return RIB_CAPTURE_CAPTURED;
+      case MENU_RIB_BIND_TIMED_OUT: return RIB_CAPTURE_TIMED_OUT;
+      default: return RIB_CAPTURE_PENDING;
+   }
+}
+
+int64_t rib_host_time_us(void) { return cpu_features_get_time_usec(); }
+bool rib_host_core_gl_context(void) { return gl_query_core_context_in_use(); }
+rib_pointer rib_host_pointer(void)
+{
+   menu_input_pointer_t pointer;
+   rib_pointer result;
+   menu_input_get_pointer_state(&pointer);
+   result.x = pointer.x;
+   result.y = pointer.y;
+   result.pressed = (pointer.flags & MENU_INP_PTR_FLG_PRESSED) != 0;
+   return result;
+}
+
+bool rib_host_prepare_script_shot(void)
+{
+   settings_t *settings = config_get_ptr();
+   if (!runloop_state_get_ptr() || !video_state_get_ptr())
+      return false;
+   if (settings)
+      configuration_set_bool(settings, settings->bools.video_gpu_screenshot, true);
+   return true;
+}
+
+void rib_host_end_after_script_shot(const char *path)
+{
+   runloop_state_t *state = runloop_state_get_ptr();
+   state->max_frames = (unsigned)video_state_get_ptr()->frame_count + 2;
+   RARCH_LOG("[RIB] menu script shooting %s, exiting after frame %u.\n", path, state->max_frames);
+}
+
+void rib_host_script_finished(void)
+{
+   disk_control_log_core_image(&runloop_state_get_ptr()->system.disk_control, "menu script done");
 }

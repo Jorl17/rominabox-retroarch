@@ -29,11 +29,12 @@ static void wire_arrows(Rml::Element *node);
 namespace
 {
 rib::Document view;
+rib::EventQueue intents;
 
 class ActionListener : public Rml::EventListener
 {
 public:
-   explicit ActionListener(int action) : action(action) {}
+   explicit ActionListener(int action) : action(static_cast<rib_rmlui_action>(action)) {}
 
    void ProcessEvent(Rml::Event& event) override
    {
@@ -47,41 +48,13 @@ public:
    }
    void OnDetach(Rml::Element*) override { delete this; }
 
-   static void queue_action(int action)
-   {
-      if (action == RIB_RMLUI_ACTION_NONE || count >= capacity)
-         return;
-      items[(head + count) % capacity] = action;
-      ++count;
-   }
-
-   static int take_action()
-   {
-      if (count <= 0)
-         return RIB_RMLUI_ACTION_NONE;
-      const int action = items[head];
-      head = (head + 1) % capacity;
-      --count;
-      return action;
-   }
-
-   static void clear()
-   {
-      head = 0;
-      count = 0;
-   }
+   static void queue_action(rib::Event event) { intents.push(std::move(event)); }
+   static rib::Event take_event() { return intents.take(); }
+   static void clear() { intents.clear(); }
 
 private:
-   int action;
-   static constexpr int capacity = 8;
-   static int items[capacity];
-   static int head;
-   static int count;
+   rib::Event action;
 };
-
-int ActionListener::items[ActionListener::capacity] = {};
-int ActionListener::head = 0;
-int ActionListener::count = 0;
 
 class HoverListener : public Rml::EventListener
 {
@@ -108,15 +81,6 @@ private:
 
 int HoverListener::hovered_action = RIB_RMLUI_ACTION_NONE;
 
-/* The option the player chose with a click.
- *
- * We pass it as a string next to the action, not inside the action. Slots are
- * `SELECT_SLOT_1 + index`, and if we encoded every list that way, the number
- * of controllers for a console would have to be in the enum, while it is a
- * fact of the console package.
- */
-static std::string chosen_device;
-
 class DeviceOptionListener : public Rml::EventListener
 {
 public:
@@ -124,19 +88,13 @@ public:
 
    void ProcessEvent(Rml::Event&) override
    {
-      chosen_device = id;
-      ActionListener::queue_action(RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE);
+      ActionListener::queue_action({RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE, id});
    }
    void OnDetach(Rml::Element*) override { delete this; }
 
 private:
    std::string id;
 };
-
-extern "C" const char *rib_rmlui_chosen_device(void)
-{
-   return chosen_device.c_str();
-}
 
 struct StatusMessage { std::string text; double expires = 0; };
 StatusMessage main_status, controls_status;
@@ -605,23 +563,20 @@ extern "C" void rib_rmlui_set_status(const char *status)
 /* The screens declared in a design, in the order of declaration. */
 struct Screen { std::string id, panel, heading, footer, button; };
 std::vector<Screen> screens;
-std::string requested_screen;
-std::string chosen_item;
+
 /* Buttons that already have a listener. We replace the built-in screens with
  * the declaration in a design, and without this we would attach two listeners
  * to the same button, and every press would send two intents. */
 std::set<std::string> wired_screen_buttons;
 
-/* Pressing the button for a screen. We pass the id next to the action, not
- * inside it, so declaring a screen never adds to the action enum. */
+/* For a declared screen button, we send the screen id with its intent. */
 class ScreenListener : public Rml::EventListener
 {
 public:
    explicit ScreenListener(std::string id) : id(std::move(id)) {}
    void ProcessEvent(Rml::Event&) override
    {
-      requested_screen = id;
-      ActionListener::queue_action(RIB_RMLUI_ACTION_SHOW_SCREEN);
+      ActionListener::queue_action({RIB_RMLUI_ACTION_SHOW_SCREEN, id});
    }
    void OnDetach(Rml::Element*) override { delete this; }
 private:
@@ -680,21 +635,6 @@ extern "C" bool rib_rmlui_set_scene(const char *markup)
    return true;
 }
 
-extern "C" const char *rib_rmlui_requested_screen(void)
-{
-   return requested_screen.c_str();
-}
-
-extern "C" void rib_rmlui_remember_item(const char *id)
-{
-   chosen_item = id ? id : "";
-}
-
-extern "C" const char *rib_rmlui_chosen_item(void)
-{
-   return chosen_item.c_str();
-}
-
 /* A generated list is one class of row and one class of page. The list is on
  * whichever panel is shown, and in the bridge we do not know whether the rows
  * are shaders, achievements or anything else. */
@@ -747,10 +687,9 @@ public:
          return;
       if (element->HasAttribute("disabled") || element->IsClassSet("disabled"))
          return;
-      chosen_item = kind == Choose ? std::string(element->GetId()) : page;
-      ActionListener::queue_action(kind == Choose
-            ? RIB_RMLUI_ACTION_LIST_CHOOSE
-            : RIB_RMLUI_ACTION_LIST_PAGE);
+      ActionListener::queue_action({kind == Choose
+            ? RIB_RMLUI_ACTION_LIST_CHOOSE : RIB_RMLUI_ACTION_LIST_PAGE,
+            kind == Choose ? std::string(element->GetId()) : page});
    }
    void OnDetach(Rml::Element*) override { delete this; }
 private:
@@ -758,9 +697,7 @@ private:
    std::string page;
 };
 
-/* A switch is a button with the list-toggle class. We pass the pressed switch
- * next to the action, as for a row and a controller, so there are no switches
- * in the bridge. */
+/* For each list switch, we send its declared id. */
 class ToggleListener : public Rml::EventListener
 {
 public:
@@ -771,8 +708,7 @@ public:
          return;
       if (element->HasAttribute("disabled") || element->IsClassSet("disabled"))
          return;
-      chosen_item = element->GetId();
-      ActionListener::queue_action(RIB_RMLUI_ACTION_TOGGLE);
+      ActionListener::queue_action({RIB_RMLUI_ACTION_TOGGLE, element->GetId()});
    }
    void OnDetach(Rml::Element*) override { delete this; }
 };
@@ -1256,9 +1192,7 @@ static std::map<std::string, float> slider_step;
 static std::string slider_drag_id;
 static float slider_drag_fraction = 0.0f;
 static float slider_drag_origin = 0.0f;
-static std::string changed_part;
-static float changed_fraction = 0.0f;
-static bool changed_on = false;
+
 static int pointer_x = 0;
 static int pointer_y = 0;
 
@@ -1314,9 +1248,7 @@ static void paint_slider(Rml::Element *slider, float fraction, const char *reado
 
 static void remember_slider(const std::string &id, float fraction)
 {
-   changed_part = id;
-   changed_fraction = clamp_fraction(fraction);
-   ActionListener::queue_action(RIB_RMLUI_ACTION_SLIDER);
+   ActionListener::queue_action({RIB_RMLUI_ACTION_SLIDER, id, clamp_fraction(fraction)});
 }
 
 /* One move cue when the level changes, and none when it does not. At an
@@ -1341,12 +1273,7 @@ public:
          return;
       const bool on = !element->IsClassSet("on");
       element->SetClass("on", on);
-      changed_part = id;
-      changed_on = on;
-      /* Not a list switch. Leaving the last list id set would flip that
-       * switch when this part is clicked. */
-      chosen_item.clear();
-      ActionListener::queue_action(RIB_RMLUI_ACTION_TOGGLE);
+      ActionListener::queue_action({RIB_RMLUI_ACTION_PART_TOGGLE, id, 0.0f, on});
    }
    void OnDetach(Rml::Element *) override { delete this; }
 private:
@@ -1398,21 +1325,6 @@ static void wire_arrows(Rml::Element *node)
       }
       return rib::Walk::Continue;
    });
-}
-
-extern "C" const char *rib_rmlui_changed_part(void)
-{
-   return changed_part.c_str();
-}
-
-extern "C" float rib_rmlui_changed_fraction(void)
-{
-   return changed_fraction;
-}
-
-extern "C" bool rib_rmlui_changed_on(void)
-{
-   return changed_on;
 }
 
 extern "C" const char *rib_rmlui_screen_panel(const char *id)
@@ -1596,9 +1508,9 @@ extern "C" void rib_rmlui_pointer_button(bool down)
    }
 }
 
-extern "C" int rib_rmlui_take_action(void)
+rib::Event rib_rmlui_take_event()
 {
-   return ActionListener::take_action();
+   return ActionListener::take_event();
 }
 
 extern "C" int rib_rmlui_hovered_action(void)

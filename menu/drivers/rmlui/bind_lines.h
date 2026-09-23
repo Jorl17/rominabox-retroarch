@@ -1,6 +1,7 @@
 #ifndef RIB_MENU_BIND_LINES_H
 #define RIB_MENU_BIND_LINES_H
 
+#include "host.h"
 #include "../../../input/input_driver.h"
 #include "../../../input/input_keymaps.h"
 #include <string/stdstring.h>
@@ -10,7 +11,7 @@
 /* One line for each input in a retro_keybind. We read each field separately,
  * because with a comma inside a name, splitting a joined string would be
  * ambiguous. */
-#define RIB_BIND_LINE_MAX 64
+#define RIB_BIND_LINE_MAX RIB_HOST_BIND_LINE_MAX
 
 static inline void rib_mouse_label(uint16_t button, char *out, size_t length)
 {

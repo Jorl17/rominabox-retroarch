@@ -3,35 +3,20 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../../command.h"
-#include "../../audio/audio_driver.h"
-#include "../../configuration.h"
-#include "../../gfx/gfx_thumbnail.h"
-#include "../../input/input_driver.h"
-#include "../../input/input_keymaps.h"
-#include "../../input/input_remapping.h"
-#include "../../file_path_special.h"
-#include "../../runloop.h"
-#include "../../disk_control_interface.h"
-#include "../../gfx/video_driver.h"
-#include "../../gfx/video_shader_parse.h"
-#include "../../verbosity.h"
+#include <new>
+#include <stdint.h>
+#include <retro_miscellaneous.h>
 #include <file/file_path.h>
 #include <file/config_file.h>
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
-#include <features/features_cpu.h>
-#include <libretro.h>
-#include "../menu_driver.h"
-#include "../menu_input.h"
-#include "../menu_cbs.h"
-#include "rmlui_bridge.h"
-#include "rmlui_shader_mark.h"
-#include "rmlui/bind_lines.h"
-#include "rmlui/files.h"
-#include "rmlui/host.h"
-#include "rmlui/declarations.h"
-#include <gfx/gl_capabilities.h>
+#include "../../../verbosity.h"
+#include "../rmlui_bridge.h"
+#include "../rmlui_shader_mark.h"
+#include "menu_api.h"
+#include "files.h"
+#include "host.h"
+#include "declarations.h"
 
 #ifndef RIB_RMLUI_DEFAULT_ASSETS
 #define RIB_RMLUI_DEFAULT_ASSETS "."
@@ -97,8 +82,6 @@ typedef struct rib_rmlui_menu
    char transfer_path[PATH_MAX_LENGTH];
    char controls_path[PATH_MAX_LENGTH];
    char control_labels[RIB_CONTROL_MAX][NAME_MAX_LENGTH];
-   char default_labels[RIB_CONTROL_MAX][NAME_MAX_LENGTH];
-   struct retro_keybind default_binds[RIB_CONTROL_MAX];
    /* The screen shown now. "pause" is the main menu screen. Escape resumes
     * the game only on pause, and on any other screen it stays in the menu. */
    char screen[32];
@@ -132,8 +115,8 @@ typedef struct rib_overlay
    int leave_ms;
    /* When the clock for this overlay started, after what it follows was done.
     * Zero until then. */
-   retro_time_t started_at;
-   retro_time_t finished_at;
+   int64_t started_at;
+   int64_t finished_at;
    enum rib_overlay_state state;
    bool finished;
 } rib_overlay_t;
@@ -142,7 +125,7 @@ static rib_overlay_t rib_overlays[RIB_OVERLAY_MAX];
 static int rib_overlay_count;
 static bool rib_overlays_running;
 static bool rib_overlay_mode;
-static retro_time_t rib_overlays_started_at;
+static int64_t rib_overlays_started_at;
 static rib_rmlui_menu_t *rib_rmlui_active_menu;
 
 /* The bind list. The element, and how long a control stays current before we
@@ -151,10 +134,10 @@ static char rib_binds_list[64];
 static int rib_binds_after_ms;
 static int rib_binds_width;
 static int rib_binds_for = -1;
-static retro_time_t rib_binds_since;
+static int64_t rib_binds_since;
 static bool rib_binds_open;
 static char rib_script_hover[128];
-static retro_time_t rib_script_wait_until;
+static int64_t rib_script_wait_until;
 static bool rib_script_running;
 
 static void rib_rmlui_refresh_controls(rib_rmlui_menu_t *menu);
@@ -166,8 +149,7 @@ static void rib_rmlui_cancel_capture(rib_rmlui_menu_t *menu, const char *status)
 static void rib_rmlui_load_shaders(rib_rmlui_menu_t *menu,
       const char *asset_directory);
 static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id);
-static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
-      size_t index, enum menu_action action);
+int rib_menu_key(void *data, enum rib_key action);
 
 void rib_rmlui_begin_overlays(void)
 {
@@ -828,34 +810,6 @@ void rib_rmlui_notify_state_task(const char *path, int slot,
    rib_rmlui_set_status(status);
 }
 
-static void rib_rmlui_apply_control_bind(config_file_t *config,
-      const rib_control_t *control)
-{
-   char base[64];
-   struct config_entry_list *entry;
-   struct retro_keybind *bind;
-
-   if (!config || !control)
-      return;
-
-   bind = &input_config_binds[0][control->bind_index];
-   snprintf(base, sizeof(base), "input_player1_%s", control->id);
-   entry = config_get_entry(config, base);
-   if (entry && entry->value && *entry->value)
-   {
-      input_keyboard_mapping_bits(0, bind->key);
-      bind->key = input_config_translate_str_to_rk(
-            entry->value, strlen(entry->value));
-      input_keyboard_mapping_bits(1, bind->key);
-   }
-   input_config_parse_joy_button(base, config, "input_player1",
-         control->id, bind);
-   input_config_parse_joy_axis(base, config, "input_player1",
-         control->id, bind);
-   input_config_parse_mouse_button(base, config, "input_player1",
-         control->id, bind);
-}
-
 static bool rib_rmlui_load_controls_file(rib_rmlui_menu_t *menu,
       const char *path, bool defaults)
 {
@@ -917,27 +871,15 @@ static bool rib_rmlui_load_controls_file(rib_rmlui_menu_t *menu,
          continue;
       if (defaults)
       {
-         struct retro_keybind *bind =
-            &input_config_binds[0][menu->controls[index].bind_index];
          menu->control_labels[index][0] = '\0';
-         input_keyboard_mapping_bits(0, bind->key);
-         bind->key = RETROK_UNKNOWN;
-         bind->joykey = NO_BTN;
-         bind->joyaxis = AXIS_NONE;
-         bind->mbutton = NO_BTN;
+         rib_host_clear_bind(menu->controls[index].bind_index);
       }
       snprintf(key, sizeof(key), "rib_label_%s", menu->controls[index].id);
       if (config_get_array(config, key, label, sizeof(label)))
          strlcpy(menu->control_labels[index], label,
                sizeof(menu->control_labels[index]));
-      rib_rmlui_apply_control_bind(config, &menu->controls[index]);
-      if (defaults)
-      {
-         strlcpy(menu->default_labels[index], menu->control_labels[index],
-               sizeof(menu->default_labels[index]));
-         menu->default_binds[index] =
-            input_config_binds[0][menu->controls[index].bind_index];
-      }
+      rib_host_load_bind(config, menu->controls[index].id, menu->controls[index].bind_index);
+
    }
    rib_host_restore_keyboard_mapping();
    config_file_free(config);
@@ -978,68 +920,6 @@ static void rib_rmlui_reload_controls(rib_rmlui_menu_t *menu)
    rib_rmlui_refresh_controls(menu);
 }
 
-static void rib_rmlui_save_joy_button(config_file_t *config,
-      const char *key, uint16_t joykey)
-{
-   char value[32];
-   if (joykey == NO_BTN)
-      config_set_string(config, key, "nul");
-   else if (GET_HAT_DIR(joykey))
-   {
-      const char *direction = "";
-      switch (GET_HAT_DIR(joykey))
-      {
-         case HAT_UP_MASK: direction = "up"; break;
-         case HAT_DOWN_MASK: direction = "down"; break;
-         case HAT_LEFT_MASK: direction = "left"; break;
-         case HAT_RIGHT_MASK: direction = "right"; break;
-         default: break;
-      }
-      snprintf(value, sizeof(value), "h%u%s", GET_HAT(joykey), direction);
-      config_set_string(config, key, value);
-   }
-   else
-      config_set_uint(config, key, joykey);
-}
-
-static void rib_rmlui_save_axis(config_file_t *config,
-      const char *key, uint32_t axis)
-{
-   char value[24];
-   if (axis == AXIS_NONE)
-      config_set_string(config, key, "nul");
-   else if (AXIS_NEG_GET(axis) != AXIS_DIR_NONE)
-   {
-      snprintf(value, sizeof(value), "-%lu",
-            (unsigned long)AXIS_NEG_GET(axis));
-      config_set_string(config, key, value);
-   }
-   else
-   {
-      snprintf(value, sizeof(value), "+%lu",
-            (unsigned long)AXIS_POS_GET(axis));
-      config_set_string(config, key, value);
-   }
-}
-
-static void rib_rmlui_save_mouse_button(config_file_t *config,
-      const char *key, uint16_t mouse_button)
-{
-   switch (mouse_button)
-   {
-      case RETRO_DEVICE_ID_MOUSE_LEFT: config_set_uint(config, key, 1); break;
-      case RETRO_DEVICE_ID_MOUSE_RIGHT: config_set_uint(config, key, 2); break;
-      case RETRO_DEVICE_ID_MOUSE_MIDDLE: config_set_uint(config, key, 3); break;
-      case RETRO_DEVICE_ID_MOUSE_BUTTON_4: config_set_uint(config, key, 4); break;
-      case RETRO_DEVICE_ID_MOUSE_BUTTON_5: config_set_uint(config, key, 5); break;
-      case RETRO_DEVICE_ID_MOUSE_WHEELUP: config_set_string(config, key, "wu"); break;
-      case RETRO_DEVICE_ID_MOUSE_WHEELDOWN: config_set_string(config, key, "wd"); break;
-      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELUP: config_set_string(config, key, "whu"); break;
-      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELDOWN: config_set_string(config, key, "whd"); break;
-      default: config_set_string(config, key, "nul"); break;
-   }
-}
-
 static bool rib_rmlui_save_controls(rib_rmlui_menu_t *menu)
 {
    config_file_t *config;
@@ -1052,25 +932,14 @@ static bool rib_rmlui_save_controls(rib_rmlui_menu_t *menu)
    config_set_string(config, "controls_profile", menu->profile_id);
    for (index = 0; index < menu->control_count; ++index)
    {
-      const struct retro_keybind *bind;
       char key[96];
-      char value[64];
 
       if (!rib_control_is_active(menu, index))
          continue;
-      bind = &input_config_binds[0][menu->controls[index].bind_index];
       snprintf(key, sizeof(key), "rib_label_%s", menu->controls[index].id);
       config_set_string(config, key, menu->control_labels[index]);
 
-      snprintf(key, sizeof(key), "input_player1_%s", menu->controls[index].id);
-      input_keymaps_translate_rk_to_str(bind->key, value, sizeof(value));
-      config_set_string(config, key, value);
-      snprintf(key, sizeof(key), "input_player1_%s_btn", menu->controls[index].id);
-      rib_rmlui_save_joy_button(config, key, bind->joykey);
-      snprintf(key, sizeof(key), "input_player1_%s_axis", menu->controls[index].id);
-      rib_rmlui_save_axis(config, key, bind->joyaxis);
-      snprintf(key, sizeof(key), "input_player1_%s_mbtn", menu->controls[index].id);
-      rib_rmlui_save_mouse_button(config, key, bind->mbutton);
+      rib_host_write_bind(config, menu->controls[index].id, menu->controls[index].bind_index);
    }
 
    saved = rib_write_menu_config(config, menu->controls_path,
@@ -1140,12 +1009,12 @@ static void rib_rmlui_reset_interaction(rib_rmlui_menu_t *menu, bool opening)
    }
 }
 
-static void rib_rmlui_toggle(void *userdata, bool on)
+void rib_menu_toggle(void *userdata, bool on)
 {
    rib_rmlui_reset_interaction((rib_rmlui_menu_t*)userdata, on);
 }
 
-bool rib_rmlui_consume_menu_toggle(void *userdata)
+bool rib_menu_consume_toggle(void *userdata)
 {
    rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)userdata;
    return menu && rib_rmlui_toggle_stays_in_menu(
@@ -1158,7 +1027,7 @@ static void rib_rmlui_cancel_capture(rib_rmlui_menu_t *menu,
 {
    if (!menu || !menu->capture_active)
       return;
-   menu_input_rib_bind_cancel();
+   rib_host_capture_cancel();
    menu->capture_active = false;
    rib_rmlui_set_controls_status(status ? status : "BINDING UNCHANGED");
    rib_rmlui_set_footer_hint(menu->controls_visible ? "ESC  BACK" :
@@ -1171,7 +1040,7 @@ static void rib_rmlui_start_capture(rib_rmlui_menu_t *menu, int index)
    char status[96];
    if (!menu || !rib_control_is_active(menu, index))
       return;
-   if (!menu_input_rib_bind_start(menu->controls[index].bind_index,
+   if (!rib_host_capture_start(menu->controls[index].bind_index,
             RIB_CONTROL_CAPTURE_SECONDS))
    {
       rib_rmlui_set_controls_status("CAPTURE COULD NOT START");
@@ -1190,21 +1059,15 @@ static void rib_rmlui_start_capture(rib_rmlui_menu_t *menu, int index)
 static int rib_rmlui_find_binding_conflict(
       const rib_rmlui_menu_t *menu, int changed_index)
 {
-   const struct retro_keybind *changed;
    int index;
    if (!rib_control_is_active(menu, changed_index))
       return -1;
-   changed = &input_config_binds[0][menu->controls[changed_index].bind_index];
    for (index = 0; index < menu->control_count; ++index)
    {
-      const struct retro_keybind *candidate;
       if (index == changed_index || !rib_control_is_active(menu, index))
          continue;
-      candidate = &input_config_binds[0][menu->controls[index].bind_index];
-      if ((changed->key != RETROK_UNKNOWN && changed->key == candidate->key) ||
-          (changed->joykey != NO_BTN && changed->joykey == candidate->joykey) ||
-          (changed->joyaxis != AXIS_NONE && changed->joyaxis == candidate->joyaxis) ||
-          (changed->mbutton != NO_BTN && changed->mbutton == candidate->mbutton))
+      if (rib_host_bind_conflicts(menu->controls[changed_index].bind_index,
+               menu->controls[index].bind_index))
          return index;
    }
    return -1;
@@ -1444,8 +1307,9 @@ static void rib_focus_list(rib_rmlui_menu_t *menu, int index)
    rib_rmlui_focus_list(menu);
 }
 
-static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
+static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& event)
 {
+   const auto action = event.kind;
    char status[64];
    int control_index;
 
@@ -1466,14 +1330,14 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
    if (action == RIB_RMLUI_ACTION_SLIDER)
    {
       rib_rmlui_play_action_sound(action);
-      if (string_is_equal(rib_rmlui_changed_part(), RIB_VOLUME_SLIDER_ID))
+      if (string_is_equal(event.id.c_str(), RIB_VOLUME_SLIDER_ID))
          rib_set_volume_db(menu,
-               rib_volume_db_from_fraction(rib_rmlui_changed_fraction()), true);
+               rib_volume_db_from_fraction(event.fraction), true);
       return;
    }
    if (action == RIB_RMLUI_ACTION_LIST_CHOOSE)
    {
-      const char *id = rib_rmlui_chosen_item();
+      const char *id = event.id.c_str();
       int row;
 
       if (rib_discs_choose(menu, id))
@@ -1493,7 +1357,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
    }
    if (action == RIB_RMLUI_ACTION_LIST_PAGE)
    {
-      const char *which = rib_rmlui_chosen_item();
+      const char *which = event.id.c_str();
       int delta = which && string_is_equal(which, "prev") ? -1 : 1;
 
       rib_rmlui_play_action_sound(action);
@@ -1501,14 +1365,18 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
          rib_focus_list(menu, 0);
       return;
    }
+   if (action == RIB_RMLUI_ACTION_PART_TOGGLE)
+   {
+      rib_rmlui_play_action_sound(action);
+      return;
+   }
    if (action == RIB_RMLUI_ACTION_TOGGLE)
    {
-      const char *id = rib_rmlui_chosen_item();
+      const char *id = event.id.c_str();
       int index;
 
       rib_rmlui_play_action_sound(action);
-      /* A part toggle paints itself and leaves no id. A list toggle names
-       * itself, and that is the one whose state is stored. */
+      /* We save the state of a list switch, and only repaint the other parts. */
       if (!id || !*id)
          return;
       for (index = 0; index < menu->toggle_count; ++index)
@@ -1526,10 +1394,8 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
    }
    if (action == RIB_RMLUI_ACTION_SHOW_SCREEN)
    {
-      /* We pass the screen next to the action, so declaring a screen never
-       * adds to the enum. We still record whether the controls screen is
-       * open, because capture and navigation work differently there. */
-      const char *wanted = rib_rmlui_requested_screen();
+      /* We capture and navigate on the active screen, with the id from the event. */
+      const char *wanted = event.id.c_str();
       char screen_id[32];
 
       screen_id[0] = '\0';
@@ -1596,9 +1462,8 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
 
    if (action == RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE)
    {
-      /* We pass the chosen id next to the action, not inside it, so the number
-       * of controllers for a console never has to be part of an enum. */
-      const char *chosen = rib_rmlui_chosen_device();
+      /* The chosen id is in the event, which we keep until we apply this choice. */
+      const char *chosen = event.id.c_str();
       menu->device_picker_open = false;
       if (chosen && *chosen && !string_is_equal(chosen, menu->profile_id))
       {
@@ -1788,29 +1653,20 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
    }
 }
 
-static void *rib_rmlui_menu_init(void **userdata, bool video_is_threaded)
+void *rib_menu_create(void)
 {
-   menu_handle_t *menu_handle = (menu_handle_t*)calloc(1, sizeof(*menu_handle));
-   rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)calloc(1, sizeof(*menu));
-   (void)video_is_threaded;
-
-   if (!menu_handle || !menu)
-   {
-      free(menu_handle);
-      free(menu);
-      return NULL;
-   }
-
+   rib_rmlui_menu_t *menu = new (std::nothrow) rib_rmlui_menu_t{};
+   if (!menu)
+      return nullptr;
    menu->selected_slot = 1;
    menu->focused = RIB_RMLUI_ACTION_RESUME;
    menu->row_focus = 0;
    strlcpy(menu->screen, "pause", sizeof(menu->screen));
    rib_rmlui_active_menu = menu;
-   *userdata = menu;
-   return menu_handle;
+   return menu;
 }
 
-static void rib_rmlui_free(void *data)
+void rib_menu_destroy(void *data)
 {
    rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)data;
    if (rib_rmlui_active_menu == data)
@@ -1819,10 +1675,11 @@ static void rib_rmlui_free(void *data)
       rib_rmlui_cancel_capture(menu, NULL);
    rib_rmlui_shutdown();
    rib_overlays_running = false;
-   /* The call that frees userdata is in menu_driver_ctl, after this callback. */
+   delete menu;
+   /* We leave the small userdata wrapper of the C adapter to menu_driver_ctl. */
 }
 
-static void rib_rmlui_context_destroy(void *data)
+void rib_menu_context_destroy(void *data)
 {
    rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)data;
    if (menu && menu->capture_active)
@@ -1832,10 +1689,9 @@ static void rib_rmlui_context_destroy(void *data)
       menu->initialized = false;
 }
 
-static void rib_rmlui_context_reset(void *data, bool video_is_threaded)
+void rib_menu_context_reset(void *data)
 {
    rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)data;
-   (void)video_is_threaded;
    if (menu)
       menu->initialized = false;
    /* With a new video driver the menu is switched off, so for anything still
@@ -1880,11 +1736,8 @@ static bool rib_rmlui_script_wants_frames(void)
 static void rib_rmlui_script_shot(void)
 {
    const char *path       = getenv("ROMINABOX_MENU_SHOT");
-   settings_t *settings   = config_get_ptr();
-   runloop_state_t *state = runloop_state_get_ptr();
-   video_driver_state_t *video_st = video_state_get_ptr();
 
-   if (!path || !*path || !state || !video_st)
+   if (!path || !*path || !rib_host_prepare_script_shot())
    {
       /* Without a screenshot, a script only drives the menu, so we leave the
        * game running and do not quit while someone may be playing it. */
@@ -1895,8 +1748,6 @@ static void rib_rmlui_script_shot(void)
     * the core, because we draw the menu over the game and the framebuffer
     * contains only the game. We change the setting here, so there is no need
     * for a config override in the harness to get a picture of the menu. */
-   if (settings)
-      configuration_set_bool(settings, settings->bools.video_gpu_screenshot, true);
 
    /* We take the picture in the menu renderer, because the pixels are there:
     * the frame of the core with the menu drawn over it, still in the back
@@ -1906,9 +1757,7 @@ static void rib_rmlui_script_shot(void)
     *
     * We then end the run in the usual way, so no window stays open. */
    rib_rmlui_capture_next(path);
-   state->max_frames = (unsigned)video_st->frame_count + 2;
-   RARCH_LOG("[RIB] menu script shooting %s, exiting after frame %u.\n",
-         path, state->max_frames);
+   rib_host_end_after_script_shot(path);
 }
 
 static void rib_rmlui_run_script(void)
@@ -1935,7 +1784,7 @@ static void rib_rmlui_run_script(void)
 
    if (rib_script_wait_until)
    {
-      if (cpu_features_get_time_usec() < rib_script_wait_until)
+      if (rib_host_time_us() < rib_script_wait_until)
          return;
       rib_script_wait_until = 0;
    }
@@ -1957,9 +1806,7 @@ static void rib_rmlui_run_script(void)
          /* After the clicks, including a disc change after the frames in which
           * the tray closes. For a row whose action never ran, we report the
           * index in the core, which is the disc it started on. */
-         disk_control_log_core_image(
-               &runloop_state_get_ptr()->system.disk_control,
-               "menu script done");
+         rib_host_script_finished();
          rib_rmlui_script_shot();
       }
       return;
@@ -1982,25 +1829,25 @@ static void rib_rmlui_run_script(void)
 
    if (!strncmp(id, "wait-ms:", 8))
    {
-      rib_script_wait_until = cpu_features_get_time_usec()
-            + (retro_time_t)atoi(id + 8) * 1000;
+      rib_script_wait_until = rib_host_time_us()
+            + (int64_t)atoi(id + 8) * 1000;
       RARCH_LOG("[RIB] menu script waiting %s ms.\n", id + 8);
       return;
    }
 
    if (!strncmp(id, "key:", 4))
    {
-      static const struct { const char *name; enum menu_action action; } keys[] = {
-         {"up", MENU_ACTION_UP}, {"down", MENU_ACTION_DOWN},
-         {"left", MENU_ACTION_LEFT}, {"right", MENU_ACTION_RIGHT},
-         {"ok", MENU_ACTION_OK}, {"cancel", MENU_ACTION_CANCEL},
-         {"start", MENU_ACTION_START}
+      static const struct { const char *name; enum rib_key action; } keys[] = {
+         {"up", RIB_KEY_UP}, {"down", RIB_KEY_DOWN},
+         {"left", RIB_KEY_LEFT}, {"right", RIB_KEY_RIGHT},
+         {"ok", RIB_KEY_OK}, {"cancel", RIB_KEY_CANCEL},
+         {"start", RIB_KEY_START}
       };
       unsigned key;
       for (key = 0; key < sizeof(keys) / sizeof(keys[0]); ++key)
          if (string_is_equal(id + 4, keys[key].name))
          {
-            rib_rmlui_entry_action(rib_rmlui_active_menu, NULL, 0, keys[key].action);
+            rib_menu_key(rib_rmlui_active_menu, keys[key].action);
             return;
          }
       RARCH_ERR("[RIB] menu script names no key '%s'; stopping.\n", id + 4);
@@ -2011,12 +1858,11 @@ static void rib_rmlui_run_script(void)
    if (!strncmp(id, "report:", 7))
    {
       rib_rmlui_menu_t *menu = rib_rmlui_active_menu;
-      settings_t *settings = config_get_ptr();
       if (menu)
          fprintf(stderr, "[RIB] checkpoint %s %s\n", id + 7,
                rib_rmlui_script_report(menu->screen, rib_host_menu_open(),
                      menu->transfer_pending, menu->capture_active, menu->profile_id,
-                     settings ? settings->floats.audio_volume : AUDIO_VOLUME_DEFAULT_DB));
+                     rib_host_volume()));
       return;
    }
 
@@ -2075,7 +1921,7 @@ static void rib_rmlui_run_script(void)
  */
 /* When the clock for this overlay starts: at the start of the game, or when the
  * overlay before it is done. Zero until then. */
-static retro_time_t rib_overlay_begins_at(const rib_overlay_t *overlay)
+static int64_t rib_overlay_begins_at(const rib_overlay_t *overlay)
 {
    int index;
 
@@ -2095,14 +1941,14 @@ static retro_time_t rib_overlay_begins_at(const rib_overlay_t *overlay)
 
 static void rib_rmlui_run_overlays(void)
 {
-   retro_time_t now;
+   int64_t now;
    int index;
    bool pending = false;
 
    if (!rib_overlays_running)
       return;
 
-   now = cpu_features_get_time_usec();
+   now = rib_host_time_us();
    if (!rib_overlays_started_at)
       rib_overlays_started_at = now;
 
@@ -2187,8 +2033,8 @@ static void rib_callout_text(const rib_rmlui_menu_t *menu, int index,
 {
    int members[RIB_CONTROL_MAX];
    int member_count = 0;
-   char details[RIB_BIND_LINE_MAX][64];
-   char kinds[RIB_BIND_LINE_MAX][8];
+   char details[RIB_HOST_BIND_LINE_MAX][64];
+   char kinds[RIB_HOST_BIND_LINE_MAX][8];
    int lines = 0;
    int slot;
    size_t used = 0;
@@ -2216,7 +2062,7 @@ static void rib_callout_text(const rib_rmlui_menu_t *menu, int index,
    for (slot = 0; slot < member_count; ++slot)
    {
       const unsigned at = menu->controls[members[slot]].bind_index;
-      rib_lines_from_bind(&input_config_binds[0][at], &input_autoconf_binds[0][at],
+      rib_host_bind_lines(at,
             details, kinds, &lines);
    }
    if (lines <= 0)
@@ -2242,9 +2088,9 @@ static void rib_show_binds(rib_rmlui_menu_t *menu, int index)
 {
    int members[RIB_CONTROL_MAX];
    int member_count = 0;
-   char details[RIB_BIND_LINE_MAX][64];
-   char kinds[RIB_BIND_LINE_MAX][8];
-   char titles[RIB_BIND_LINE_MAX][NAME_MAX_LENGTH];
+   char details[RIB_HOST_BIND_LINE_MAX][64];
+   char kinds[RIB_HOST_BIND_LINE_MAX][8];
+   char titles[RIB_HOST_BIND_LINE_MAX][NAME_MAX_LENGTH];
    int lines = 0;
    int rows;
    int slot;
@@ -2267,7 +2113,7 @@ static void rib_show_binds(rib_rmlui_menu_t *menu, int index)
    {
       int before = lines;
       const unsigned at = menu->controls[members[member]].bind_index;
-      rib_lines_from_bind(&input_config_binds[0][at], &input_autoconf_binds[0][at],
+      rib_host_bind_lines(at,
             details, kinds, &lines);
       for (slot = before; slot < lines; ++slot)
       {
@@ -2343,7 +2189,7 @@ static void rib_rmlui_update_binds(rib_rmlui_menu_t *menu, int x, int y)
 {
    int current = -1;
    int hovered;
-   retro_time_t now;
+   int64_t now;
 
    if (!menu || !rib_binds_list[0] || !menu->controls_visible
          || menu->capture_active || menu->device_picker_open)
@@ -2388,23 +2234,23 @@ static void rib_rmlui_update_binds(rib_rmlui_menu_t *menu, int x, int y)
    {
       rib_hide_binds();
       rib_binds_for = current;
-      rib_binds_since = cpu_features_get_time_usec();
+      rib_binds_since = rib_host_time_us();
    }
    if (current < 0 || rib_binds_open)
       return;
-   now = cpu_features_get_time_usec();
-   if (now - rib_binds_since >= (retro_time_t)rib_binds_after_ms * 1000)
+   now = rib_host_time_us();
+   if (now - rib_binds_since >= (int64_t)rib_binds_after_ms * 1000)
       rib_show_binds(menu, current);
 }
 
-static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
+void rib_menu_frame(void *data, int width, int height)
 {
    rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)data;
-   menu_input_pointer_t pointer;
+   rib_pointer pointer;
    const char *asset_directory = getenv("ROMINABOX_RML_ASSETS");
    const char *data_directory = rib_absolute_data_dir();
 
-   if (!menu || !video_info)
+   if (!menu)
       return;
 
    if (!menu->initialized)
@@ -2412,8 +2258,8 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
       if (!asset_directory || !*asset_directory)
          asset_directory = RIB_RMLUI_DEFAULT_ASSETS;
       menu->initialized = rib_rmlui_init(asset_directory,
-            (int)video_info->width, (int)video_info->height,
-            gl_query_core_context_in_use());
+            width, height,
+            rib_host_core_gl_context());
       if (!menu->initialized)
       {
          RARCH_ERR("[RmlUi] Failed to initialize menu from %s.\n",
@@ -2492,16 +2338,16 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
           * after asking it. */
          rib_rmlui_run_script();
          rib_rmlui_run_overlays();
-         rib_rmlui_render((int)video_info->width, (int)video_info->height);
+         rib_rmlui_render(width, height);
          return;
       }
       rib_rmlui_run_overlays();
    }
 
-   menu_input_get_pointer_state(&pointer);
+   pointer = rib_host_pointer();
    {
       bool pointer_pressed =
-            (pointer.flags & MENU_INP_PTR_FLG_PRESSED) != 0;
+            pointer.pressed;
 
       rib_rmlui_pointer_move(pointer.x, pointer.y);
       if (rib_script_running && rib_script_hover[0])
@@ -2549,8 +2395,8 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
 
    for (;;)
    {
-      int next_action = rib_rmlui_take_action();
-      if (next_action == RIB_RMLUI_ACTION_NONE)
+      auto next_action = rib_rmlui_take_event();
+      if (next_action.kind == RIB_RMLUI_ACTION_NONE)
          break;
       rib_rmlui_perform_action(menu, next_action);
    }
@@ -2559,10 +2405,9 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
    {
       char capture_status[96];
       float remaining = 0.0f;
-      enum menu_rib_bind_result result = menu_input_rib_bind_poll(
-            menu_driver_get_current_time(), &remaining,
-            !menu->capture_ignore_pointer);
-      if (result == MENU_RIB_BIND_CAPTURED)
+      enum rib_capture_result result = rib_host_capture_poll(
+            !menu->capture_ignore_pointer, &remaining);
+      if (result == RIB_CAPTURE_CAPTURED)
       {
          int conflict = rib_rmlui_find_binding_conflict(
                menu, menu->capture_control);
@@ -2585,7 +2430,7 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
          rib_rmlui_refresh_controls(menu);
          rib_rmlui_set_footer_hint("ESC  BACK");
       }
-      else if (result == MENU_RIB_BIND_TIMED_OUT)
+      else if (result == RIB_CAPTURE_TIMED_OUT)
       {
          menu->capture_active = false;
          rib_rmlui_set_controls_status("TIMED OUT; BINDING UNCHANGED");
@@ -2605,14 +2450,14 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
    rib_rmlui_reload_if_changed();
    rib_rmlui_refresh_slots();
    rib_rmlui_update_binds(menu, (int)pointer.x, (int)pointer.y);
-   rib_rmlui_render((int)video_info->width, (int)video_info->height);
+   rib_rmlui_render(width, height);
 
 }
 
 /* A screen other than Pause and Controls, whose navigation we leave as it
  * was. On any other screen, the player moves through the parts of the panel in
  * the design, such as a slider, a toggle or a button, in document order. */
-static int rib_part_navigate(rib_rmlui_menu_t *menu, enum menu_action action)
+static int rib_part_navigate(rib_rmlui_menu_t *menu, enum rib_key action)
 {
    char ids[16][64];
    const char *panel = rib_rmlui_screen_panel(menu->screen);
@@ -2625,33 +2470,33 @@ static int rib_part_navigate(rib_rmlui_menu_t *menu, enum menu_action action)
 
    switch (action)
    {
-      case MENU_ACTION_UP:
+      case RIB_KEY_UP:
          menu->panel_focus = (menu->panel_focus + count - 1) % count;
          rib_rmlui_mark_focused(panel, ids[menu->panel_focus]);
 #ifdef HAVE_AUDIOMIXER
          rib_host_scroll_sound(true);
 #endif
          return 0;
-      case MENU_ACTION_DOWN:
+      case RIB_KEY_DOWN:
          menu->panel_focus = (menu->panel_focus + 1) % count;
          rib_rmlui_mark_focused(panel, ids[menu->panel_focus]);
 #ifdef HAVE_AUDIOMIXER
          rib_host_scroll_sound(false);
 #endif
          return 0;
-      case MENU_ACTION_LEFT:
-      case MENU_ACTION_RIGHT:
+      case RIB_KEY_LEFT:
+      case RIB_KEY_RIGHT:
          if (rib_rmlui_part_is_slider(ids[menu->panel_focus]))
             rib_rmlui_nudge_slider(ids[menu->panel_focus],
-                  action == MENU_ACTION_RIGHT ? 1 : -1);
+                  action == RIB_KEY_RIGHT ? 1 : -1);
          return 0;
-      case MENU_ACTION_OK:
-      case MENU_ACTION_SELECT:
+      case RIB_KEY_OK:
+      case RIB_KEY_SELECT:
          rib_rmlui_click_element(ids[menu->panel_focus]);
          return 0;
-      case MENU_ACTION_CANCEL:
-      case MENU_ACTION_RESUME:
-      case MENU_ACTION_TOGGLE:
+      case RIB_KEY_CANCEL:
+      case RIB_KEY_RESUME:
+      case RIB_KEY_TOGGLE:
          rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_CONTROLS_BACK);
          strlcpy(menu->screen, "pause", sizeof(menu->screen));
          rib_rmlui_show_screen("pause");
@@ -2662,12 +2507,9 @@ static int rib_part_navigate(rib_rmlui_menu_t *menu, enum menu_action action)
    }
 }
 
-static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
-      size_t index, enum menu_action action)
+int rib_menu_key(void *data, enum rib_key action)
 {
    rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)data;
-   (void)entry;
-   (void)index;
 
    if (!menu)
       return 0;
@@ -2695,7 +2537,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
 
       switch (action)
       {
-         case MENU_ACTION_UP:
+         case RIB_KEY_UP:
             if (stops > 0)
             {
                rib_focus_list(menu, (menu->list_focus + stops - 1) % stops);
@@ -2704,7 +2546,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
 #endif
             }
             return 0;
-         case MENU_ACTION_DOWN:
+         case RIB_KEY_DOWN:
             if (stops > 0)
             {
                rib_focus_list(menu, (menu->list_focus + 1) % stops);
@@ -2713,22 +2555,22 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
 #endif
             }
             return 0;
-         case MENU_ACTION_LEFT:
+         case RIB_KEY_LEFT:
             if (rib_rmlui_turn_list_page(-1) >= 0)
             {
                rib_focus_list(menu, 0);
                rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
             }
             return 0;
-         case MENU_ACTION_RIGHT:
+         case RIB_KEY_RIGHT:
             if (rib_rmlui_turn_list_page(1) >= 0)
             {
                rib_focus_list(menu, 0);
                rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
             }
             return 0;
-         case MENU_ACTION_OK:
-         case MENU_ACTION_SELECT:
+         case RIB_KEY_OK:
+         case RIB_KEY_SELECT:
             if (menu->list_focus >= rows)
             {
                /* Through the listener on the element, the same path as for a
@@ -2738,13 +2580,13 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
             }
             else if (rows > 0)
             {
-               rib_rmlui_remember_item(rib_rmlui_list_row_id(menu->list_focus));
-               rib_rmlui_perform_action(menu, RIB_RMLUI_ACTION_LIST_CHOOSE);
+               rib_rmlui_perform_action(menu, {RIB_RMLUI_ACTION_LIST_CHOOSE,
+                     rib_rmlui_list_row_id(menu->list_focus)});
             }
             return 0;
-         case MENU_ACTION_CANCEL:
-         case MENU_ACTION_RESUME:
-         case MENU_ACTION_TOGGLE:
+         case RIB_KEY_CANCEL:
+         case RIB_KEY_RESUME:
+         case RIB_KEY_TOGGLE:
             /* We leave this screen through its back button, so pressing Escape
              * goes to the same place as BACK, including back to Options from a
              * screen opened from Options. */
@@ -2761,32 +2603,32 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
    {
       if (menu->capture_active)
       {
-         if (action == MENU_ACTION_CANCEL || action == MENU_ACTION_RESUME ||
-             action == MENU_ACTION_TOGGLE)
+         if (action == RIB_KEY_CANCEL || action == RIB_KEY_RESUME ||
+             action == RIB_KEY_TOGGLE)
             rib_rmlui_perform_action(menu, RIB_RMLUI_ACTION_CONTROLS_CANCEL);
          return 0;
       }
 
       switch (action)
       {
-         case MENU_ACTION_UP:
-         case MENU_ACTION_LEFT:
+         case RIB_KEY_UP:
+         case RIB_KEY_LEFT:
 #ifdef HAVE_AUDIOMIXER
             rib_host_scroll_sound(true);
 #endif
             rib_focus_control(menu, rib_control_step(menu,
                   menu->control_focus, -1));
             return 0;
-         case MENU_ACTION_DOWN:
-         case MENU_ACTION_RIGHT:
+         case RIB_KEY_DOWN:
+         case RIB_KEY_RIGHT:
 #ifdef HAVE_AUDIOMIXER
             rib_host_scroll_sound(false);
 #endif
             rib_focus_control(menu, rib_control_step(menu,
                   menu->control_focus, 1));
             return 0;
-         case MENU_ACTION_OK:
-         case MENU_ACTION_SELECT:
+         case RIB_KEY_OK:
+         case RIB_KEY_SELECT:
             if (menu->control_focus < RIB_CONTROL_MAX)
                rib_rmlui_start_capture(menu, menu->control_focus);
             else if (menu->control_focus == RIB_CONTROL_MAX)
@@ -2794,12 +2636,12 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
             else
                rib_rmlui_perform_action(menu, RIB_RMLUI_ACTION_CONTROLS_BACK);
             return 0;
-         case MENU_ACTION_START:
+         case RIB_KEY_START:
             rib_rmlui_perform_action(menu, RIB_RMLUI_ACTION_CONTROLS_RESET);
             return 0;
-         case MENU_ACTION_CANCEL:
-         case MENU_ACTION_RESUME:
-         case MENU_ACTION_TOGGLE:
+         case RIB_KEY_CANCEL:
+         case RIB_KEY_RESUME:
+         case RIB_KEY_TOGGLE:
             /* We leave this screen through its back button, so pressing Escape
              * goes to the same place as BACK, including back to Options from a
              * screen opened from Options. */
@@ -2817,7 +2659,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
 
    switch (action)
    {
-      case MENU_ACTION_UP:
+      case RIB_KEY_UP:
          if (menu->row_focus < 0)
          {
             int slot = rib_rmlui_focus_slot(menu->focused);
@@ -2842,7 +2684,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
                   RIB_RMLUI_ACTION_SELECT_SLOT_1 + 3 + column, true);
          }
          return 0;
-      case MENU_ACTION_DOWN:
+      case RIB_KEY_DOWN:
          if (menu->row_focus < 0)
          {
             int slot = rib_rmlui_focus_slot(menu->focused);
@@ -2864,7 +2706,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
                   RIB_RMLUI_ACTION_SELECT_SLOT_1 + column, false);
          }
          return 0;
-      case MENU_ACTION_LEFT:
+      case RIB_KEY_LEFT:
          if (menu->row_focus < 0)
          {
             int slot = rib_rmlui_focus_slot(menu->focused);
@@ -2881,7 +2723,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
                   rib_pause_row_index((const char (*)[64])ids, count) - 1, true);
          }
          return 0;
-      case MENU_ACTION_RIGHT:
+      case RIB_KEY_RIGHT:
          if (menu->row_focus < 0)
          {
             int slot = rib_rmlui_focus_slot(menu->focused);
@@ -2898,10 +2740,10 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
                   rib_pause_row_index((const char (*)[64])ids, count) + 1, false);
          }
          return 0;
-      case MENU_ACTION_OK:
-      case MENU_ACTION_SELECT:
+      case RIB_KEY_OK:
+      case RIB_KEY_SELECT:
          if (menu->row_focus < 0)
-            rib_rmlui_perform_action(menu, menu->focused);
+            rib_rmlui_perform_action(menu, static_cast<rib_rmlui_action>(menu->focused));
          else
          {
             /* Press the element itself, so a button from the design opens what
@@ -2914,13 +2756,13 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
                rib_rmlui_click_element(ids[index]);
          }
          return 0;
-      case MENU_ACTION_CANCEL:
-      case MENU_ACTION_RESUME:
-      case MENU_ACTION_TOGGLE:
+      case RIB_KEY_CANCEL:
+      case RIB_KEY_RESUME:
+      case RIB_KEY_TOGGLE:
          rib_rmlui_perform_action(menu, rib_rmlui_map_menu_toggle(
                false, false));
          return 0;
-      case MENU_ACTION_START:
+      case RIB_KEY_START:
          rib_rmlui_perform_action(menu, RIB_RMLUI_ACTION_SAVE);
          return 0;
       default:
@@ -2928,25 +2770,3 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
    }
 }
 
-static int rib_rmlui_bind_init(menu_file_list_cbs_t *cbs,
-      const char *path, const char *label, unsigned type, size_t index)
-{
-   (void)cbs;
-   (void)path;
-   (void)label;
-   (void)type;
-   (void)index;
-   return 0;
-}
-
-menu_ctx_driver_t menu_ctx_rmlui = {
-   .frame          = rib_rmlui_frame,
-   .init           = rib_rmlui_menu_init,
-   .free           = rib_rmlui_free,
-   .context_reset  = rib_rmlui_context_reset,
-   .context_destroy = rib_rmlui_context_destroy,
-   .bind_init      = rib_rmlui_bind_init,
-   .ident          = "rmlui",
-   .toggle         = rib_rmlui_toggle,
-   .entry_action   = rib_rmlui_entry_action
-};
