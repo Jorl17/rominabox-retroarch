@@ -1060,6 +1060,7 @@ ifeq ($(HAVE_MENU), 1)
              menu/drivers/rmlui/host.o menu/drivers/rmlui/files.o menu/drivers/rmlui/declarations.o \
              menu/drivers/rmlui/binds_popup.o menu/drivers/rmlui/document.o \
              menu/drivers/rmlui/overlays.o menu/drivers/rmlui/script.o \
+             menu/drivers/rmlui/shaders.o menu/drivers/rmlui/discs.o menu/drivers/rmlui/settings.o \
              menu/drivers/rmlui/render/rmlui_gl.o menu/drivers/rmlui/render/rmlui_gl3.o \
              menu/drivers/third_party/lodepng.o
       DEFINES += -DHAVE_RMLUI

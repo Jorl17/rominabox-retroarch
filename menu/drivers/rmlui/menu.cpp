@@ -12,13 +12,15 @@
 #include <string/stdstring.h>
 #include "../../../verbosity.h"
 #include "../rmlui_bridge.h"
-#include "../rmlui_shader_mark.h"
 #include "menu_api.h"
 #include "files.h"
 #include "host.h"
 #include "declarations.h"
 #include "overlays.hpp"
 #include "script.hpp"
+#include "shaders.hpp"
+#include "discs.hpp"
+#include "settings.hpp"
 
 #ifndef RIB_RMLUI_DEFAULT_ASSETS
 #define RIB_RMLUI_DEFAULT_ASSETS "."
@@ -34,11 +36,6 @@
  * package, and when there are more, we say so in the log. */
 #define RIB_DEVICE_MAX 8
 #define RIB_CONTROL_CAPTURE_SECONDS 10
-/* How many generated rows fit in one list, the size of a buffer. We write the
- * ids at export, and we log any id beyond this number instead of applying it
- * to the wrong preset. */
-#define RIB_SHADER_MAX 32
-
 typedef struct rib_control
 {
    char id[32];
@@ -54,6 +51,10 @@ typedef struct rib_rmlui_menu
    bool overlay_mode;
    rib::Overlays overlays;
    rib::Script script;
+   rib::Shaders shaders;
+   rib::Discs discs;
+   rib::Toggles toggles;
+   rib::Volume volume;
    bool pointer_pressed;
    bool transfer_pending;
    bool transfer_is_save;
@@ -66,7 +67,6 @@ typedef struct rib_rmlui_menu
    /* Which button of the pause row is focused, as an index into that row,
     * or -1 while a save slot is focused instead. */
    int row_focus;
-   char volume_path[PATH_MAX_LENGTH];
    bool capture_active;
    int capture_control;
    int control_focus;
@@ -91,13 +91,6 @@ typedef struct rib_rmlui_menu
     * the game only on pause, and on any other screen it stays in the menu. */
    char screen[32];
    int list_focus;
-   char shader_ids[RIB_SHADER_MAX][64];
-   char shader_presets[RIB_SHADER_MAX][PATH_MAX_LENGTH];
-   int shader_count;
-   char shader_state_on[32];
-   char shader_state_off[32];
-   rib_toggle_t toggles[RIB_TOGGLE_MAX];
-   int toggle_count;
 } rib_rmlui_menu_t;
 
 /* The public runloop callback can come before we allocate the menu. Keep only
@@ -120,9 +113,6 @@ static void rib_focus_list(rib_rmlui_menu_t *menu, int index);
 static void rib_callout_text(const rib_rmlui_menu_t *menu, int index,
       char *out, size_t length);
 static void rib_rmlui_cancel_capture(rib_rmlui_menu_t *menu, const char *status);
-static void rib_rmlui_load_shaders(rib_rmlui_menu_t *menu,
-      const char *asset_directory);
-static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id);
 int rib_menu_key(void *data, enum rib_key action);
 
 void rib_rmlui_begin_overlays(void)
@@ -236,116 +226,6 @@ static void rib_rmlui_discover_controls(rib_rmlui_menu_t *menu,
    }
 }
 
-/* Read the screens declared in the design.
- *
- * `screens` is a space-separated list of ids that we write at export from the
- * declaration in the design, with the block of markup, the heading and the
- * footer hint for each. There are no screens in the player itself, so to add
- * one we change a design and not this file.
- */
-/* The list whose rows are disc images, and the screen with the button for
- * that list when the core has more than one image. We read both from
- * design.cfg (screen_images_ / screen_mark_) and copy nothing from a design. */
-static char rib_disc_list_id[32];
-static char rib_disc_list_button[32];
-static char rib_disc_mark[32];
-static char rib_disc_redirect_from[32];
-static char rib_disc_redirect_to[32];
-
-/* We export the entry hidden, because get_num_images is unknown until the
- * game has loaded, and we cannot create the entry in the player then. It stays
- * hidden for a game with one disc, so the focus never stops on an empty spot. */
-static void rib_discs_sync(void)
-{
-   char list_id[48];
-   unsigned count;
-   unsigned current;
-   int rows;
-   int index;
-
-   if (!rib_disc_list_id[0])
-      return;
-   count = rib_host_disc_count();
-   if (rib_disc_list_button[0])
-   {
-      rib_rmlui_set_shown(rib_disc_list_button, count > 1);
-      rib_rmlui_set_disabled(rib_disc_list_button, count <= 1);
-   }
-   snprintf(list_id, sizeof(list_id), "%s-list", rib_disc_list_id);
-   rows = rib_rmlui_rows_in(list_id);
-   current = rib_host_disc_index();
-   for (index = 0; index < rows; index++)
-   {
-      const char *row = rib_rmlui_row_in(list_id, index);
-      char label[PATH_MAX_LENGTH];
-
-      if (!row)
-         continue;
-      if ((unsigned)index >= count)
-      {
-         rib_rmlui_set_shown(row, false);
-         continue;
-      }
-      label[0] = '\0';
-      rib_host_disc_label((unsigned)index, label, sizeof(label));
-      if (!label[0])
-         snprintf(label, sizeof(label), "Disc %u", (unsigned)index + 1);
-      rib_rmlui_set_shown(row, true);
-      rib_rmlui_fit_row_title(row, label);
-   }
-   if (rows > 0)
-      rib_rmlui_retarget_pages(list_id);
-   if (count > 0 && current < (unsigned)rows)
-   {
-      const char *row = rib_rmlui_row_in(list_id, (int)current);
-
-      if (row)
-         rib_rmlui_select_row(list_id, row, rib_disc_mark, "");
-   }
-   {
-      char status_id[40];
-      char status[64];
-
-      snprintf(status_id, sizeof(status_id), "%s-status", rib_disc_list_id);
-      status[0] = '\0';
-      if (rows > 0 && count > (unsigned)rows)
-         snprintf(status, sizeof(status), "SHOWING %d OF %u", rows, count);
-      rib_rmlui_set_element_text(status_id, status);
-   }
-}
-
-/* The image index is the document order. We do not parse the row id, because
- * with a hidden row the id and the document order would differ. */
-static bool rib_discs_choose(rib_rmlui_menu_t *menu, const char *id)
-{
-   char list_id[48];
-   unsigned count;
-   int rows;
-   int index;
-
-   if (!menu || !id || !rib_disc_list_id[0])
-      return false;
-   if (!string_is_equal(menu->screen, rib_disc_list_id))
-      return false;
-   snprintf(list_id, sizeof(list_id), "%s-list", rib_disc_list_id);
-   rows = rib_rmlui_rows_in(list_id);
-   count = rib_host_disc_count();
-   for (index = 0; index < rows; index++)
-   {
-      const char *row = rib_rmlui_row_in(list_id, index);
-      unsigned image;
-
-      if (!row || !string_is_equal(row, id))
-         continue;
-      if ((unsigned)index >= count)
-         return true;
-      image = (unsigned)index;
-      rib_host_choose_disc(image);
-      return true;
-   }
-   return false;
-}
-
 static const char *rib_absolute_data_dir(void)
 {
    const char *data = getenv("ROMINABOX_DATA_DIR");
@@ -353,45 +233,6 @@ static const char *rib_absolute_data_dir(void)
    if (!data || data[0] != '/')
       return NULL;
    return data;
-}
-
-/* Where we store the position of a switch, in the game's storage. */
-static bool rib_toggle_path(const char *id, char *out, size_t length)
-{
-   const char *data = rib_absolute_data_dir();
-
-   if (!data || !*data || !id || !*id)
-      return false;
-   snprintf(out, length, "%s/toggle-%s", data, id);
-   return true;
-}
-
-static void rib_toggle_remember(const rib_toggle_t *toggle)
-{
-   char path[PATH_MAX_LENGTH];
-   const char *body = toggle->state ? "1\n" : "0\n";
-
-   if (!rib_toggle_path(toggle->id, path, sizeof(path)))
-      return;
-   if (!filestream_write_file(path, body, (int64_t)strlen(body)))
-      RARCH_ERR("[RIB] the switch '%s' is %s, but %s could not be written, so "
-            "the next launch will start from the design's default.\n",
-            toggle->id, toggle->state ? "on" : "off", path);
-}
-
-static bool rib_toggle_recall(rib_toggle_t *toggle)
-{
-   char path[PATH_MAX_LENGTH];
-   int64_t length = 0;
-   char *body = NULL;
-
-   if (!rib_toggle_path(toggle->id, path, sizeof(path)))
-      return false;
-   if (!filestream_read_file(path, (void**)&body, &length) || !body)
-      return false;
-   toggle->state = length > 0 && body[0] == '1';
-   free(body);
-   return true;
 }
 
 /* We load the declarations once. These assignments set the starting state of
@@ -402,60 +243,19 @@ static void rib_rmlui_load_design(rib_rmlui_menu_t *menu, const char *assets)
    const rib_design_data *design = rib_design_get(loaded);
    size_t index;
    rib_rmlui_clear_screens();
-   rib_disc_list_id[0] = '\0';
-   rib_disc_list_button[0] = '\0';
-   rib_disc_mark[0] = '\0';
-   rib_disc_redirect_from[0] = '\0';
-   rib_disc_redirect_to[0] = '\0';
+   menu->discs.configure(*design);
    for (index = 0; index < design->screen_count; ++index)
    {
       const rib_screen_declaration *screen = &design->screens[index];
-      if (string_is_equal(screen->images, "list"))
-      {
-         strlcpy(rib_disc_list_id, screen->id, sizeof(rib_disc_list_id));
-         strlcpy(rib_disc_list_button, screen->button, sizeof(rib_disc_list_button));
-         strlcpy(rib_disc_mark, screen->mark, sizeof(rib_disc_mark));
-      }
-      else if (screen->images[0])
-      {
-         strlcpy(rib_disc_redirect_from, screen->id, sizeof(rib_disc_redirect_from));
-         strlcpy(rib_disc_redirect_to, screen->images, sizeof(rib_disc_redirect_to));
-      }
       rib_rmlui_declare_screen(screen->id, screen->panel, screen->heading,
             screen->footer, screen->button);
    }
-   menu->toggle_count = design->toggle_count;
-   for (index = 0; index < (size_t)menu->toggle_count; ++index)
-   {
-      menu->toggles[index] = design->toggles[index];
-      rib_toggle_recall(&menu->toggles[index]);
-   }
+   menu->toggles.load(*design, rib_absolute_data_dir());
    menu->overlays.load(*design);
    strlcpy(rib_binds_list, design->binds_list, sizeof(rib_binds_list));
    rib_binds_after_ms = design->binds_after_ms;
    rib_binds_width = design->binds_width;
    rib_design_free(loaded);
-}
-
-/* The combined effect of all switches. We combine them instead of applying
- * them in turn, so of two switches that lock the slots, the last does not win. */
-static void rib_rmlui_apply_toggles(rib_rmlui_menu_t *menu)
-{
-   const rib_toggle_t *guarding = NULL;
-   int index;
-
-   if (!menu)
-      return;
-   for (index = 0; index < menu->toggle_count; ++index)
-   {
-      const rib_toggle_t *toggle = &menu->toggles[index];
-      rib_rmlui_set_toggle(toggle->id,
-            toggle->state ? toggle->on : toggle->off, toggle->state);
-      if (toggle->state && toggle->guard == RIB_TOGGLE_GUARD_SAVES && !guarding)
-         guarding = toggle;
-   }
-   rib_rmlui_guard_slots(guarding ? guarding->guard_label : NULL,
-         guarding ? guarding->guard_status : NULL);
 }
 
 /* Read the controllers available for this console.
@@ -1063,181 +863,6 @@ static void rib_rmlui_play_action_sound(int action)
 #endif
 }
 
-static bool rib_save_volume(const rib_rmlui_menu_t *menu, float db)
-{
-   if (!menu || !menu->volume_path[0])
-      return false;
-   return rib_write_menu_volume(menu->volume_path, db);
-}
-
-static void rib_paint_volume(void)
-{
-   float db = rib_host_volume();
-
-   db = rib_volume_quantize_db(db);
-   /* No readout. Low and high are in the design, and the position of the
-    * thumb is the value. With an empty string we clear what we wrote before. */
-   rib_rmlui_set_slider(RIB_VOLUME_SLIDER_ID,
-         rib_volume_fraction_from_db(db), "");
-}
-
-static void rib_set_volume_db(rib_rmlui_menu_t *menu, float db, bool persist)
-{
-   db = rib_volume_quantize_db(db);
-   rib_host_set_volume(db);
-   if (persist)
-      rib_save_volume(menu, db);
-   rib_paint_volume();
-}
-
-/* The bundled list, from shaders.cfg next to the design. An id that is not in
- * it is a row of another list, and choosing it has no effect here. */
-static void rib_rmlui_load_shaders(rib_rmlui_menu_t *menu,
-      const char *asset_directory)
-{
-   char path[PATH_MAX_LENGTH];
-   config_file_t *config;
-   char list[1024];
-   char *cursor;
-   char *token;
-
-   if (!menu)
-      return;
-   menu->shader_count = 0;
-   menu->shader_state_on[0] = '\0';
-   menu->shader_state_off[0] = '\0';
-   if (!asset_directory || !*asset_directory)
-      return;
-   snprintf(path, sizeof(path), "%s/shaders.cfg", asset_directory);
-   if (!(config = config_file_new_from_path_to_string(path)))
-      return;
-   config_get_array(config, "shader_state_on",
-         menu->shader_state_on, sizeof(menu->shader_state_on));
-   config_get_array(config, "shader_state_off",
-         menu->shader_state_off, sizeof(menu->shader_state_off));
-   if (!config_get_array(config, "shader_ids", list, sizeof(list)))
-   {
-      config_file_free(config);
-      return;
-   }
-   cursor = list;
-   while ((token = strtok_r(cursor, " ", &cursor)))
-   {
-      char key[96];
-      char preset[PATH_MAX_LENGTH];
-
-      if (!*token)
-         continue;
-      if (menu->shader_count >= RIB_SHADER_MAX)
-      {
-         RARCH_ERR("[RIB] shader list has more than %d entries; the rest "
-               "are not offered.\n", RIB_SHADER_MAX);
-         break;
-      }
-      strlcpy(menu->shader_ids[menu->shader_count], token,
-            sizeof(menu->shader_ids[menu->shader_count]));
-      snprintf(key, sizeof(key), "shader_preset_%s", token);
-      preset[0] = '\0';
-      config_get_array(config, key, preset, sizeof(preset));
-      strlcpy(menu->shader_presets[menu->shader_count], preset,
-            sizeof(menu->shader_presets[menu->shader_count]));
-      menu->shader_count++;
-   }
-   config_file_free(config);
-}
-
-/* In the staged document the author's starting preset is still marked on.
- * The preset that is on is the one running in RetroArch, which we load at
- * launch after a restart, or apply when the player clicks a row. Mark that
- * row only when this list is on screen, because every list uses this action. */
-static void rib_rmlui_show_running_shader(rib_rmlui_menu_t *menu)
-{
-   const char *relatives[RIB_SHADER_MAX];
-   const char *current;
-   int index;
-   int row;
-   int rows;
-   int matched = -1;
-   bool ours   = false;
-
-   if (!menu || menu->shader_count <= 0)
-      return;
-   rows = rib_rmlui_visible_row_count();
-   for (row = 0; row < rows && !ours; ++row)
-   {
-      const char *id = rib_rmlui_list_row_id(row);
-
-      for (index = 0; index < menu->shader_count; ++index)
-         if (id && string_is_equal(id, menu->shader_ids[index]))
-            ours = true;
-   }
-   if (!ours)
-      return;
-
-   for (index = 0; index < menu->shader_count; ++index)
-      relatives[index] = menu->shader_presets[index];
-   current = rib_host_current_shader();
-   matched = rib_shader_mark_index(current, relatives, menu->shader_count);
-   if (matched < 0)
-   {
-      fprintf(stderr, "[RIB] no bundled shader matches the one running: %s\n",
-            current && current[0] ? current : "none");
-      rib_rmlui_mark_row("", menu->shader_state_on, menu->shader_state_off);
-      return;
-   }
-   fprintf(stderr, "[RIB] shader row '%s' is the one running\n",
-         menu->shader_ids[matched]);
-   rib_rmlui_mark_row(menu->shader_ids[matched],
-         menu->shader_state_on, menu->shader_state_off);
-}
-
-static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id)
-{
-   const char *assets = getenv("ROMINABOX_RML_ASSETS");
-   const char *data = rib_absolute_data_dir();
-   char absolute[PATH_MAX_LENGTH];
-   char choice_path[PATH_MAX_LENGTH];
-   char body[PATH_MAX_LENGTH + 2];
-   const char *relative = NULL;
-   int index;
-   bool known = false;
-
-   if (!menu || !id || !*id || !rib_host_has_settings())
-      return false;
-   for (index = 0; index < menu->shader_count; ++index)
-      if (string_is_equal(menu->shader_ids[index], id))
-      {
-         relative = menu->shader_presets[index];
-         known = true;
-         break;
-      }
-   /* Not in this list. Other lists use the same action, and we handle their
-    * ids with each list. */
-   if (!known)
-      return false;
-
-   absolute[0] = '\0';
-   if (relative && *relative && assets && *assets)
-      snprintf(absolute, sizeof(absolute), "%s/%s", assets, relative);
-
-   rib_host_apply_shader(id, absolute);
-
-   if (data && *data)
-   {
-      snprintf(choice_path, sizeof(choice_path), "%s/shader-choice", data);
-      if (absolute[0])
-         snprintf(body, sizeof(body), "%s\n", absolute);
-      else
-         strlcpy(body, "\n", sizeof(body));
-      if (!filestream_write_file(choice_path, body, (int64_t)strlen(body)))
-         RARCH_ERR("[RIB] the shader is active, but %s could not be written. "
-               "The next launch will use the bundled starting shader.\n",
-               choice_path);
-   }
-   rib_rmlui_show_running_shader(menu);
-   return true;
-}
-
 /* The position of the keyboard focus on a list screen. The rows come first, then
  * the other controls of the screen, so moving down past the last row reaches the
  * switch and BACK. A player with a pad could not use a switch that only a
@@ -1292,7 +917,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
    {
       rib_rmlui_play_action_sound(action);
       if (string_is_equal(event.id.c_str(), RIB_VOLUME_SLIDER_ID))
-         rib_set_volume_db(menu,
+         menu->volume.set(
                rib_volume_db_from_fraction(event.fraction), true);
       return;
    }
@@ -1301,12 +926,13 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
       const char *id = event.id.c_str();
       int row;
 
-      if (rib_discs_choose(menu, id))
+      if (menu->discs.choose(menu->screen, id))
       {
          rib_rmlui_play_action_sound(action);
-         rib_discs_sync();
+         menu->discs.sync();
       }
-      else if (rib_rmlui_apply_listed_shader(menu, id))
+      else if (menu->shaders.apply(id, getenv("ROMINABOX_RML_ASSETS"),
+               rib_absolute_data_dir()))
          rib_rmlui_play_action_sound(action);
       for (row = 0; row < rib_rmlui_visible_row_count(); ++row)
          if (string_is_equal(rib_rmlui_list_row_id(row), id))
@@ -1334,23 +960,8 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
    if (action == RIB_RMLUI_ACTION_TOGGLE)
    {
       const char *id = event.id.c_str();
-      int index;
-
       rib_rmlui_play_action_sound(action);
-      /* We save the state of a list switch, and only repaint the other parts. */
-      if (!id || !*id)
-         return;
-      for (index = 0; index < menu->toggle_count; ++index)
-      {
-         rib_toggle_t *toggle = &menu->toggles[index];
-
-         if (!string_is_equal(toggle->id, id))
-            continue;
-         toggle->state = !toggle->state;
-         rib_toggle_remember(toggle);
-         rib_rmlui_apply_toggles(menu);
-         break;
-      }
+      menu->toggles.toggle(id, rib_absolute_data_dir());
       return;
    }
    if (action == RIB_RMLUI_ACTION_SHOW_SCREEN)
@@ -1365,12 +976,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
       /* Pressing the button in the column opens the circle. With more than one
        * image, we make it open the list instead, because a second button would
        * move the column, and hiding the only button would leave a gap. */
-      if (screen_id[0]
-            && rib_disc_redirect_from[0]
-            && string_is_equal(screen_id, rib_disc_redirect_from)
-            && rib_host_disc_count() > 1
-            && rib_disc_redirect_to[0])
-         strlcpy(screen_id, rib_disc_redirect_to, sizeof(screen_id));
+      menu->discs.redirect(screen_id, sizeof(screen_id));
       if (screen_id[0] && rib_rmlui_show_screen(screen_id))
       {
          /* The footer and the heading are in the design, with the screen.
@@ -1414,8 +1020,8 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
           * is hidden that width is zero, so a paint leaves the thumb where
           * the stylesheet put it, at the quiet end. Paint it again now that
           * the screen is shown. */
-         rib_paint_volume();
-         rib_rmlui_show_running_shader(menu);
+         menu->volume.paint();
+         menu->shaders.show_running();
       }
       rib_rmlui_play_action_sound(action);
       return;
@@ -1941,7 +1547,7 @@ void rib_menu_frame(void *data, int width, int height)
       }
       /* Read the screens and overlays in the design before we show any. */
       rib_rmlui_load_design(menu, asset_directory);
-      rib_rmlui_load_shaders(menu, asset_directory);
+      menu->shaders.load(asset_directory);
       rib_rmlui_set_selected_slot(menu->selected_slot);
       rib_rmlui_set_focused(menu->focused);
       rib_rmlui_refresh_slots();
@@ -1959,28 +1565,16 @@ void rib_menu_frame(void *data, int width, int height)
          {
             snprintf(menu->controls_path, sizeof(menu->controls_path),
                   "%s/controls.cfg", data_directory);
-            snprintf(menu->volume_path, sizeof(menu->volume_path),
-                  "%s/%s", data_directory, RIB_VOLUME_FILE);
+            menu->volume.configure_path(data_directory);
             rib_rmlui_load_controls_file(menu, menu->controls_path, false);
          }
          menu->controls_loaded = true;
       }
       rib_focus_control(menu, rib_control_first(menu));
       rib_rmlui_refresh_controls(menu);
-      rib_rmlui_set_slider_step(RIB_VOLUME_SLIDER_ID,
-            AUDIO_VOLUME_STEP_DB
-            / (AUDIO_VOLUME_MAX_DB - AUDIO_VOLUME_MIN_DB));
-      /* A file may have mute on, or a level in decibels above the top. We use
-       * the quiet end in place of mute and clamp anything above normal to
-       * normal. Write the file again only when that changes its contents. */
-      {
-         float db = rib_host_volume();
-         bool muted = rib_host_muted();
-         float snapped = rib_volume_quantize_db(muted ? AUDIO_VOLUME_MIN_DB : db);
-         rib_set_volume_db(menu, snapped, muted || snapped != db);
-      }
+      menu->volume.initialize();
       /* After the slots, so the lock from a switch replaces the slot count. */
-      rib_rmlui_apply_toggles(menu);
+      menu->toggles.apply();
       RARCH_LOG("[RmlUi] Loaded menu from %s.\n", asset_directory);
    }
 
@@ -2039,13 +1633,13 @@ void rib_menu_frame(void *data, int width, int height)
       float drag_fraction = 0.0f;
       if (rib_rmlui_slider_drag(&drag_id, &drag_fraction) && drag_id
             && string_is_equal(drag_id, RIB_VOLUME_SLIDER_ID))
-         rib_set_volume_db(menu,
+         menu->volume.set(
                rib_volume_db_from_fraction(drag_fraction), false);
       /* In the frame where a screen appears, the track may not be laid out yet,
        * and a fill set from that width stays too short after the track grows.
        * We paint again on the next frames, with the width the player sees. */
       else
-         rib_paint_volume();
+         menu->volume.paint();
    }
 
    /* Before we empty the queue, so we handle a scripted click in this frame,
@@ -2054,7 +1648,7 @@ void rib_menu_frame(void *data, int width, int height)
     * mouse and would have removed the hover. The disc entry starts hidden.
     * Fill it before the click from the script, or the click goes to a button
     * that is still display:none in the document. */
-   rib_discs_sync();
+   menu->discs.sync();
    menu->script.run(menu, {menu->screen, menu->transfer_pending,
                menu->capture_active, menu->profile_id});
    menu->script.restore_hover();
