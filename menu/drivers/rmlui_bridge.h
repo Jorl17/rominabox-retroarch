@@ -298,6 +298,12 @@ void rib_rmlui_mark_row(const char *id, const char *on, const char *off);
 void rib_rmlui_set_row_text(const char *id, const char *title,
       const char *detail, const char *state);
 void rib_rmlui_set_shown(const char *id, bool shown);
+void rib_rmlui_set_disabled(const char *id, bool disabled);
+/* Shorten `text` in the middle until it fits the title column, measured with
+ * GetStringWidth. Clipping at the end would hide the disc number. */
+void rib_rmlui_fit_row_title(const char *id, const char *text);
+void rib_rmlui_select_row(const char *list_id, const char *row_id,
+      const char *on, const char *off);
 int rib_rmlui_rows_in(const char *list_id);
 const char *rib_rmlui_row_in(const char *list_id, int index);
 /* Put a list next to an anchor and keep it on the screen. The width is from
@@ -329,6 +335,10 @@ bool rib_rmlui_set_scene(const char *markup);
 int rib_rmlui_hovered_action(void);
 void rib_rmlui_clear_intents(void);
 bool rib_rmlui_element_center(const char *id, int *x, int *y);
+bool rib_rmlui_element_box(const char *id, int *x, int *y, int *w, int *h);
+/* The visible list row under the pointer, or -1. There is one focus for keys
+ * and pointer, and a hover outline on another row is a second selection. */
+int rib_rmlui_hovered_list_row(void);
 bool rib_rmlui_element_disabled(const char *id);
 bool rib_rmlui_reload_if_changed(void);
 

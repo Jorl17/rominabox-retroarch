@@ -6826,6 +6826,23 @@ static enum runloop_state_enum runloop_check_state(
    }
 #endif
 
+   /* We run this countdown before the return for the menu, so we insert a
+    * disc chosen in the menu while the menu is open, and the new image in
+    * the core is inserted as well as selected. */
+   if (runloop_st->pending_disk_control_insert)
+   {
+      runloop_st->pending_disk_control_insert--;
+
+      if (!runloop_st->pending_disk_control_insert)
+      {
+         rarch_system_info_t *sys_info = &runloop_st->system;
+
+         if (sys_info
+               && disk_control_set_eject_state(&sys_info->disk_control, false, true))
+            disk_control_log_core_image(&sys_info->disk_control, "tray closed");
+      }
+   }
+
 #ifdef HAVE_MENU
    /* Stop checking the rest of the hotkeys if menu is alive */
    if (menu_st->flags & MENU_ST_FLAG_ALIVE)
@@ -6992,20 +7009,6 @@ static enum runloop_state_enum runloop_check_state(
    {
       cbs->poll_cb();
       return RUNLOOP_STATE_POLLED_AND_SLEEP;
-   }
-
-   /* Do delayed disk insert when disk is changed without ejecting */
-   if (runloop_st->pending_disk_control_insert)
-   {
-      runloop_st->pending_disk_control_insert--;
-
-      if (!runloop_st->pending_disk_control_insert)
-      {
-         rarch_system_info_t *sys_info = &runloop_st->system;
-
-         if (sys_info)
-            disk_control_set_eject_state(&sys_info->disk_control, false, true);
-      }
    }
 
    /* Apply any pending fastmotion override parameters */

@@ -157,6 +157,11 @@ void disk_control_get_image_label(
       disk_control_interface_t *disk_control,
       unsigned index, char *s, size_t len);
 
+/* Print one line on stderr with the disk index from the core. RARCH_LOG
+ * is silent unless verbosity is on, and we keep stderr in the launcher. */
+void disk_control_log_core_image(
+      disk_control_interface_t *disk_control, const char *when);
+
 /***********/
 /* Setters */
 /***********/

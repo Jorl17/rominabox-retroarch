@@ -1735,6 +1735,15 @@ static void collect_focusable(Rml::Element *node, std::vector<std::string> &out)
 {
    if (!node)
       return;
+   /* We keep a hidden entry in the document, because we cannot create it in
+    * the player after the core reports how many discs it loaded. It must not
+    * be a stop, or moving down from CONTROLS would reach DISC and show nothing.
+    * display:none alone is not enough, because in the pause walk we skip only
+    * disabled entries. In this walk we skip both, and we also disable the
+    * entry. */
+   if (rib_display_none(node) || node->HasAttribute("disabled")
+         || node->IsClassSet("disabled"))
+      return;
    /* The arrows next to a slider are for stepping it with a pointer. Left
     * and right on the slider already step it, so an arrow is not a stop, and
     * moving down from the slider does not reach the arrows. */
@@ -1870,6 +1879,47 @@ extern "C" bool rib_rmlui_element_center(const char *id, int *x, int *y)
    return size.x > 0.f && size.y > 0.f;
 }
 
+extern "C" bool rib_rmlui_element_box(const char *id, int *x, int *y, int *w, int *h)
+{
+   if (!context || !document || !id || !x || !y || !w || !h)
+      return false;
+   context->Update();
+   Rml::Element *element = document->GetElementById(id);
+   if (!element)
+      return false;
+   const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+   const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
+   *x = static_cast<int>(offset.x);
+   *y = static_cast<int>(offset.y);
+   *w = static_cast<int>(size.x);
+   *h = static_cast<int>(size.y);
+   return size.x > 0.f && size.y > 0.f;
+}
+
+extern "C" int rib_rmlui_hovered_list_row(void)
+{
+   if (!context || !document)
+      return -1;
+   Rml::Element *cursor = context->GetHoverElement();
+   Rml::Element *row = nullptr;
+   for (; cursor; cursor = cursor->GetParentNode())
+   {
+      if (cursor->IsClassSet("list-row"))
+      {
+         row = cursor;
+         break;
+      }
+   }
+   if (!row)
+      return -1;
+   std::vector<Rml::Element*> rows;
+   rib_visible_rows(rows);
+   for (int index = 0; index < (int)rows.size(); ++index)
+      if (rows[index] == row)
+         return index;
+   return -1;
+}
+
 extern "C" bool rib_rmlui_element_disabled(const char *id)
 {
    if (!document || !id)
@@ -1930,6 +1980,158 @@ extern "C" void rib_rmlui_set_shown(const char *id, bool shown)
          element->RemoveProperty("display");
       else
          element->SetProperty("display", "none");
+   }
+}
+
+extern "C" void rib_rmlui_set_disabled(const char *id, bool disabled)
+{
+   if (!document || !id)
+      return;
+   Rml::Element *element = document->GetElementById(id);
+   if (!element)
+      return;
+   element->SetClass("disabled", disabled);
+   if (disabled)
+      element->SetAttribute("disabled", "disabled");
+   else
+      element->RemoveAttribute("disabled");
+}
+
+static Rml::Element *rib_list_element(const char *list_id);
+
+static float rib_specified_dp(Rml::Element *element, const char *name);
+
+static int rib_utf8_len(unsigned char lead)
+{
+   if ((lead & 0x80) == 0)
+      return 1;
+   if ((lead & 0xe0) == 0xc0)
+      return 2;
+   if ((lead & 0xf0) == 0xe0)
+      return 3;
+   if ((lead & 0xf8) == 0xf0)
+      return 4;
+   return 1;
+}
+
+static int rib_chars(const std::string &text)
+{
+   int count = 0;
+   for (size_t index = 0; index < text.size(); )
+   {
+      int len = rib_utf8_len((unsigned char)text[index]);
+      if (index + (size_t)len > text.size())
+         len = 1;
+      index += (size_t)len;
+      ++count;
+   }
+   return count;
+}
+
+static std::string rib_slice(const std::string &text, int from, int count)
+{
+   std::string out;
+   int seen = 0;
+   for (size_t index = 0; index < text.size() && seen < from + count; )
+   {
+      int len = rib_utf8_len((unsigned char)text[index]);
+      if (index + (size_t)len > text.size())
+         len = 1;
+      if (seen >= from)
+         out.append(text, index, (size_t)len);
+      index += (size_t)len;
+      ++seen;
+   }
+   return out;
+}
+
+/* The first ancestor with a width in dp. A row is often 100%, which is not a
+ * length, so we measure the title against the width of the list. From it we
+ * get the column. With a copied pixel width, the preview and the game could
+ * differ. */
+static float rib_block_dp(Rml::Element *element)
+{
+   for (Rml::Element *cursor = element; cursor; cursor = cursor->GetParentNode())
+   {
+      const float width = rib_specified_dp(cursor, "width");
+      if (width > 0.f)
+         return width;
+   }
+   return 0.f;
+}
+
+extern "C" void rib_rmlui_fit_row_title(const char *id, const char *text)
+{
+   if (!id || !*id)
+      return;
+   const std::string title_id = std::string(id) + "-title";
+   const std::string source = text ? text : "";
+   Rml::Element *element = document ? document->GetElementById(title_id) : nullptr;
+   if (!element || !context)
+   {
+      rib_set_text(title_id, source.c_str());
+      return;
+   }
+   context->Update();
+   const float density = std::max(context->GetDensityIndependentPixelRatio(), 0.1f);
+   const float block = rib_block_dp(element);
+   const float limit_dp = block
+         - rib_specified_dp(element, "left")
+         - rib_specified_dp(element, "right");
+   const float limit_px = limit_dp * density;
+   auto width_of = [&](const std::string &value) {
+      return (float)Rml::ElementUtilities::GetStringWidth(
+            element, Rml::String(value));
+   };
+   if (limit_px <= 1.f || width_of(source) <= limit_px)
+   {
+      rib_set_text(title_id, source.c_str());
+      return;
+   }
+   /* text-overflow in RmlUi removes characters at the end, where the disc
+    * number is. We put the mark in the middle instead, and measure the width
+    * with the font of this element, not by counting characters, because the
+    * Silkscreen advances are not all equal. */
+   const std::string mark = "\u2026";
+   const int total = rib_chars(source);
+   int best = 0;
+   int low = 0;
+   int high = total;
+   while (low <= high)
+   {
+      const int mid = (low + high) / 2;
+      const int head = mid / 2;
+      const int tail = mid - head;
+      const std::string candidate = rib_slice(source, 0, head) + mark
+            + rib_slice(source, total - tail, tail);
+      if (width_of(candidate) <= limit_px)
+      {
+         best = mid;
+         low = mid + 1;
+      }
+      else
+         high = mid - 1;
+   }
+   const int head = best / 2;
+   const int tail = best - head;
+   rib_set_text(title_id, (rib_slice(source, 0, head) + mark
+         + rib_slice(source, total - tail, tail)).c_str());
+}
+
+extern "C" void rib_rmlui_select_row(const char *list_id, const char *row_id,
+      const char *on, const char *off)
+{
+   if (!document || !list_id)
+      return;
+   std::vector<Rml::Element*> rows;
+   rib_collect(rib_list_element(list_id), "list-row", rows);
+   for (Rml::Element *row : rows)
+   {
+      const bool selected = row_id && row->GetId() == row_id;
+      row->SetClass("selected", selected);
+      if (Rml::Element *state = document->GetElementById(row->GetId() + "-state"))
+         state->SetInnerRML(Rml::StringUtilities::EncodeRml(
+               selected ? (on ? on : "") : (off ? off : "")));
    }
 }
 

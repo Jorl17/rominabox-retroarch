@@ -12,6 +12,7 @@
 #include "../../input/input_remapping.h"
 #include "../../file_path_special.h"
 #include "../../runloop.h"
+#include "../../disk_control_interface.h"
 #include "../../gfx/video_driver.h"
 #include "../../gfx/video_shader_parse.h"
 #include "../../verbosity.h"
@@ -182,6 +183,7 @@ static bool rib_script_running;
 
 static void rib_rmlui_refresh_controls(rib_rmlui_menu_t *menu);
 static void rib_focus_control(rib_rmlui_menu_t *menu, int index);
+static void rib_focus_list(rib_rmlui_menu_t *menu, int index);
 static void rib_callout_text(const rib_rmlui_menu_t *menu, int index,
       char *out, size_t length);
 static void rib_rmlui_cancel_capture(rib_rmlui_menu_t *menu, const char *status);
@@ -347,6 +349,120 @@ static void rib_rmlui_discover_controls(rib_rmlui_menu_t *menu,
  * footer hint for each. There are no screens in the player itself, so to add
  * one we change a design and not this file.
  */
+/* The list whose rows are disc images, and the screen with the button for
+ * that list when the core has more than one image. We read both from
+ * design.cfg (screen_images_ / screen_mark_) and copy nothing from a design. */
+static char rib_disc_list_id[32];
+static char rib_disc_list_button[32];
+static char rib_disc_mark[32];
+static char rib_disc_redirect_from[32];
+static char rib_disc_redirect_to[32];
+
+static unsigned rib_disc_count(void)
+{
+   rarch_system_info_t *sys_info = &runloop_state_get_ptr()->system;
+
+   if (!disk_control_enabled(&sys_info->disk_control))
+      return 0;
+   return disk_control_get_num_images(&sys_info->disk_control);
+}
+
+/* We export the entry hidden, because get_num_images is unknown until the
+ * game has loaded, and we cannot create the entry in the player then. It stays
+ * hidden for a game with one disc, so the focus never stops on an empty spot. */
+static void rib_discs_sync(void)
+{
+   rarch_system_info_t *sys_info = &runloop_state_get_ptr()->system;
+   char list_id[48];
+   unsigned count;
+   unsigned current;
+   int rows;
+   int index;
+
+   if (!rib_disc_list_id[0])
+      return;
+   count = rib_disc_count();
+   if (rib_disc_list_button[0])
+   {
+      rib_rmlui_set_shown(rib_disc_list_button, count > 1);
+      rib_rmlui_set_disabled(rib_disc_list_button, count <= 1);
+   }
+   snprintf(list_id, sizeof(list_id), "%s-list", rib_disc_list_id);
+   rows = rib_rmlui_rows_in(list_id);
+   current = disk_control_get_image_index(&sys_info->disk_control);
+   for (index = 0; index < rows; index++)
+   {
+      const char *row = rib_rmlui_row_in(list_id, index);
+      char label[PATH_MAX_LENGTH];
+
+      if (!row)
+         continue;
+      if ((unsigned)index >= count)
+      {
+         rib_rmlui_set_shown(row, false);
+         continue;
+      }
+      label[0] = '\0';
+      disk_control_get_image_label(&sys_info->disk_control,
+            (unsigned)index, label, sizeof(label));
+      if (!label[0])
+         snprintf(label, sizeof(label), "Disc %u", (unsigned)index + 1);
+      rib_rmlui_set_shown(row, true);
+      rib_rmlui_fit_row_title(row, label);
+   }
+   if (rows > 0)
+      rib_rmlui_retarget_pages(list_id);
+   if (count > 0 && current < (unsigned)rows)
+   {
+      const char *row = rib_rmlui_row_in(list_id, (int)current);
+
+      if (row)
+         rib_rmlui_select_row(list_id, row, rib_disc_mark, "");
+   }
+   {
+      char status_id[40];
+      char status[64];
+
+      snprintf(status_id, sizeof(status_id), "%s-status", rib_disc_list_id);
+      status[0] = '\0';
+      if (rows > 0 && count > (unsigned)rows)
+         snprintf(status, sizeof(status), "SHOWING %d OF %u", rows, count);
+      rib_rmlui_set_element_text(status_id, status);
+   }
+}
+
+/* The image index is the document order. We do not parse the row id, because
+ * with a hidden row the id and the document order would differ. */
+static bool rib_discs_choose(rib_rmlui_menu_t *menu, const char *id)
+{
+   char list_id[48];
+   unsigned count;
+   int rows;
+   int index;
+
+   if (!menu || !id || !rib_disc_list_id[0])
+      return false;
+   if (!string_is_equal(menu->screen, rib_disc_list_id))
+      return false;
+   snprintf(list_id, sizeof(list_id), "%s-list", rib_disc_list_id);
+   rows = rib_rmlui_rows_in(list_id);
+   count = rib_disc_count();
+   for (index = 0; index < rows; index++)
+   {
+      const char *row = rib_rmlui_row_in(list_id, index);
+      unsigned image;
+
+      if (!row || !string_is_equal(row, id))
+         continue;
+      if ((unsigned)index >= count)
+         return true;
+      image = (unsigned)index;
+      command_event(CMD_EVENT_DISK_INDEX, &image);
+      return true;
+   }
+   return false;
+}
+
 static void rib_rmlui_discover_screens(const char *asset_directory)
 {
    char path[PATH_MAX_LENGTH];
@@ -356,6 +472,11 @@ static void rib_rmlui_discover_screens(const char *asset_directory)
    char *token;
 
    rib_rmlui_clear_screens();
+   rib_disc_list_id[0] = '\0';
+   rib_disc_list_button[0] = '\0';
+   rib_disc_mark[0] = '\0';
+   rib_disc_redirect_from[0] = '\0';
+   rib_disc_redirect_to[0] = '\0';
    if (!asset_directory || !*asset_directory)
       return;
    snprintf(path, sizeof(path), "%s/design.cfg", asset_directory);
@@ -394,6 +515,30 @@ static void rib_rmlui_discover_screens(const char *asset_directory)
       snprintf(key, sizeof(key), "screen_button_%s", token);
       if (!config_get_array(config, key, button, sizeof(button)))
          button[0] = '\0';
+      {
+         char images[64];
+
+         snprintf(key, sizeof(key), "screen_images_%s", token);
+         if (config_get_array(config, key, images, sizeof(images)) && images[0])
+         {
+            /* "list" means this screen is the disc list. Any other value is
+             * the screen to open instead, so there is still one button in the
+             * disc column and no second control. */
+            if (string_is_equal(images, "list"))
+            {
+               strlcpy(rib_disc_list_id, token, sizeof(rib_disc_list_id));
+               strlcpy(rib_disc_list_button, button, sizeof(rib_disc_list_button));
+               snprintf(key, sizeof(key), "screen_mark_%s", token);
+               if (!config_get_array(config, key, rib_disc_mark, sizeof(rib_disc_mark)))
+                  rib_disc_mark[0] = '\0';
+            }
+            else
+            {
+               strlcpy(rib_disc_redirect_from, token, sizeof(rib_disc_redirect_from));
+               strlcpy(rib_disc_redirect_to, images, sizeof(rib_disc_redirect_to));
+            }
+         }
+      }
       rib_rmlui_declare_screen(token, panel, heading, footer, button);
    }
    config_file_free(config);
@@ -1294,7 +1439,7 @@ static void rib_rmlui_reset_interaction(rib_rmlui_menu_t *menu, bool opening)
       rib_rmlui_cancel_capture(menu, NULL);
    menu->controls_visible = false;
    strlcpy(menu->screen, "pause", sizeof(menu->screen));
-   menu->list_focus = 0;
+   rib_focus_list(menu, 0);
    menu->pointer_pressed = false;
    menu->capture_ignore_pointer = false;
    menu->focused = RIB_RMLUI_ACTION_RESUME;
@@ -1784,6 +1929,16 @@ static void rib_rmlui_focus_list(rib_rmlui_menu_t *menu)
    rib_rmlui_focus_list_control(menu->list_focus - rows);
 }
 
+/* The only place where we write list_focus. We call it for the keys and for
+ * the pointer, in every list, the shader list included. */
+static void rib_focus_list(rib_rmlui_menu_t *menu, int index)
+{
+   if (!menu || index < 0)
+      return;
+   menu->list_focus = index;
+   rib_rmlui_focus_list(menu);
+}
+
 static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
 {
    settings_t *settings = config_get_ptr();
@@ -1817,12 +1972,17 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       const char *id = rib_rmlui_chosen_item();
       int row;
 
-      if (rib_rmlui_apply_listed_shader(menu, id))
+      if (rib_discs_choose(menu, id))
+      {
+         rib_rmlui_play_action_sound(action);
+         rib_discs_sync();
+      }
+      else if (rib_rmlui_apply_listed_shader(menu, id))
          rib_rmlui_play_action_sound(action);
       for (row = 0; row < rib_rmlui_visible_row_count(); ++row)
          if (string_is_equal(rib_rmlui_list_row_id(row), id))
          {
-            menu->list_focus = row;
+            rib_focus_list(menu, row);
             break;
          }
       return;
@@ -1834,10 +1994,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
 
       rib_rmlui_play_action_sound(action);
       if (rib_rmlui_turn_list_page(delta) >= 0)
-      {
-         menu->list_focus = 0;
-         rib_rmlui_focus_list(menu);
-      }
+         rib_focus_list(menu, 0);
       return;
    }
    if (action == RIB_RMLUI_ACTION_TOGGLE)
@@ -1869,15 +2026,29 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
        * adds to the enum. We still record whether the controls screen is
        * open, because capture and navigation work differently there. */
       const char *wanted = rib_rmlui_requested_screen();
-      if (wanted && *wanted && rib_rmlui_show_screen(wanted))
+      char screen_id[32];
+
+      screen_id[0] = '\0';
+      if (wanted && *wanted)
+         strlcpy(screen_id, wanted, sizeof(screen_id));
+      /* Pressing the button in the column opens the circle. With more than one
+       * image, we make it open the list instead, because a second button would
+       * move the column, and hiding the only button would leave a gap. */
+      if (screen_id[0]
+            && rib_disc_redirect_from[0]
+            && string_is_equal(screen_id, rib_disc_redirect_from)
+            && rib_disc_count() > 1
+            && rib_disc_redirect_to[0])
+         strlcpy(screen_id, rib_disc_redirect_to, sizeof(screen_id));
+      if (screen_id[0] && rib_rmlui_show_screen(screen_id))
       {
          /* The footer and the heading are in the design, with the screen.
           * Here we keep only the case of the controls screen, where capture
           * and navigation work differently. For any other screen there is
           * nothing to add here. */
-         strlcpy(menu->screen, wanted, sizeof(menu->screen));
-         menu->controls_visible = string_is_equal(wanted, "controls");
-         menu->list_focus = 0;
+         strlcpy(menu->screen, screen_id, sizeof(menu->screen));
+         menu->controls_visible = string_is_equal(screen_id, "controls");
+         rib_focus_list(menu, 0);
          if (menu->controls_visible)
          {
             rib_focus_control(menu, rib_control_first(menu));
@@ -1886,7 +2057,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
          }
          else if (menu->capture_active)
             rib_rmlui_cancel_capture(menu, "BINDING UNCHANGED");
-         else if (!string_is_equal(wanted, "pause"))
+         else if (!string_is_equal(screen_id, "pause"))
          {
             char ids[16][64];
             const char *panel = rib_rmlui_screen_panel(menu->screen);
@@ -2295,6 +2466,12 @@ static void rib_rmlui_run_script(void)
       {
          settle = INT_MAX;
          rib_script_running = false;
+         /* After the clicks, including a disc change after the frames in which
+          * the tray closes. For a row whose action never ran, we report the
+          * index in the core, which is the disc it started on. */
+         disk_control_log_core_image(
+               &runloop_state_get_ptr()->system.disk_control,
+               "menu script done");
          rib_rmlui_script_shot();
       }
       return;
@@ -2954,10 +3131,18 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
    /* Before we empty the queue, so we handle a scripted click in this frame,
     * in the same loop as a click from the player. We put back a hover from
     * the script after the click, because the pointer move above followed the
-    * mouse and would have removed the hover. */
+    * mouse and would have removed the hover. The disc entry starts hidden.
+    * Fill it before the click from the script, or the click goes to a button
+    * that is still display:none in the document. */
+   rib_discs_sync();
    rib_rmlui_run_script();
    if (rib_script_running && rib_script_hover[0])
       rib_rmlui_move_pointer_to(rib_script_hover);
+   /* After we put the pointer back for the script, so a hovered row is the
+    * focused row before the click in this frame. We play no scroll sound,
+    * because the pointer did not move by a step. */
+   if (!menu->capture_active)
+      rib_focus_list(menu, rib_rmlui_hovered_list_row());
 
    for (;;)
    {
@@ -3110,8 +3295,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
          case MENU_ACTION_UP:
             if (stops > 0)
             {
-               menu->list_focus = (menu->list_focus + stops - 1) % stops;
-               rib_rmlui_focus_list(menu);
+               rib_focus_list(menu, (menu->list_focus + stops - 1) % stops);
 #ifdef HAVE_AUDIOMIXER
                audio_driver_mixer_play_scroll_sound(true);
 #endif
@@ -3120,8 +3304,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
          case MENU_ACTION_DOWN:
             if (stops > 0)
             {
-               menu->list_focus = (menu->list_focus + 1) % stops;
-               rib_rmlui_focus_list(menu);
+               rib_focus_list(menu, (menu->list_focus + 1) % stops);
 #ifdef HAVE_AUDIOMIXER
                audio_driver_mixer_play_scroll_sound(false);
 #endif
@@ -3130,16 +3313,14 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
          case MENU_ACTION_LEFT:
             if (rib_rmlui_turn_list_page(-1) >= 0)
             {
-               menu->list_focus = 0;
-               rib_rmlui_focus_list(menu);
+               rib_focus_list(menu, 0);
                rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
             }
             return 0;
          case MENU_ACTION_RIGHT:
             if (rib_rmlui_turn_list_page(1) >= 0)
             {
-               menu->list_focus = 0;
-               rib_rmlui_focus_list(menu);
+               rib_focus_list(menu, 0);
                rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
             }
             return 0;
