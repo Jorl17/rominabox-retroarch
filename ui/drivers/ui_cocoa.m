@@ -51,6 +51,7 @@
 
 #include "../ui_companion_driver.h"
 #include "../../gfx/video_display_server.h"
+#include "../../gfx/drivers_context/cocoa_quiet_window.h"
 #include "../../input/drivers/cocoa_input.h"
 #include "../../input/drivers_keyboard/keyboard_event_apple.h"
 #include "../../frontend/frontend.h"
@@ -1658,7 +1659,7 @@ int main(int argc, char *argv[])
       /* We make an automated run (ROMINABOX_QUIET) an accessory app for this
        * launch only, so a test game does not appear in the Dock. We never set
        * the switch in an ordinary launch. */
-      if (getenv("ROMINABOX_QUIET"))
+      if (rominabox_test_window_hidden())
       {
          BOOL accessory = [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
          fprintf(stderr, "[RIB] quiet activation %s\n", accessory ? "accessory" : "refused");
@@ -1692,9 +1693,9 @@ int main(int argc, char *argv[])
 
       /* Keep the placeholder 480x360 window off-screen until the GL
        * context presents the first intended frame. */
-      if (!rominabox_window_title())
+      if (!rominabox_window_title() && !rominabox_test_window_hidden())
          [window makeKeyAndOrderFront:nil];
-      if (!getenv("ROMINABOX_QUIET"))
+      if (!rominabox_test_window_hidden())
          [NSApp activateIgnoringOtherApps:YES];
       [NSApp run];
 #ifdef HAVE_COCOA_METAL

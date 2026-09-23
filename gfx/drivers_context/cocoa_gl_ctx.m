@@ -30,6 +30,7 @@
 #include <OpenGL/OpenGL.h>
 #include <AppKit/NSScreen.h>
 #include <AppKit/NSOpenGL.h>
+#include "cocoa_quiet_window.h"
 #elif defined(HAVE_COCOATOUCH)
 #include <GLKit/GLKit.h>
 #endif
@@ -397,12 +398,18 @@ static void cocoa_gl_gfx_ctx_swap_buffers(void *data)
          && ([window styleMask] & NSWindowStyleMaskTitled))
    {
       rominabox_center_window_on_screen(window);
+      rominabox_prepare_test_window(window);
       [window setAlphaValue:0.0];
       /* In a run for a screenshot only, we need the drawable but not
        * focus, so we neither make the window key nor bring it to the front.
        * We still order it in, because otherwise the GL context has no
        * drawable, and we leave it at alpha zero. */
-      if (getenv("ROMINABOX_MENU_SHOT"))
+      if (rominabox_test_window_hidden())
+      {
+         [window orderFront:nil];
+         rib_window_prepared = true;
+      }
+      else if (getenv("ROMINABOX_MENU_SHOT") && !rominabox_test_window_shown())
       {
          [window orderFront:nil];
          rib_window_prepared = false;
@@ -600,6 +607,11 @@ static bool cocoa_gl_gfx_ctx_set_video_mode(void *data,
    static NSWindow *saved_windowed_window = NULL;
    static NSWindow *fullscreen_window     = NULL;
    static NSRect    saved_view_frame;
+
+   /* In a quiet test we need a drawable, not a display capture. In ordinary
+    * launches and explicit hands-on runs we use the fullscreen path below. */
+   if (rominabox_test_window_hidden())
+      fullscreen = false;
 
    if (fullscreen)
    {

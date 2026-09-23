@@ -2782,6 +2782,94 @@ extern "C" const char *rib_rmlui_test_property(const char *id, const char *prope
 extern "C" unsigned rib_rmlui_test_texture_loads() { return test_texture_loads; }
 #endif
 
+/* We walk these classes only at explicit script checkpoints, never in normal
+ * frames. Observe the visible state, not internal focus indexes or paths. */
+extern "C" const char *rib_rmlui_script_report(const char *screen, bool menu_open,
+      bool transfer_pending, bool capture_active, const char *profile,
+      float volume_db)
+{
+   static std::string report;
+   const auto quote = [](const std::string& value) {
+      std::string out = "\"";
+      for (unsigned char ch : value)
+      {
+         if (ch == '\\' || ch == '"') out += '\\';
+         if (ch < 32)
+         {
+            char escaped[7];
+            std::snprintf(escaped, sizeof(escaped), "\\u%04x", ch);
+            out += escaped;
+         }
+         else out += ch;
+      }
+      return out + '"';
+   };
+   const auto boolean = [](bool value) { return value ? "true" : "false"; };
+   report = "{\"screen\":" + quote(screen ? screen : "")
+      + ",\"menuOpen\":" + boolean(menu_open)
+      + ",\"transferPending\":" + boolean(transfer_pending)
+      + ",\"captureActive\":" + boolean(capture_active)
+      + ",\"profile\":" + quote(profile ? profile : "")
+      + ",\"volumeDb\":" + std::to_string(volume_db);
+   for (const char *name : {"focused", "selected", "capturing", "disabled",
+         "on", "showing", "leaving"})
+   {
+      report += "," + quote(name) + ":[";
+      std::vector<Rml::Element*> found;
+      rib_collect(document, name, found);
+      bool comma = false;
+      for (Rml::Element *element : found)
+      {
+         if (element->GetId().empty() || rib_hidden(element)) continue;
+         if (comma) report += ',';
+         report += quote(element->GetId());
+         comma = true;
+      }
+      report += ']';
+   }
+   report += ",\"text\":{";
+   bool comma = false;
+   for (const char *id : {"heading", "footer-hint", "status", "controls-status",
+         "controls-device-current", "volume-value", "shaders-page-count",
+         "achievements-page-count", "achievement-mode-state", "control-binds"})
+   {
+      Rml::Element *element = document ? document->GetElementById(id) : nullptr;
+      if (!element || rib_hidden(element)) continue;
+      if (comma) report += ',';
+      report += quote(id) + ':' + quote(element->GetInnerRML());
+      comma = true;
+   }
+   report += "},\"slots\":[";
+   for (int index = 0; index < 6; ++index)
+   {
+      if (index) report += ',';
+      report += std::string("{\"occupied\":") + boolean(slots[index].occupied)
+         + ",\"thumbnail\":" + boolean(!slots[index].thumbnail_path.empty()) + '}';
+   }
+   report += "],\"sliders\":{";
+   comma = false;
+   for (const auto& slider : slider_fraction)
+   {
+      if (comma) report += ',';
+      report += quote(slider.first) + ':' + std::to_string(slider.second);
+      comma = true;
+   }
+   report += "},\"bindsBox\":[";
+   Rml::Element *binds = document ? document->GetElementById("control-binds") : nullptr;
+   if (binds && !rib_hidden(binds))
+   {
+      const auto at = binds->GetAbsoluteOffset(Rml::BoxArea::Border);
+      const auto size = binds->GetBox().GetSize(Rml::BoxArea::Border);
+      for (float value : {at.x, at.y, size.x, size.y})
+      {
+         if (report.back() != '[') report += ',';
+         report += std::to_string(static_cast<int>(std::lround(value)));
+      }
+   }
+   report += "]}";
+   return report.c_str();
+}
+
 #ifdef RIB_RMLUI_HEADLESS
 extern "C" void rib_rmlui_test_advance(double seconds) { test_clock_offset += seconds; }
 /* A check for an element that is not there must fail, not crash. If we

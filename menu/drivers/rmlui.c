@@ -190,6 +190,8 @@ static void rib_rmlui_cancel_capture(rib_rmlui_menu_t *menu, const char *status)
 static void rib_rmlui_load_shaders(rib_rmlui_menu_t *menu,
       const char *asset_directory);
 static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id);
+static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
+      size_t index, enum menu_action action);
 
 static bool rib_rmlui_menu_alive(void)
 {
@@ -2497,6 +2499,38 @@ static void rib_rmlui_run_script(void)
       rib_script_wait_until = cpu_features_get_time_usec()
             + (retro_time_t)atoi(id + 8) * 1000;
       RARCH_LOG("[RIB] menu script waiting %s ms.\n", id + 8);
+      return;
+   }
+
+   if (!strncmp(id, "key:", 4))
+   {
+      static const struct { const char *name; enum menu_action action; } keys[] = {
+         {"up", MENU_ACTION_UP}, {"down", MENU_ACTION_DOWN},
+         {"left", MENU_ACTION_LEFT}, {"right", MENU_ACTION_RIGHT},
+         {"ok", MENU_ACTION_OK}, {"cancel", MENU_ACTION_CANCEL},
+         {"start", MENU_ACTION_START}
+      };
+      unsigned key;
+      for (key = 0; key < sizeof(keys) / sizeof(keys[0]); ++key)
+         if (string_is_equal(id + 4, keys[key].name))
+         {
+            rib_rmlui_entry_action(rib_rmlui_active_menu, NULL, 0, keys[key].action);
+            return;
+         }
+      RARCH_ERR("[RIB] menu script names no key '%s'; stopping.\n", id + 4);
+      command_event(CMD_EVENT_QUIT, NULL);
+      return;
+   }
+
+   if (!strncmp(id, "report:", 7))
+   {
+      rib_rmlui_menu_t *menu = rib_rmlui_active_menu;
+      settings_t *settings = config_get_ptr();
+      if (menu)
+         RARCH_LOG("[RIB] checkpoint %s %s\n", id + 7,
+               rib_rmlui_script_report(menu->screen, rib_rmlui_menu_alive(),
+                     menu->transfer_pending, menu->capture_active, menu->profile_id,
+                     settings ? settings->floats.audio_volume : AUDIO_VOLUME_DEFAULT_DB));
       return;
    }
 

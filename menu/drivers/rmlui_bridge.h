@@ -182,6 +182,12 @@ bool rib_rmlui_click_element(const char *id);
  * buffer, so the result is a black picture written without an error. */
 void rib_rmlui_capture_next(const char *path);
 
+/* Compact observation for an explicit scripted checkpoint. We never call it in
+ * ordinary play. The returned JSON is valid until the next report. */
+const char *rib_rmlui_script_report(const char *screen, bool menu_open,
+      bool transfer_pending, bool capture_active, const char *profile,
+      float volume_db);
+
 /* The screens declared in a design. We clear and declare them again when we
  * load the document, and there are no screens in the player itself. */
 void rib_rmlui_clear_screens(void);
