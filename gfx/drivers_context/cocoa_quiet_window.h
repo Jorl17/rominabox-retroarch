@@ -27,6 +27,16 @@ static inline void rominabox_prepare_test_window(NSWindow *window)
     * its drawable, but never show the window in an automated run. */
    [window setAlphaValue:0.0];
    [window setIgnoresMouseEvents:YES];
+   /* Keep native captures at one backing scale on a system with several
+    * monitors, because mainScreen is the screen of the active window. */
+   NSScreen *screen = [[NSScreen screens] firstObject];
+   if (screen)
+   {
+      NSRect visible = [screen visibleFrame];
+      NSRect frame = [window frame];
+      [window setFrameOrigin:NSMakePoint(NSMidX(visible) - NSWidth(frame) / 2,
+            NSMidY(visible) - NSHeight(frame) / 2)];
+   }
 }
 
 #endif
