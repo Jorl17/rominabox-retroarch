@@ -23,6 +23,10 @@ bool rib_write_menu_config(config_file_t *config, const char *path,
  * close or rename failure, including replacement on Windows. */
 bool rib_write_menu_volume(const char *path, float db);
 
+/* Update only the device key and keep the other remap settings, with the
+ * directory creation and temporary-file failure handling of the remap writer. */
+bool rib_write_remap_device(const char *path, unsigned device);
+
 #ifdef __cplusplus
 }
 #endif

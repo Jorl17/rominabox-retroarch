@@ -29,6 +29,7 @@
 #include "rmlui_shader_mark.h"
 #include "rmlui/bind_lines.h"
 #include "rmlui/files.h"
+#include "rmlui/host.h"
 #include "rmlui/declarations.h"
 #include <gfx/gl_capabilities.h>
 
@@ -168,25 +169,6 @@ static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id
 static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
       size_t index, enum menu_action action);
 
-static bool rib_rmlui_menu_alive(void)
-{
-   struct menu_state *menu_st = menu_state_get_ptr();
-   return menu_st && (menu_st->flags & MENU_ST_FLAG_ALIVE);
-}
-
-/* Keep frames going to the menu driver while the menu is closed. In every video
- * driver we skip the menu while it is closed, so without this we would never
- * draw an overlay. We use the same switch as for drawing the menu, so there is
- * no code for overlays in the video drivers. */
-static void rib_rmlui_draw_without_menu(bool on)
-{
-   video_driver_state_t *video_st = video_state_get_ptr();
-   if (rib_rmlui_menu_alive())
-      return;
-   if (video_st && video_st->poke && video_st->poke->set_texture_enable)
-      video_st->poke->set_texture_enable(video_st->data, on, false);
-}
-
 void rib_rmlui_begin_overlays(void)
 {
    /* Assume yes for now. We read the declarations in the design on the first
@@ -194,35 +176,12 @@ void rib_rmlui_begin_overlays(void)
     * declares no overlay, we stop asking for frames on that same frame. */
    rib_overlays_running = true;
    rib_overlays_started_at = 0;
-   rib_rmlui_draw_without_menu(true);
+   rib_host_overlay_frames(true);
 }
 
 bool rib_rmlui_overlays_drawing(void)
 {
    return rib_overlays_running;
-}
-
-/* Resolve a declared control id to its libretro bind.
- *
- * We take the mapping from RetroArch: input_config_bind_map is generated from
- * the same DECLARE_BIND table as the analogue directions, so it contains
- * l_x_plus as well as up. A separate table here could bind a stick to the
- * button at the same index, because the analogue directions are in a
- * different range of indexes.
- */
-static bool rib_control_bind_index(const char *id, unsigned *resolved)
-{
-   unsigned index;
-   for (index = 0; index < RARCH_FIRST_META_KEY; ++index)
-   {
-      const struct input_bind_map *entry = INPUT_CONFIG_BIND_MAP_GET(index);
-      if (entry && entry->base && string_is_equal(entry->base, id))
-      {
-         *resolved = index;
-         return true;
-      }
-   }
-   return false;
 }
 
 /* Take the control list from the exported configuration.
@@ -290,7 +249,7 @@ static void rib_rmlui_discover_controls(rib_rmlui_menu_t *menu,
          continue;
       if (!rib_rmlui_control_belongs(belonging, id))
          continue;
-      if (!rib_control_bind_index(id, &bind_index))
+      if (!rib_host_bind_index(id, &bind_index))
       {
          RARCH_WARN("[RIB] '%s' is not a libretro bind; the menu will not show "
                "it. Check the id against DECLARE_BIND in configuration.c.\n", id);
@@ -335,21 +294,11 @@ static char rib_disc_mark[32];
 static char rib_disc_redirect_from[32];
 static char rib_disc_redirect_to[32];
 
-static unsigned rib_disc_count(void)
-{
-   rarch_system_info_t *sys_info = &runloop_state_get_ptr()->system;
-
-   if (!disk_control_enabled(&sys_info->disk_control))
-      return 0;
-   return disk_control_get_num_images(&sys_info->disk_control);
-}
-
 /* We export the entry hidden, because get_num_images is unknown until the
  * game has loaded, and we cannot create the entry in the player then. It stays
  * hidden for a game with one disc, so the focus never stops on an empty spot. */
 static void rib_discs_sync(void)
 {
-   rarch_system_info_t *sys_info = &runloop_state_get_ptr()->system;
    char list_id[48];
    unsigned count;
    unsigned current;
@@ -358,7 +307,7 @@ static void rib_discs_sync(void)
 
    if (!rib_disc_list_id[0])
       return;
-   count = rib_disc_count();
+   count = rib_host_disc_count();
    if (rib_disc_list_button[0])
    {
       rib_rmlui_set_shown(rib_disc_list_button, count > 1);
@@ -366,7 +315,7 @@ static void rib_discs_sync(void)
    }
    snprintf(list_id, sizeof(list_id), "%s-list", rib_disc_list_id);
    rows = rib_rmlui_rows_in(list_id);
-   current = disk_control_get_image_index(&sys_info->disk_control);
+   current = rib_host_disc_index();
    for (index = 0; index < rows; index++)
    {
       const char *row = rib_rmlui_row_in(list_id, index);
@@ -380,8 +329,7 @@ static void rib_discs_sync(void)
          continue;
       }
       label[0] = '\0';
-      disk_control_get_image_label(&sys_info->disk_control,
-            (unsigned)index, label, sizeof(label));
+      rib_host_disc_label((unsigned)index, label, sizeof(label));
       if (!label[0])
          snprintf(label, sizeof(label), "Disc %u", (unsigned)index + 1);
       rib_rmlui_set_shown(row, true);
@@ -423,7 +371,7 @@ static bool rib_discs_choose(rib_rmlui_menu_t *menu, const char *id)
       return false;
    snprintf(list_id, sizeof(list_id), "%s-list", rib_disc_list_id);
    rows = rib_rmlui_rows_in(list_id);
-   count = rib_disc_count();
+   count = rib_host_disc_count();
    for (index = 0; index < rows; index++)
    {
       const char *row = rib_rmlui_row_in(list_id, index);
@@ -434,7 +382,7 @@ static bool rib_discs_choose(rib_rmlui_menu_t *menu, const char *id)
       if ((unsigned)index >= count)
          return true;
       image = (unsigned)index;
-      command_event(CMD_EVENT_DISK_INDEX, &image);
+      rib_host_choose_disc(image);
       return true;
    }
    return false;
@@ -772,7 +720,7 @@ static void rib_pause_focus_row(rib_rmlui_menu_t *menu, int index,
    menu->row_focus = index;
    rib_rmlui_focus_element(ids[index]);
 #ifdef HAVE_AUDIOMIXER
-   audio_driver_mixer_play_scroll_sound(direction_up);
+   rib_host_scroll_sound(direction_up);
 #endif
 }
 
@@ -818,37 +766,24 @@ static void rib_rmlui_focus(rib_rmlui_menu_t *menu, int focused,
       rib_rmlui_select_slot(menu, rib_rmlui_focus_slot(focused));
 #ifdef HAVE_AUDIOMIXER
    if (changed)
-      audio_driver_mixer_play_scroll_sound(direction_up);
+      rib_host_scroll_sound(direction_up);
 #endif
 }
 
 static bool rib_rmlui_load_is_available(const rib_rmlui_menu_t *menu)
 {
-   char state_path[PATH_MAX_LENGTH] = {0};
-
-   return menu && runloop_get_savestate_path(state_path,
-         sizeof(state_path), menu->selected_slot) && path_is_valid(state_path);
+   return menu && rib_host_slot_occupied(menu->selected_slot);
 }
 
 static void rib_rmlui_refresh_slots(void)
 {
-   runloop_state_t *runloop_st = runloop_state_get_ptr();
    int slot;
-
    for (slot = 1; slot <= 6; ++slot)
    {
-      char state_path[PATH_MAX_LENGTH] = {0};
       char thumbnail_path[PATH_MAX_LENGTH] = {0};
-      bool occupied = runloop_get_savestate_path(
-            state_path, sizeof(state_path), slot) && path_is_valid(state_path);
-
-      if (runloop_st && runloop_st->name.savestate[0])
-         gfx_savestate_thumbnail_get_path(thumbnail_path,
-               sizeof(thumbnail_path), runloop_st->name.savestate, slot);
-      if (!path_is_valid(thumbnail_path))
-         thumbnail_path[0] = '\0';
-
-      rib_rmlui_set_game_aspect(video_driver_get_core_aspect());
+      bool occupied = rib_host_slot_occupied(slot);
+      rib_host_thumbnail(slot, thumbnail_path, sizeof(thumbnail_path));
+      rib_rmlui_set_game_aspect(rib_host_game_aspect());
       rib_rmlui_set_slot_state(slot, occupied, thumbnail_path);
    }
 }
@@ -859,8 +794,8 @@ static bool rib_rmlui_begin_transfer(rib_rmlui_menu_t *menu, bool is_save)
       return false;
 
    menu->transfer_path[0] = '\0';
-   if (!runloop_get_savestate_path(menu->transfer_path,
-         sizeof(menu->transfer_path), menu->selected_slot))
+   if (!rib_host_state_path(menu->selected_slot, menu->transfer_path,
+         sizeof(menu->transfer_path)))
       menu->transfer_path[0] = '\0';
    menu->transfer_is_save = is_save;
    menu->transfer_slot = menu->selected_slot;
@@ -919,18 +854,6 @@ static void rib_rmlui_apply_control_bind(config_file_t *config,
          control->id, bind);
    input_config_parse_mouse_button(base, config, "input_player1",
          control->id, bind);
-}
-
-static void rib_rmlui_restore_keyboard_mapping_bits(void)
-{
-   unsigned user;
-   unsigned bind_index;
-   for (user = 0; user < MAX_USERS; ++user)
-      for (bind_index = 0; input_config_bind_map_get_valid(bind_index);
-           ++bind_index)
-         if (input_config_binds[user][bind_index].key != RETROK_UNKNOWN)
-            input_keyboard_mapping_bits(1,
-                  input_config_binds[user][bind_index].key);
 }
 
 static bool rib_rmlui_load_controls_file(rib_rmlui_menu_t *menu,
@@ -1016,7 +939,7 @@ static bool rib_rmlui_load_controls_file(rib_rmlui_menu_t *menu,
             input_config_binds[0][menu->controls[index].bind_index];
       }
    }
-   rib_rmlui_restore_keyboard_mapping_bits();
+   rib_host_restore_keyboard_mapping();
    config_file_free(config);
    return true;
 }
@@ -1054,7 +977,6 @@ static void rib_rmlui_reload_controls(rib_rmlui_menu_t *menu)
    rib_focus_control(menu, rib_control_first(menu));
    rib_rmlui_refresh_controls(menu);
 }
-
 
 static void rib_rmlui_save_joy_button(config_file_t *config,
       const char *key, uint16_t joykey)
@@ -1294,7 +1216,7 @@ void rib_rmlui_play_move_sound(int direction)
 {
 #ifdef HAVE_AUDIOMIXER
    if (direction != 0)
-      audio_driver_mixer_play_scroll_sound(direction > 0);
+      rib_host_scroll_sound(direction > 0);
 #else
    (void)direction;
 #endif
@@ -1306,125 +1228,15 @@ static void rib_rmlui_play_action_sound(int action)
    switch (rib_rmlui_action_sound(action))
    {
       case RIB_MENU_SOUND_OK:
-         audio_driver_mixer_play_menu_sound(AUDIO_MIXER_SYSTEM_SLOT_OK);
+         rib_host_ok_sound();
          break;
       case RIB_MENU_SOUND_CANCEL:
-         audio_driver_mixer_play_menu_sound(AUDIO_MIXER_SYSTEM_SLOT_CANCEL);
+         rib_host_cancel_sound();
          break;
       case RIB_MENU_SOUND_NONE:
          break;
    }
 #endif
-}
-
-/* The path of the core remap file, the one in use when there is no game or
- * content-directory remap (config_load_remap):
- * <input_remapping_directory>/<library name>/<library name>.rmp
- * With sort-by-controller on, we add the name of the physical pad, because
- * the path in use with that setting contains it. */
-static bool rib_rmlui_core_remap_path(char *path, size_t len)
-{
-   settings_t *settings = config_get_ptr();
-   const char *core_name;
-   const char *directory;
-   char remap_dir[PATH_MAX_LENGTH];
-
-   if (!path || !len)
-      return false;
-   path[0] = '\0';
-   if (!settings)
-      return false;
-
-   core_name = runloop_state_get_ptr()->system.info.library_name;
-   directory = settings->paths.directory_input_remapping;
-   if (!core_name || !*core_name || !directory || !*directory)
-      return false;
-
-   strlcpy(remap_dir, core_name, sizeof(remap_dir));
-   if (settings->bools.input_remap_sort_by_controller_enable)
-   {
-      char *device_dir = NULL;
-      const char *device_name = input_config_get_device_display_name(
-            settings->uints.input_joypad_index[0]);
-      if (device_name && *device_name
-            && (device_dir = sanitize_path_part(
-                  device_name, strlen(device_name)))
-            && *device_dir)
-         fill_pathname_join_special(remap_dir, core_name, device_dir,
-               sizeof(remap_dir));
-      free(device_dir);
-   }
-
-   fill_pathname_join_special_ext(path, directory, remap_dir, core_name,
-         FILE_PATH_REMAP_EXTENSION, len);
-   return path[0] != '\0';
-}
-
-/* Update input_libretro_device_p1 in an existing remap, or create one.
- *
- * That key is valid only in a remap file. If we replaced the whole file, as
- * with input_remapping_save_file, we would also write turbo, port and analog
- * settings the author never put there, so we keep the other keys as they are.
- * We update the file in place and never remove it. At launch we copy the
- * author's remap into the data directory only when that file is missing, so
- * without it the next launch would use the author's device again. */
-static bool rib_rmlui_write_remap_device(const char *path, unsigned device)
-{
-   config_file_t *conf;
-   char directory[PATH_MAX_LENGTH];
-   bool saved;
-   char existing[32];
-   char wanted[32];
-   bool existed;
-
-   if (!path || !*path || !device)
-      return false;
-
-   existed = path_is_valid(path);
-   conf = existed ? config_file_new_from_path_to_string(path) : NULL;
-   if (existed && !conf)
-      return false;
-   if (!conf && !(conf = config_file_new_alloc()))
-      return false;
-
-   snprintf(wanted, sizeof(wanted), "%u", device);
-   if (config_get_array(conf, "input_libretro_device_p1",
-            existing, sizeof(existing))
-         && string_is_equal(existing, wanted))
-   {
-      config_file_free(conf);
-      return true;
-   }
-   config_set_uint(conf, "input_libretro_device_p1", device);
-
-   fill_pathname_parent_dir(directory, path, sizeof(directory));
-   if (*directory && !path_is_directory(directory) && !path_mkdir(directory))
-   {
-      config_file_free(conf);
-      return false;
-   }
-
-   saved = rib_write_menu_config(conf, path, RIB_CONFIG_WRITE_REMAP);
-   config_file_free(conf);
-   return saved;
-}
-
-static bool rib_rmlui_persist_libretro_device(unsigned device)
-{
-   char core_path[PATH_MAX_LENGTH];
-   const char *active;
-   bool ok;
-
-   if (!rib_rmlui_core_remap_path(core_path, sizeof(core_path)))
-      return false;
-
-   ok = rib_rmlui_write_remap_device(core_path, device);
-   /* A game or content-directory remap, when there is one, comes before the
-    * core file and would hide it, so we write the same device into it too. */
-   active = runloop_state_get_ptr()->name.remapfile;
-   if (active && *active && !string_is_equal(active, core_path))
-      ok = rib_rmlui_write_remap_device(active, device) && ok;
-   return ok;
 }
 
 static bool rib_save_volume(const rib_rmlui_menu_t *menu, float db)
@@ -1436,8 +1248,7 @@ static bool rib_save_volume(const rib_rmlui_menu_t *menu, float db)
 
 static void rib_paint_volume(void)
 {
-   settings_t *settings = config_get_ptr();
-   float db = settings ? settings->floats.audio_volume : AUDIO_VOLUME_DEFAULT_DB;
+   float db = rib_host_volume();
 
    db = rib_volume_quantize_db(db);
    /* No readout. Low and high are in the design, and the position of the
@@ -1448,17 +1259,8 @@ static void rib_paint_volume(void)
 
 static void rib_set_volume_db(rib_rmlui_menu_t *menu, float db, bool persist)
 {
-   settings_t *settings = config_get_ptr();
-   bool *muted_flag = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
-
    db = rib_volume_quantize_db(db);
-   /* There is no control for mute, but a file or a hotkey may have set it.
-    * The player chooses only the level, so we turn mute off. */
-   if (muted_flag)
-      *muted_flag = false;
-   if (settings)
-      configuration_set_float(settings, settings->floats.audio_volume, db);
-   audio_set_float(AUDIO_ACTION_VOLUME_GAIN, db);
+   rib_host_set_volume(db);
    if (persist)
       rib_save_volume(menu, db);
    rib_paint_volume();
@@ -1550,7 +1352,7 @@ static void rib_rmlui_show_running_shader(rib_rmlui_menu_t *menu)
 
    for (index = 0; index < menu->shader_count; ++index)
       relatives[index] = menu->shader_presets[index];
-   current = video_shader_get_current_shader_preset();
+   current = rib_host_current_shader();
    matched = rib_shader_mark_index(current, relatives, menu->shader_count);
    if (matched < 0)
    {
@@ -1567,7 +1369,6 @@ static void rib_rmlui_show_running_shader(rib_rmlui_menu_t *menu)
 
 static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id)
 {
-   settings_t *settings = config_get_ptr();
    const char *assets = getenv("ROMINABOX_RML_ASSETS");
    const char *data = rib_absolute_data_dir();
    char absolute[PATH_MAX_LENGTH];
@@ -1577,7 +1378,7 @@ static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id
    int index;
    bool known = false;
 
-   if (!menu || !id || !*id || !settings)
+   if (!menu || !id || !*id || !rib_host_has_settings())
       return false;
    for (index = 0; index < menu->shader_count; ++index)
       if (string_is_equal(menu->shader_ids[index], id))
@@ -1595,23 +1396,7 @@ static bool rib_rmlui_apply_listed_shader(rib_rmlui_menu_t *menu, const char *id
    if (relative && *relative && assets && *assets)
       snprintf(absolute, sizeof(absolute), "%s/%s", assets, relative);
 
-   configuration_set_bool(settings, settings->bools.video_shader_enable,
-         absolute[0] != '\0');
-   {
-      bool applied;
-
-      if (absolute[0])
-         applied = video_shader_apply_shader(settings,
-               video_shader_parse_type(absolute), absolute, false);
-      else
-         applied = video_shader_apply_shader(settings, RARCH_SHADER_NONE, NULL, false);
-      /* To stderr, because we keep stderr in the launcher, and RARCH_LOG writes
-       * nothing without verbose logging. The line shows that we gave the
-       * preset to the driver. */
-      fprintf(stderr, "[RIB] shader '%s' %s: %s\n", id,
-            applied ? "applied" : "not applied",
-            absolute[0] ? absolute : "unfiltered");
-   }
+   rib_host_apply_shader(id, absolute);
 
    if (data && *data)
    {
@@ -1661,7 +1446,6 @@ static void rib_focus_list(rib_rmlui_menu_t *menu, int index)
 
 static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
 {
-   settings_t *settings = config_get_ptr();
    char status[64];
    int control_index;
 
@@ -1757,7 +1541,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       if (screen_id[0]
             && rib_disc_redirect_from[0]
             && string_is_equal(screen_id, rib_disc_redirect_from)
-            && rib_disc_count() > 1
+            && rib_host_disc_count() > 1
             && rib_disc_redirect_to[0])
          strlcpy(screen_id, rib_disc_redirect_to, sizeof(screen_id));
       if (screen_id[0] && rib_rmlui_show_screen(screen_id))
@@ -1842,20 +1626,8 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
           * default in the frontend is then a joypad, and writing 0 would
           * connect nothing. At the next launch we read the device from the
           * remap and not from the per-game override. */
-         if (known && settings)
-         {
-            unsigned applied = device ? device : (unsigned)RETRO_DEVICE_JOYPAD;
-            configuration_set_uint(settings,
-                  settings->uints.input_libretro_device[0], applied);
-            command_event(CMD_EVENT_CONTROLLER_INIT, NULL);
-            if (!rib_rmlui_persist_libretro_device(applied))
-               RARCH_ERR("[RIB] controller '%s' is active as device %u, but "
-                     "the remap could not be written. The next launch will "
-                     "restore the previous device.\n", chosen, applied);
-            else
-               RARCH_LOG("[RIB] controller '%s' applied as device %u.\n",
-                     chosen, applied);
-         }
+         if (known)
+            rib_host_apply_device(chosen, device);
 
          /* Draw the chosen pad. The export contains a scene for each pad in
           * the picker, so we have the art and the positions here. */
@@ -1920,13 +1692,11 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
       case RIB_RMLUI_ACTION_SAVE:
          if (!rib_rmlui_begin_transfer(menu, true))
             return;
-         if (settings)
-            configuration_set_int(settings, settings->ints.state_slot,
-                  menu->selected_slot);
+         rib_host_select_state_slot(menu->selected_slot);
          snprintf(status, sizeof(status), "SAVING SLOT %d...",
                menu->selected_slot);
          rib_rmlui_set_status(status);
-         if (!command_event(CMD_EVENT_SAVE_STATE, NULL) &&
+         if (!rib_host_save_state() &&
                menu->transfer_pending)
             rib_rmlui_notify_state_task(menu->transfer_path,
                   menu->transfer_slot, true, false);
@@ -1936,13 +1706,11 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
             return;
          if (!rib_rmlui_begin_transfer(menu, false))
             return;
-         if (settings)
-            configuration_set_int(settings, settings->ints.state_slot,
-                  menu->selected_slot);
+         rib_host_select_state_slot(menu->selected_slot);
          snprintf(status, sizeof(status), "LOADING SLOT %d...",
                menu->selected_slot);
          rib_rmlui_set_status(status);
-         if (!command_event(CMD_EVENT_LOAD_STATE, NULL) &&
+         if (!rib_host_load_state() &&
                menu->transfer_pending)
             rib_rmlui_notify_state_task(menu->transfer_path,
                   menu->transfer_slot, false, false);
@@ -2002,10 +1770,10 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, int action)
          }
          break;
       case RIB_RMLUI_ACTION_RESUME:
-         command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+         rib_host_resume();
          break;
       case RIB_RMLUI_ACTION_QUIT:
-         command_event(CMD_EVENT_QUIT, NULL);
+         rib_host_quit();
          break;
       case RIB_RMLUI_ACTION_SELECT_SLOT_1:
       case RIB_RMLUI_ACTION_SELECT_SLOT_2:
@@ -2074,7 +1842,7 @@ static void rib_rmlui_context_reset(void *data, bool video_is_threaded)
     * drawn over the game we ask for frames again. This happens, for example,
     * when the player goes fullscreen during an overlay. */
    if (rib_overlays_running)
-      rib_rmlui_draw_without_menu(true);
+      rib_host_overlay_frames(true);
 }
 
 /* Drive the menu from ROMINABOX_MENU_SCRIPT, one element per frame.
@@ -2236,7 +2004,7 @@ static void rib_rmlui_run_script(void)
             return;
          }
       RARCH_ERR("[RIB] menu script names no key '%s'; stopping.\n", id + 4);
-      command_event(CMD_EVENT_QUIT, NULL);
+      rib_host_quit();
       return;
    }
 
@@ -2246,7 +2014,7 @@ static void rib_rmlui_run_script(void)
       settings_t *settings = config_get_ptr();
       if (menu)
          fprintf(stderr, "[RIB] checkpoint %s %s\n", id + 7,
-               rib_rmlui_script_report(menu->screen, rib_rmlui_menu_alive(),
+               rib_rmlui_script_report(menu->screen, rib_host_menu_open(),
                      menu->transfer_pending, menu->capture_active, menu->profile_id,
                      settings ? settings->floats.audio_volume : AUDIO_VOLUME_DEFAULT_DB));
       return;
@@ -2256,7 +2024,7 @@ static void rib_rmlui_run_script(void)
     * element to click, so this is the only way to script pause and resume. */
    if (!strcmp(id, "toggle"))
    {
-      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+      rib_host_resume();
       RARCH_LOG("[RIB] menu script toggled the menu.\n");
       return;
    }
@@ -2268,7 +2036,7 @@ static void rib_rmlui_run_script(void)
       {
          RARCH_ERR("[RIB] menu script cannot hover '%s'; stopping so no "
                "screenshot is taken of the wrong screen.\n", rib_script_hover);
-         command_event(CMD_EVENT_QUIT, NULL);
+         rib_host_quit();
       }
       return;
    }
@@ -2282,7 +2050,7 @@ static void rib_rmlui_run_script(void)
          {
             RARCH_ERR("[RIB] menu script names no slider '%s'; stopping so no "
                   "screenshot is taken of the wrong screen.\n", id);
-            command_event(CMD_EVENT_QUIT, NULL);
+            rib_host_quit();
          }
          return;
       }
@@ -2292,7 +2060,7 @@ static void rib_rmlui_run_script(void)
    {
       RARCH_ERR("[RIB] menu script names no element '%s'; stopping so no "
             "screenshot is taken of the wrong screen.\n", id);
-      command_event(CMD_EVENT_QUIT, NULL);
+      rib_host_quit();
       return;
    }
    RARCH_LOG("[RIB] menu script clicked '%s'.\n", id);
@@ -2379,7 +2147,7 @@ static void rib_rmlui_run_overlays(void)
    if (!pending && !rib_rmlui_script_wants_frames())
    {
       rib_overlays_running = false;
-      rib_rmlui_draw_without_menu(false);
+      rib_host_overlay_frames(false);
    }
 }
 
@@ -2651,7 +2419,7 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
          RARCH_ERR("[RmlUi] Failed to initialize menu from %s.\n",
                asset_directory);
          rib_overlays_running = false;
-         rib_rmlui_draw_without_menu(false);
+         rib_host_overlay_frames(false);
          return;
       }
       /* Read the screens and overlays in the design before we show any. */
@@ -2689,10 +2457,8 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
        * the quiet end in place of mute and clamp anything above normal to
        * normal. Write the file again only when that changes its contents. */
       {
-         settings_t *settings = config_get_ptr();
-         bool *muted_flag = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
-         float db = settings ? settings->floats.audio_volume : AUDIO_VOLUME_DEFAULT_DB;
-         bool muted = muted_flag && *muted_flag;
+         float db = rib_host_volume();
+         bool muted = rib_host_muted();
          float snapped = rib_volume_quantize_db(muted ? AUDIO_VOLUME_MIN_DB : db);
          rib_set_volume_db(menu, snapped, muted || snapped != db);
       }
@@ -2702,7 +2468,7 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
    }
 
    {
-      const bool menu_alive = rib_rmlui_menu_alive();
+      const bool menu_alive = rib_host_menu_open();
 
       /* When we draw this document while the menu is closed, the menu itself
        * is not on screen, and we state that on the document for the design.
@@ -2801,7 +2567,7 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
          int conflict = rib_rmlui_find_binding_conflict(
                menu, menu->capture_control);
          menu->capture_active = false;
-         rib_rmlui_restore_keyboard_mapping_bits();
+         rib_host_restore_keyboard_mapping();
          if (conflict >= 0)
          {
             snprintf(capture_status, sizeof(capture_status),
@@ -2863,14 +2629,14 @@ static int rib_part_navigate(rib_rmlui_menu_t *menu, enum menu_action action)
          menu->panel_focus = (menu->panel_focus + count - 1) % count;
          rib_rmlui_mark_focused(panel, ids[menu->panel_focus]);
 #ifdef HAVE_AUDIOMIXER
-         audio_driver_mixer_play_scroll_sound(true);
+         rib_host_scroll_sound(true);
 #endif
          return 0;
       case MENU_ACTION_DOWN:
          menu->panel_focus = (menu->panel_focus + 1) % count;
          rib_rmlui_mark_focused(panel, ids[menu->panel_focus]);
 #ifdef HAVE_AUDIOMIXER
-         audio_driver_mixer_play_scroll_sound(false);
+         rib_host_scroll_sound(false);
 #endif
          return 0;
       case MENU_ACTION_LEFT:
@@ -2934,7 +2700,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
             {
                rib_focus_list(menu, (menu->list_focus + stops - 1) % stops);
 #ifdef HAVE_AUDIOMIXER
-               audio_driver_mixer_play_scroll_sound(true);
+               rib_host_scroll_sound(true);
 #endif
             }
             return 0;
@@ -2943,7 +2709,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
             {
                rib_focus_list(menu, (menu->list_focus + 1) % stops);
 #ifdef HAVE_AUDIOMIXER
-               audio_driver_mixer_play_scroll_sound(false);
+               rib_host_scroll_sound(false);
 #endif
             }
             return 0;
@@ -3006,7 +2772,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
          case MENU_ACTION_UP:
          case MENU_ACTION_LEFT:
 #ifdef HAVE_AUDIOMIXER
-            audio_driver_mixer_play_scroll_sound(true);
+            rib_host_scroll_sound(true);
 #endif
             rib_focus_control(menu, rib_control_step(menu,
                   menu->control_focus, -1));
@@ -3014,7 +2780,7 @@ static int rib_rmlui_entry_action(void *data, menu_entry_t *entry,
          case MENU_ACTION_DOWN:
          case MENU_ACTION_RIGHT:
 #ifdef HAVE_AUDIOMIXER
-            audio_driver_mixer_play_scroll_sound(false);
+            rib_host_scroll_sound(false);
 #endif
             rib_focus_control(menu, rib_control_step(menu,
                   menu->control_focus, 1));
