@@ -17,6 +17,8 @@
 #include "files.h"
 #include "host.h"
 #include "declarations.h"
+#include "overlays.hpp"
+#include "script.hpp"
 
 #ifndef RIB_RMLUI_DEFAULT_ASSETS
 #define RIB_RMLUI_DEFAULT_ASSETS "."
@@ -49,6 +51,9 @@ typedef struct rib_control
 typedef struct rib_rmlui_menu
 {
    bool initialized;
+   bool overlay_mode;
+   rib::Overlays overlays;
+   rib::Script script;
    bool pointer_pressed;
    bool transfer_pending;
    bool transfer_is_save;
@@ -95,37 +100,9 @@ typedef struct rib_rmlui_menu
    int toggle_count;
 } rib_rmlui_menu_t;
 
-/* An overlay declared in the design: one element that we draw over the running
- * game for a while and then remove. The overlays that exist are the ones in the
- * design, and there are no overlay names in the player. */
-typedef struct rib_overlay
-{
-   char id[64];
-   /* An overlay declared before this one, which must finish first. We show
-    * the notice after the logo in this way, not after a fixed delay, so a slow
-    * start delays both and they never overlap. When this is empty, we wait
-    * only for the game to start. */
-   char follows[64];
-   /* A staged file that we require to draw the overlay. For the logo, we show
-    * it only when the export contains that file. We check the file itself and
-    * have no separate flag for it in the launcher. */
-   char needs[128];
-   int after_ms;
-   int hold_ms;
-   int leave_ms;
-   /* When the clock for this overlay started, after what it follows was done.
-    * Zero until then. */
-   int64_t started_at;
-   int64_t finished_at;
-   enum rib_overlay_state state;
-   bool finished;
-} rib_overlay_t;
-
-static rib_overlay_t rib_overlays[RIB_OVERLAY_MAX];
-static int rib_overlay_count;
-static bool rib_overlays_running;
-static bool rib_overlay_mode;
-static int64_t rib_overlays_started_at;
+/* The public runloop callback can come before we allocate the menu. Keep only
+ * that pending request here, and the overlay timeline in the menu itself. */
+static bool pending_overlay_start;
 static rib_rmlui_menu_t *rib_rmlui_active_menu;
 
 /* The bind list. The element, and how long a control stays current before we
@@ -136,9 +113,6 @@ static int rib_binds_width;
 static int rib_binds_for = -1;
 static int64_t rib_binds_since;
 static bool rib_binds_open;
-static char rib_script_hover[128];
-static int64_t rib_script_wait_until;
-static bool rib_script_running;
 
 static void rib_rmlui_refresh_controls(rib_rmlui_menu_t *menu);
 static void rib_focus_control(rib_rmlui_menu_t *menu, int index);
@@ -153,17 +127,19 @@ int rib_menu_key(void *data, enum rib_key action);
 
 void rib_rmlui_begin_overlays(void)
 {
-   /* Assume yes for now. We read the declarations in the design on the first
-    * frame, and there are no frames until we ask for them here. When a design
-    * declares no overlay, we stop asking for frames on that same frame. */
-   rib_overlays_running = true;
-   rib_overlays_started_at = 0;
-   rib_host_overlay_frames(true);
+   if (rib_rmlui_active_menu)
+      rib_rmlui_active_menu->overlays.begin();
+   else
+   {
+      pending_overlay_start = true;
+      rib_host_overlay_frames(true);
+   }
 }
 
 bool rib_rmlui_overlays_drawing(void)
 {
-   return rib_overlays_running;
+   return pending_overlay_start ||
+         (rib_rmlui_active_menu && rib_rmlui_active_menu->overlays.drawing());
 }
 
 /* Take the control list from the exported configuration.
@@ -454,22 +430,7 @@ static void rib_rmlui_load_design(rib_rmlui_menu_t *menu, const char *assets)
       menu->toggles[index] = design->toggles[index];
       rib_toggle_recall(&menu->toggles[index]);
    }
-   rib_overlay_count = design->overlay_count;
-   for (index = 0; index < (size_t)rib_overlay_count; ++index)
-   {
-      const rib_overlay_declaration *source = &design->overlays[index];
-      rib_overlay_t *overlay = &rib_overlays[index];
-      strlcpy(overlay->id, source->id, sizeof(overlay->id));
-      strlcpy(overlay->follows, source->follows, sizeof(overlay->follows));
-      strlcpy(overlay->needs, source->needs, sizeof(overlay->needs));
-      overlay->after_ms = source->after_ms;
-      overlay->hold_ms = source->hold_ms;
-      overlay->leave_ms = source->leave_ms;
-      overlay->started_at = 0;
-      overlay->finished_at = 0;
-      overlay->state = RIB_OVERLAY_HIDDEN;
-      overlay->finished = false;
-   }
+   menu->overlays.load(*design);
    strlcpy(rib_binds_list, design->binds_list, sizeof(rib_binds_list));
    rib_binds_after_ms = design->binds_after_ms;
    rib_binds_width = design->binds_width;
@@ -1663,6 +1624,11 @@ void *rib_menu_create(void)
    menu->row_focus = 0;
    strlcpy(menu->screen, "pause", sizeof(menu->screen));
    rib_rmlui_active_menu = menu;
+   if (pending_overlay_start)
+   {
+      pending_overlay_start = false;
+      menu->overlays.begin();
+   }
    return menu;
 }
 
@@ -1674,7 +1640,7 @@ void rib_menu_destroy(void *data)
    if (menu && menu->capture_active)
       rib_rmlui_cancel_capture(menu, NULL);
    rib_rmlui_shutdown();
-   rib_overlays_running = false;
+   pending_overlay_start = false;
    delete menu;
    /* We leave the small userdata wrapper of the C adapter to menu_driver_ctl. */
 }
@@ -1697,304 +1663,8 @@ void rib_menu_context_reset(void *data)
    /* With a new video driver the menu is switched off, so for anything still
     * drawn over the game we ask for frames again. This happens, for example,
     * when the player goes fullscreen during an overlay. */
-   if (rib_overlays_running)
+   if (menu && menu->overlays.drawing())
       rib_host_overlay_frames(true);
-}
-
-/* Drive the menu from ROMINABOX_MENU_SCRIPT, one element per frame.
- *
- * We take a screenshot of the menu from the menu itself. With offscreen
- * rendering we can show a state once its classes are set, but not that
- * pressing CONTROLS opens the controls screen, because the bridge code for
- * that is not loaded there. Here we click the same elements as a player,
- * through the same listeners, so with `--max-frames-ss` we capture a frame
- * of an actual state, and RetroArch exits by itself afterwards.
- *
- * The script is a comma-separated list of element ids, for example
- * "controls,controls-device-current". We click one per frame, so there is
- * a frame for the menu to update before the next click. For a step written
- * "wait:120" we wait that many frames instead, to take a picture of an
- * overlay over a running game, or anything else timed, at a chosen moment.
- *
- * We stop the run at an id that is not in the document. A screenshot taken
- * after clicking nothing would show the wrong thing, which is worse than no
- * picture.
- */
-/* How many frames we wait after the last click before the screenshot. We
- * handle the queued click in the bridge one frame later, and we lay out a
- * picker that has just opened in the frame after that. */
-#define RIB_SCRIPT_SETTLE_FRAMES 8
-
-/* Keep frames coming while a script has not finished. Over a running game the
- * menu driver gets frames only while an overlay is shown, which is shorter than
- * a script that waits for an overlay to go away. */
-static bool rib_rmlui_script_wants_frames(void)
-{
-   return rib_script_running;
-}
-
-static void rib_rmlui_script_shot(void)
-{
-   const char *path       = getenv("ROMINABOX_MENU_SHOT");
-
-   if (!path || !*path || !rib_host_prepare_script_shot())
-   {
-      /* Without a screenshot, a script only drives the menu, so we leave the
-       * game running and do not quit while someone may be playing it. */
-      return;
-   }
-
-   /* We read the screenshot from the viewport and not from the framebuffer of
-    * the core, because we draw the menu over the game and the framebuffer
-    * contains only the game. We change the setting here, so there is no need
-    * for a config override in the harness to get a picture of the menu. */
-
-   /* We take the picture in the menu renderer, because the pixels are there:
-    * the frame of the core with the menu drawn over it, still in the back
-    * buffer. In RetroArch the screenshot code is in the runloop, after the
-    * buffer is presented, and a viewport read at that point returns an empty
-    * buffer, so the result is a black picture written without any error.
-    *
-    * We then end the run in the usual way, so no window stays open. */
-   rib_rmlui_capture_next(path);
-   rib_host_end_after_script_shot(path);
-}
-
-static void rib_rmlui_run_script(void)
-{
-   static const char *script = NULL;
-   static size_t at          = 0;
-   static bool started       = false;
-   static int settle         = RIB_SCRIPT_SETTLE_FRAMES;
-   static int waiting        = 0;
-   char id[128];
-   const char *comma;
-   size_t length;
-
-   if (!started)
-   {
-      script  = getenv("ROMINABOX_MENU_SCRIPT");
-      started = true;
-      rib_script_running = script != NULL;
-      if (script)
-         RARCH_LOG("[RIB] menu script: %s\n", *script ? script : "(none)");
-   }
-   if (!script)
-      return;
-
-   if (rib_script_wait_until)
-   {
-      if (rib_host_time_us() < rib_script_wait_until)
-         return;
-      rib_script_wait_until = 0;
-   }
-
-   if (waiting > 0)
-   {
-      --waiting;
-      return;
-   }
-
-   if (at >= strlen(script))
-   {
-      /* We have made every click. Wait for the menu to settle, take the
-       * screenshot and let RetroArch exit by itself, so no window stays open. */
-      if (settle-- <= 0)
-      {
-         settle = INT_MAX;
-         rib_script_running = false;
-         /* After the clicks, including a disc change after the frames in which
-          * the tray closes. For a row whose action never ran, we report the
-          * index in the core, which is the disc it started on. */
-         rib_host_script_finished();
-         rib_rmlui_script_shot();
-      }
-      return;
-   }
-
-   comma  = strchr(script + at, ',');
-   length = comma ? (size_t)(comma - (script + at)) : strlen(script + at);
-   if (length >= sizeof(id))
-      length = sizeof(id) - 1;
-   memcpy(id, script + at, length);
-   id[length] = '\0';
-   at += length + (comma ? 1 : 0);
-
-   if (!strncmp(id, "wait:", 5))
-   {
-      waiting = atoi(id + 5);
-      RARCH_LOG("[RIB] menu script waiting %d frames.\n", waiting);
-      return;
-   }
-
-   if (!strncmp(id, "wait-ms:", 8))
-   {
-      rib_script_wait_until = rib_host_time_us()
-            + (int64_t)atoi(id + 8) * 1000;
-      RARCH_LOG("[RIB] menu script waiting %s ms.\n", id + 8);
-      return;
-   }
-
-   if (!strncmp(id, "key:", 4))
-   {
-      static const struct { const char *name; enum rib_key action; } keys[] = {
-         {"up", RIB_KEY_UP}, {"down", RIB_KEY_DOWN},
-         {"left", RIB_KEY_LEFT}, {"right", RIB_KEY_RIGHT},
-         {"ok", RIB_KEY_OK}, {"cancel", RIB_KEY_CANCEL},
-         {"start", RIB_KEY_START}
-      };
-      unsigned key;
-      for (key = 0; key < sizeof(keys) / sizeof(keys[0]); ++key)
-         if (string_is_equal(id + 4, keys[key].name))
-         {
-            rib_menu_key(rib_rmlui_active_menu, keys[key].action);
-            return;
-         }
-      RARCH_ERR("[RIB] menu script names no key '%s'; stopping.\n", id + 4);
-      rib_host_quit();
-      return;
-   }
-
-   if (!strncmp(id, "report:", 7))
-   {
-      rib_rmlui_menu_t *menu = rib_rmlui_active_menu;
-      if (menu)
-         fprintf(stderr, "[RIB] checkpoint %s %s\n", id + 7,
-               rib_rmlui_script_report(menu->screen, rib_host_menu_open(),
-                     menu->transfer_pending, menu->capture_active, menu->profile_id,
-                     rib_host_volume()));
-      return;
-   }
-
-   /* The command for Escape, not a click. When the menu is closed there is no
-    * element to click, so this is the only way to script pause and resume. */
-   if (!strcmp(id, "toggle"))
-   {
-      rib_host_resume();
-      RARCH_LOG("[RIB] menu script toggled the menu.\n");
-      return;
-   }
-
-   if (!strncmp(id, "hover:", 6))
-   {
-      strlcpy(rib_script_hover, id + 6, sizeof(rib_script_hover));
-      if (!rib_rmlui_move_pointer_to(rib_script_hover))
-      {
-         RARCH_ERR("[RIB] menu script cannot hover '%s'; stopping so no "
-               "screenshot is taken of the wrong screen.\n", rib_script_hover);
-         rib_host_quit();
-      }
-      return;
-   }
-
-   {
-      char *mark = strchr(id, '@');
-      if (mark)
-      {
-         *mark = '\0';
-         if (!rib_rmlui_commit_slider(id, (float)strtof(mark + 1, NULL)))
-         {
-            RARCH_ERR("[RIB] menu script names no slider '%s'; stopping so no "
-                  "screenshot is taken of the wrong screen.\n", id);
-            rib_host_quit();
-         }
-         return;
-      }
-   }
-
-   if (!rib_rmlui_click_element(id))
-   {
-      RARCH_ERR("[RIB] menu script names no element '%s'; stopping so no "
-            "screenshot is taken of the wrong screen.\n", id);
-      rib_host_quit();
-      return;
-   }
-   RARCH_LOG("[RIB] menu script clicked '%s'.\n", id);
-}
-
-/* Advance every declared overlay by the clock, and nothing else.
- *
- * Each overlay waits, is shown, leaves and is done, at the times declared for
- * it. In the player we set only which of those states an element is in. How it
- * arrives, how it leaves and where it is are in the stylesheet of the design,
- * and the leaving time in the stylesheet comes from this same declaration.
- */
-/* When the clock for this overlay starts: at the start of the game, or when the
- * overlay before it is done. Zero until then. */
-static int64_t rib_overlay_begins_at(const rib_overlay_t *overlay)
-{
-   int index;
-
-   if (!*overlay->follows)
-      return rib_overlays_started_at;
-   for (index = 0; index < rib_overlay_count; ++index)
-   {
-      const rib_overlay_t *before = &rib_overlays[index];
-      if (before == overlay)
-         break;
-      if (string_is_equal(before->id, overlay->follows))
-         return before->finished ? before->finished_at : 0;
-   }
-   /* No overlay before it has that name, so there is nothing to wait for. */
-   return rib_overlays_started_at;
-}
-
-static void rib_rmlui_run_overlays(void)
-{
-   int64_t now;
-   int index;
-   bool pending = false;
-
-   if (!rib_overlays_running)
-      return;
-
-   now = rib_host_time_us();
-   if (!rib_overlays_started_at)
-      rib_overlays_started_at = now;
-
-   for (index = 0; index < rib_overlay_count; ++index)
-   {
-      rib_overlay_t *overlay      = &rib_overlays[index];
-      enum rib_overlay_state want = RIB_OVERLAY_HIDDEN;
-      int elapsed;
-
-      if (overlay->finished)
-         continue;
-      if (!overlay->started_at)
-      {
-         overlay->started_at = rib_overlay_begins_at(overlay);
-         if (!overlay->started_at)
-         {
-            /* The overlay before it is not done yet. */
-            pending = true;
-            continue;
-         }
-      }
-      elapsed = (int)((now - overlay->started_at) / 1000);
-      if (elapsed >= overlay->after_ms + overlay->hold_ms + overlay->leave_ms)
-      {
-         overlay->finished    = true;
-         overlay->finished_at = now;
-      }
-      else if (elapsed >= overlay->after_ms + overlay->hold_ms)
-         want = RIB_OVERLAY_LEAVING;
-      else if (elapsed >= overlay->after_ms)
-         want = RIB_OVERLAY_SHOWING;
-
-      if (want != overlay->state)
-      {
-         overlay->state = want;
-         rib_rmlui_set_overlay(overlay->id, want);
-      }
-      if (!overlay->finished)
-         pending = true;
-   }
-
-   if (!pending && !rib_rmlui_script_wants_frames())
-   {
-      rib_overlays_running = false;
-      rib_host_overlay_frames(false);
-   }
 }
 
 static bool rib_same_bind_target(const rib_rmlui_menu_t *menu, int left, int right)
@@ -2185,7 +1855,8 @@ static void rib_focus_control(rib_rmlui_menu_t *menu, int index)
    rib_rmlui_refresh_controls(menu);
 }
 
-static void rib_rmlui_update_binds(rib_rmlui_menu_t *menu, int x, int y)
+static void rib_rmlui_update_binds(rib_rmlui_menu_t *menu, int x, int y,
+      bool pointer_active, bool hover_active)
 {
    int current = -1;
    int hovered;
@@ -2199,11 +1870,11 @@ static void rib_rmlui_update_binds(rib_rmlui_menu_t *menu, int x, int y)
       return;
    }
 
-   if (!rib_script_running
+   if (pointer_active
          && rib_rmlui_pointer_inside(rib_binds_list, x, y)
          && rib_binds_for >= 0)
       current = rib_binds_for;
-   else if (!rib_script_running || rib_script_hover[0])
+   else if (hover_active)
    {
       hovered = rib_rmlui_hovered_action();
       if (hovered >= RIB_RMLUI_ACTION_CONTROL_FIRST
@@ -2264,7 +1935,7 @@ void rib_menu_frame(void *data, int width, int height)
       {
          RARCH_ERR("[RmlUi] Failed to initialize menu from %s.\n",
                asset_directory);
-         rib_overlays_running = false;
+         menu->overlays.stop();
          rib_host_overlay_frames(false);
          return;
       }
@@ -2320,10 +1991,10 @@ void rib_menu_frame(void *data, int width, int height)
        * is not on screen, and we state that on the document for the design.
        * We set it here and not with the overlays, because we may still draw
        * the document after the last overlay has gone. */
-      if (rib_overlay_mode != !menu_alive)
+      if (menu->overlay_mode != !menu_alive)
       {
-         rib_overlay_mode = !menu_alive;
-         rib_rmlui_set_overlay_mode(rib_overlay_mode);
+         menu->overlay_mode = !menu_alive;
+         rib_rmlui_set_overlay_mode(menu->overlay_mode);
       }
 
       if (!menu_alive)
@@ -2336,12 +2007,13 @@ void rib_menu_frame(void *data, int width, int height)
           * We run the script first, because from it we learn whether we still
           * want frames after the overlays are done, and we can learn that only
           * after asking it. */
-         rib_rmlui_run_script();
-         rib_rmlui_run_overlays();
+         menu->script.run(menu, {menu->screen, menu->transfer_pending,
+               menu->capture_active, menu->profile_id});
+         menu->overlays.update(menu->script.wants_frames());
          rib_rmlui_render(width, height);
          return;
       }
-      rib_rmlui_run_overlays();
+      menu->overlays.update(menu->script.wants_frames());
    }
 
    pointer = rib_host_pointer();
@@ -2350,8 +2022,7 @@ void rib_menu_frame(void *data, int width, int height)
             pointer.pressed;
 
       rib_rmlui_pointer_move(pointer.x, pointer.y);
-      if (rib_script_running && rib_script_hover[0])
-         rib_rmlui_move_pointer_to(rib_script_hover);
+      menu->script.restore_hover();
       rib_rmlui_pointer_button(pointer_pressed);
 
       if (menu->capture_active && pointer_pressed && !menu->pointer_pressed &&
@@ -2384,9 +2055,9 @@ void rib_menu_frame(void *data, int width, int height)
     * Fill it before the click from the script, or the click goes to a button
     * that is still display:none in the document. */
    rib_discs_sync();
-   rib_rmlui_run_script();
-   if (rib_script_running && rib_script_hover[0])
-      rib_rmlui_move_pointer_to(rib_script_hover);
+   menu->script.run(menu, {menu->screen, menu->transfer_pending,
+               menu->capture_active, menu->profile_id});
+   menu->script.restore_hover();
    /* After we put the pointer back for the script, so a hovered row is the
     * focused row before the click in this frame. We play no scroll sound,
     * because the pointer did not move by a step. */
@@ -2449,7 +2120,9 @@ void rib_menu_frame(void *data, int width, int height)
 
    rib_rmlui_reload_if_changed();
    rib_rmlui_refresh_slots();
-   rib_rmlui_update_binds(menu, (int)pointer.x, (int)pointer.y);
+   rib_rmlui_update_binds(menu, pointer.x, pointer.y,
+         !menu->script.wants_frames(),
+         !menu->script.wants_frames() || menu->script.has_hover());
    rib_rmlui_render(width, height);
 
 }
@@ -2769,4 +2442,3 @@ int rib_menu_key(void *data, enum rib_key action)
          return 0;
    }
 }
-
