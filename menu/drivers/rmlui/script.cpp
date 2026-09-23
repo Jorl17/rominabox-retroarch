@@ -1,4 +1,3 @@
-#include "document_contract.hpp"
 #include "script.hpp"
 #include "menu_api.h"
 #include "host.h"
@@ -141,7 +140,7 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
 
    /* The command for Escape, not a click. When the menu is closed there is no
     * element to click, so this is the only way to script pause and resume. */
-   if (!strcmp(id, document_contract::Toggle))
+   if (!strcmp(id, "toggle"))
    {
       rib_host_resume();
       RARCH_LOG("[RIB] menu script toggled the menu.\n");
