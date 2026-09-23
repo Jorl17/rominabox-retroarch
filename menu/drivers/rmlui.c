@@ -2527,7 +2527,7 @@ static void rib_rmlui_run_script(void)
       rib_rmlui_menu_t *menu = rib_rmlui_active_menu;
       settings_t *settings = config_get_ptr();
       if (menu)
-         RARCH_LOG("[RIB] checkpoint %s %s\n", id + 7,
+         fprintf(stderr, "[RIB] checkpoint %s %s\n", id + 7,
                rib_rmlui_script_report(menu->screen, rib_rmlui_menu_alive(),
                      menu->transfer_pending, menu->capture_active, menu->profile_id,
                      settings ? settings->floats.audio_volume : AUDIO_VOLUME_DEFAULT_DB));
