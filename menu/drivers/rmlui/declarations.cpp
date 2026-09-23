@@ -111,27 +111,16 @@ void discover_controls(config_file_t *config, const char *profile_id,
 
 void discover_devices(config_file_t *config, rib_controls_catalog *catalog)
 {
-   char list[512];
-   char *cursor;
-   char *token;
-
    catalog->device_count = 0;
-   if (!config_get_array(config, "controls_variants", list, sizeof(list)))
-      return;
-
-   cursor = list;
-   while ((token = strtok_r(cursor, " ", &cursor)))
-   {
+   each_id<512>(config, "controls_variants", [&](const char *token) {
       char key[96];
       char name[NAME_MAX_LENGTH];
 
-      if (!*token)
-         continue;
       if (catalog->device_count >= RIB_DEVICE_MAX)
       {
          RARCH_ERR("[RIB] more than %d controllers offered; '%s' and any after "
                "it cannot be chosen.\n", RIB_DEVICE_MAX, token);
-         return;
+         return false;
       }
       strlcpy(catalog->devices[catalog->device_count].id, token,
             sizeof(catalog->devices[catalog->device_count].id));
@@ -151,7 +140,8 @@ void discover_devices(config_file_t *config, rib_controls_catalog *catalog)
          strlcpy(catalog->devices[catalog->device_count].name, token,
                sizeof(catalog->devices[catalog->device_count].name));
       ++catalog->device_count;
-   }
+      return true;
+   });
 }
 
 void screens(config_file_t *config, rib_design_declarations &design)
