@@ -1,7 +1,11 @@
+#include "words.hpp"
 #include "controls.hpp"
 #include "host.h"
 #include "files.h"
-#include "../rmlui_bridge.h"
+#include "document.hpp"
+#include "control_view.hpp"
+#include "lists.hpp"
+#include "status.hpp"
 #include "../../../verbosity.h"
 #include <file/config_file.h>
 #include <streams/file_stream.h>
@@ -71,12 +75,12 @@ bool Controls::load_file(const char *path, bool defaults)
    {
       /* We load the document before we build these lists, so there are no
        * listeners yet on its control and picker elements. */
-      rib_rmlui_wire_controls();
-      rib_rmlui_wire_device_picker();
-      rib_rmlui_set_device_picker(false, profile_id);
+      control_view.wire_controls(catalog);
+      control_view.wire_device_picker(catalog);
+      control_view.set_device_picker(catalog, false, profile_id);
    }
    else if (profile_present)
-      rib_rmlui_set_device_picker(false, profile_id);
+      control_view.set_device_picker(catalog, false, profile_id);
 
    if (defaults)
       rib_controls_read_enabled(config, &catalog);
@@ -119,7 +123,7 @@ void Controls::reload()
    }
    if (path[0])
       load_file(path, false);
-   rib_rmlui_wire_controls();
+   control_view.wire_controls(catalog);
    focus(first());
    refresh();
 }
@@ -168,27 +172,27 @@ void Controls::refresh()
       strlcpy(display_label, catalog.entries[index].label,
             sizeof(display_label));
       callout_text(index, binding, sizeof(binding));
-      rib_rmlui_set_control_state(catalog.entries[index].id,
+      control_view.set_control_state(catalog.entries[index].id,
             display_label, binding,
             screens.controls_visible() && focused == index,
             capture_active && capture_control == index);
       if (catalog.entries[index].group[0])
       {
-         snprintf(group_id, sizeof(group_id), "control-group-binding-%s",
+         snprintf(group_id, sizeof(group_id), "%s%s", document_contract::ControlGroupBindingPrefix,
                catalog.entries[index].group);
-         rib_rmlui_set_element_text(group_id, binding);
+         document.set_element_text(group_id, binding);
       }
    }
-   rib_rmlui_set_controls_action_focus(
+   control_view.set_controls_action_focus(
          screens.controls_visible() && target.kind == FocusTarget::Kind::Reset,
          screens.controls_visible() && target.kind == FocusTarget::Kind::Back,
          capture_active);
    if (screens.controls_visible() && focused >= 0
          && focused < catalog.count
          && catalog.entries[focused].group[0])
-      rib_rmlui_focus_group(catalog.entries[focused].group);
+      control_view.focus_group(catalog.entries[focused].group);
    else
-      rib_rmlui_focus_group(NULL);
+      control_view.focus_group(NULL);
 }
 
 void Controls::cancel_capture(const char *status)
@@ -197,9 +201,9 @@ void Controls::cancel_capture(const char *status)
       return;
    rib_host_capture_cancel();
    capture_active = false;
-   rib_rmlui_set_controls_status(status ? status : "BINDING UNCHANGED");
-   rib_rmlui_set_footer_hint(screens.controls_visible() ? "ESC  BACK" :
-                                                       "ESC  CONTINUE");
+   this->status.set_controls(status ? status : rib::words::BindingUnchanged);
+   screens.set_footer_hint(screens.controls_visible() ? rib::words::BackHint :
+                                                       rib::words::ContinueHint);
    refresh();
 }
 
@@ -211,16 +215,16 @@ void Controls::start_capture(int index)
    if (!rib_host_capture_start(catalog.entries[index].bind_index,
             RIB_CONTROL_CAPTURE_SECONDS))
    {
-      rib_rmlui_set_controls_status("CAPTURE COULD NOT START");
+      this->status.set_controls(rib::words::CaptureFailed);
       return;
    }
    capture_active = true;
    capture_control = index;
    capture_ignore_pointer = true;
-   snprintf(status, sizeof(status), "%s: PRESS AN INPUT (10)",
+   snprintf(status, sizeof(status), rib::words::CaptureStarted,
          console_name(index));
-   rib_rmlui_set_controls_status(status);
-   rib_rmlui_set_footer_hint("ESC  CANCEL");
+   this->status.set_controls(status);
+   screens.set_footer_hint(rib::words::CancelHint);
    refresh();
 }
 
@@ -258,14 +262,14 @@ void Controls::bind_anchor(int index, char *out, size_t length) const
 {
    if (catalog.entries[index].group[0])
    {
-      snprintf(out, length, "control-group-%s", catalog.entries[index].group);
-      if (rib_rmlui_has_element(out))
+      snprintf(out, length, "%s%s", document_contract::ControlGroupPrefix, catalog.entries[index].group);
+      if (document.has_element(out))
          return;
    }
-   snprintf(out, length, "control-%s", catalog.entries[index].id);
-   if (rib_rmlui_has_element(out))
+   snprintf(out, length, "%s%s", document_contract::ControlPrefix, catalog.entries[index].id);
+   if (document.has_element(out))
       return;
-   snprintf(out, length, "control-hit-%s", catalog.entries[index].id);
+   snprintf(out, length, "%s%s", document_contract::ControlHitPrefix, catalog.entries[index].id);
 }
 
 void Controls::callout_text(int index, char *out, size_t length) const
@@ -283,7 +287,7 @@ void Controls::callout_text(int index, char *out, size_t length) const
    out[0] = '\0';
    if (index < 0 || index >= catalog.count)
    {
-      strlcpy(out, "---", length);
+      strlcpy(out, rib::words::Unbound, length);
       return;
    }
    member_count = bind_members(index, members);
@@ -296,7 +300,7 @@ void Controls::callout_text(int index, char *out, size_t length) const
    }
    if (lines <= 0)
    {
-      strlcpy(out, "---", length);
+      strlcpy(out, rib::words::Unbound, length);
       return;
    }
    for (slot = 0; slot < lines; ++slot)
@@ -351,36 +355,36 @@ void Controls::show_binds(int index)
       return;
    }
 
-   rows = rib_rmlui_rows_in(binds.list);
+   rows = lists.rows_in(binds.list);
    if (lines > rows)
       RARCH_ERR("[RIB] '%s' has %d binds and the menu was built with %d rows; "
             "the rest are not shown.\n",
             catalog.entries[index].id, lines, rows);
    for (slot = 0; slot < rows; ++slot)
    {
-      const char *id = rib_rmlui_row_in(binds.list, slot);
+      const char *id = lists.row_in(binds.list, slot);
       char row[64];
       if (!id || !*id)
          break;
       strlcpy(row, id, sizeof(row));
       if (slot < lines)
       {
-         rib_rmlui_set_row_text(row, titles[slot], details[slot], kinds[slot]);
-         rib_rmlui_set_shown(row, true);
+         lists.set_row_text(row, titles[slot], details[slot], kinds[slot]);
+         document.set_shown(row, true);
       }
       else
-         rib_rmlui_set_shown(row, false);
+         document.set_shown(row, false);
    }
-   rib_rmlui_retarget_pages(binds.list);
+   lists.retarget_pages(binds.list);
    bind_anchor(index, anchor, sizeof(anchor));
-   rib_rmlui_place_list(binds.list, anchor, binds.width);
+   lists.place_list(binds.list, anchor, binds.width);
    binds.open = true;
 }
 
 void Controls::hide_binds()
 {
    if (binds.list[0])
-      rib_rmlui_set_shown(binds.list, false);
+      document.set_shown(binds.list, false);
    binds.open = false;
 }
 
@@ -408,12 +412,12 @@ void Controls::update_binds(int x, int y, bool pointer_active, bool hover_active
    }
 
    if (pointer_active
-         && rib_rmlui_pointer_inside(binds.list, x, y)
+         && document.pointer_inside(binds.list, x, y)
          && binds.control >= 0)
       current = binds.control;
    else if (hover_active)
    {
-      hovered = rib_rmlui_hovered_event();
+      hovered = this->hovered;
       if (hovered.kind == RIB_RMLUI_ACTION_CONTROL)
       {
          const int index = index_of(hovered.id.c_str());
@@ -497,7 +501,7 @@ void Controls::choose_device(const char *chosen)
             void *markup = NULL;
             if (filestream_read_file(path, &markup, &length) && markup)
             {
-               if (rib_rmlui_set_scene((const char*)markup))
+               if (control_view.set_scene((const char*)markup))
                {
                   /* We replaced the elements of the old scene, which had
                    * the listeners, and this pad has a different set of
@@ -514,7 +518,7 @@ void Controls::choose_device(const char *chosen)
          }
       }
    }
-   rib_rmlui_set_device_picker(false, profile_id);
+   control_view.set_device_picker(catalog, false, profile_id);
 }
 
 void Controls::reset_defaults()
@@ -528,11 +532,11 @@ void Controls::reset_defaults()
    snprintf(defaults_path, sizeof(defaults_path),
          "%s/controls-defaults.cfg", asset_directory);
    if (!load_file(defaults_path, true))
-      rib_rmlui_set_controls_status("DEFAULTS COULD NOT BE LOADED");
+      this->status.set_controls(rib::words::DefaultsLoadFailed);
    else if (!save())
-      rib_rmlui_set_controls_status("DEFAULTS RESTORED; SAVE FAILED");
+      this->status.set_controls(rib::words::DefaultsSaveFailed);
    else
-      rib_rmlui_set_controls_status("DEFAULTS RESTORED");
+      this->status.set_controls(rib::words::DefaultsRestored);
    refresh();
 }
 
@@ -552,25 +556,25 @@ void Controls::poll_capture()
          if (conflict >= 0)
          {
             snprintf(capture_status, sizeof(capture_status),
-                  "SAVED; ALSO USED BY %s",
+                  rib::words::BindingConflict,
                   console_name(conflict));
             if (!save())
-               strlcpy(capture_status, "BINDING ACTIVE; SAVE FAILED",
+               strlcpy(capture_status, rib::words::BindingSaveFailed,
                      sizeof(capture_status));
-            rib_rmlui_set_controls_status(capture_status);
+            this->status.set_controls(capture_status);
          }
          else if (save())
-            rib_rmlui_set_controls_status("BINDING SAVED");
+            this->status.set_controls(rib::words::BindingSaved);
          else
-            rib_rmlui_set_controls_status("BINDING ACTIVE; SAVE FAILED");
+            this->status.set_controls(rib::words::BindingSaveFailed);
          refresh();
-         rib_rmlui_set_footer_hint("ESC  BACK");
+         screens.set_footer_hint(rib::words::BackHint);
       }
       else if (result == RIB_CAPTURE_TIMED_OUT)
       {
          capture_active = false;
-         rib_rmlui_set_controls_status("TIMED OUT; BINDING UNCHANGED");
-         rib_rmlui_set_footer_hint("ESC  BACK");
+         this->status.set_controls(rib::words::CaptureTimeout);
+         screens.set_footer_hint(rib::words::BackHint);
          refresh();
       }
       else
@@ -579,7 +583,7 @@ void Controls::poll_capture()
                "%s: PRESS AN INPUT (%u)",
                console_name(capture_control),
                (unsigned)(remaining + 0.999f));
-         rib_rmlui_set_controls_status(capture_status);
+         this->status.set_controls(capture_status);
       }
    }
 
@@ -595,7 +599,7 @@ void Controls::configure_binds(const rib_design_data& design)
 void Controls::toggle_picker()
 {
    device_picker_open = !device_picker_open;
-   rib_rmlui_set_device_picker(device_picker_open, profile_id);
+   control_view.set_device_picker(catalog, device_picker_open, profile_id);
 }
 
 

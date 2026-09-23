@@ -343,9 +343,11 @@ config_file_t *rib_open_controls(const char *path, bool defaults,
       return nullptr;
 
    char profile[32] = {0};
-   *profile_present = config_get_array(config, "controls_profile", profile,
-         sizeof(profile)) && profile[0];
-   if (*profile_present)
+   const bool complete = config_get_array(config, "controls_profile", profile,
+         sizeof(profile));
+   // For an oversized override, we still repaint the picker with the old id.
+   *profile_present = profile[0] != '\0';
+   if (complete && *profile_present)
       strlcpy(profile_id, profile, 32);
    if (defaults)
    {

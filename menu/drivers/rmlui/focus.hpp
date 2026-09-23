@@ -1,10 +1,28 @@
 #pragma once
+#include "document_contract.hpp"
 
 #include "events.h"
 #include <array>
 #include <vector>
 
 namespace rib {
+static inline enum rib_rmlui_action map_menu_toggle(
+      bool controls_visible, bool capture_active)
+{
+   if (capture_active)
+      return RIB_RMLUI_ACTION_CONTROLS_CANCEL;
+   if (controls_visible)
+      return RIB_RMLUI_ACTION_CONTROLS_BACK;
+   return RIB_RMLUI_ACTION_RESUME;
+}
+
+static inline bool toggle_stays_in_menu(
+      bool controls_visible, bool capture_active)
+{
+   return capture_active || controls_visible;
+}
+
+
 enum class FocusRegion { Pause, Controls, List, Parts };
 
 struct FocusTarget
@@ -73,6 +91,6 @@ private:
    /* When the focus goes back to a slot, we keep the last action for the
     * move-cue rule. We paint the row by the element id. */
    Event pause_intent{RIB_RMLUI_ACTION_RESUME};
-   std::string pause_id = "resume";
+   std::string pause_id = document_contract::Resume;
 };
 }

@@ -5,14 +5,20 @@
 #include <retro_miscellaneous.h>
 
 namespace rib {
+class Lists;
+class Slots;
+class Parts;
 /* Declared switches that we save, with their shared check of the save slot. */
 class Toggles
 {
 public:
+   Toggles(Lists& lists, Slots& slots) : lists(lists), slots(slots) {}
    void load(const rib_design_data& design, const char *data_directory);
    void toggle(const char *id, const char *data_directory);
    void apply() const;
 private:
+   Lists& lists;
+   Slots& slots;
    rib_toggle_t entries[RIB_TOGGLE_MAX]{};
    int count = 0;
 };
@@ -22,11 +28,13 @@ private:
 class Volume
 {
 public:
+   explicit Volume(Parts& parts) : parts(parts) {}
    void configure_path(const char *data_directory);
    void initialize();
    void set(float db, bool persist);
    void paint() const;
 private:
+   Parts& parts;
    char path[PATH_MAX_LENGTH]{};
 };
 }

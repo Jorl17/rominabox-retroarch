@@ -1,4 +1,7 @@
+#include "document_contract.hpp"
 #include "document.hpp"
+#include "elements.hpp"
+#include <RmlUi/Core/StringUtilities.h>
 #include "render/rmlui_gl.h"
 #include <RmlUi/Core/Factory.h>
 #include <filesystem>
@@ -243,4 +246,130 @@ void Document::render(int width, int height)
    write_capture(width, height);
 }
 
+}
+
+namespace rib {
+bool Document::click_element(const char *id)
+{
+   if (!root() || !id || !*id)
+      return false;
+   Rml::Element *element = root()->GetElementById(id);
+   if (!element)
+      return false;
+   element->Click();
+   return true;
+}
+
+int Document::focusables(const char *panel, char ids[][64], int capacity)
+{
+   return rib::focusable_ids(root(), panel, ids, capacity);
+}
+
+void Document::mark_focused(const char *panel, const char *id)
+{
+   char ids[16][64];
+   const int count = focusables(panel, ids, 16);
+   for (int index = 0; index < count; ++index)
+      if (Rml::Element *element = root()->GetElementById(ids[index]))
+         element->SetClass(document_contract::Focused, id && std::strcmp(ids[index], id) == 0);
+}
+
+bool Document::element_center(const char *id, int *x, int *y)
+{
+   if (!get_context() || !root() || !id || !x || !y)
+      return false;
+   get_context()->Update();
+   Rml::Element *element = root()->GetElementById(id);
+   if (!element)
+      return false;
+   const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+   const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
+   *x = static_cast<int>(offset.x + size.x * 0.5f);
+   *y = static_cast<int>(offset.y + size.y * 0.5f);
+   return size.x > 0.f && size.y > 0.f;
+}
+
+bool Document::element_box(const char *id, int *x, int *y, int *w, int *h)
+{
+   if (!get_context() || !root() || !id || !x || !y || !w || !h)
+      return false;
+   get_context()->Update();
+   Rml::Element *element = root()->GetElementById(id);
+   if (!element)
+      return false;
+   const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+   const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
+   *x = static_cast<int>(offset.x);
+   *y = static_cast<int>(offset.y);
+   *w = static_cast<int>(size.x);
+   *h = static_cast<int>(size.y);
+   return size.x > 0.f && size.y > 0.f;
+}
+
+bool Document::element_disabled(const char *id)
+{
+   if (!root() || !id)
+      return false;
+   Rml::Element *element = root()->GetElementById(id);
+   return element && element->HasAttribute("disabled");
+}
+
+void Document::set_shown(const char *id, bool shown)
+{
+   if (!root() || !id)
+      return;
+   if (Rml::Element *element = root()->GetElementById(id))
+   {
+      if (shown)
+         element->RemoveProperty("display");
+      else
+         element->SetProperty("display", "none");
+   }
+}
+
+void Document::set_disabled(const char *id, bool disabled)
+{
+   if (!root() || !id)
+      return;
+   Rml::Element *element = root()->GetElementById(id);
+   if (!element)
+      return;
+   element->SetClass(document_contract::Disabled, disabled);
+   if (disabled)
+      element->SetAttribute("disabled", "disabled");
+   else
+      element->RemoveAttribute("disabled");
+}
+
+bool Document::pointer_inside(const char *id, int x, int y)
+{
+   if (!root() || !get_context() || !id)
+      return false;
+   Rml::Element *element = root()->GetElementById(id);
+   if (!element || hidden(element))
+      return false;
+   get_context()->Update();
+   const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+   const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
+   return x >= (int)offset.x && x < (int)(offset.x + size.x)
+         && y >= (int)offset.y && y < (int)(offset.y + size.y);
+}
+
+bool Document::has_element(const char *id)
+{
+   return root() && id && root()->GetElementById(id);
+}
+
+void Document::set_element_text(const char *id, const char *text)
+{
+   if (!root() || !id || !*id) return;
+   if (auto *element = root()->GetElementById(id))
+      element->SetInnerRML(Rml::StringUtilities::EncodeRml(text ? text : ""));
+}
+
+void Document::set_class(const char *id, const char *name, bool enabled)
+{
+   if (!root() || !id || !*id) return;
+   if (auto *element = root()->GetElementById(id)) element->SetClass(name, enabled);
+}
 }

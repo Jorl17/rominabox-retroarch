@@ -1,7 +1,10 @@
+#include "document_contract.hpp"
 #include "script.hpp"
 #include "menu_api.h"
 #include "host.h"
-#include "../rmlui_bridge.h"
+#include "view.hpp"
+#include "elements.hpp"
+#include <cmath>
 #include "../../../verbosity.h"
 #include <string/stdstring.h>
 #include <climits>
@@ -9,7 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 
-static void rib_rmlui_script_shot(void)
+void rib::Script::shot()
 {
    const char *path       = getenv("ROMINABOX_MENU_SHOT");
 
@@ -32,7 +35,7 @@ static void rib_rmlui_script_shot(void)
     * buffer, so the result is a black picture written without any error.
     *
     * We then end the run in the usual way, so no window stays open. */
-   rib_rmlui_capture_next(path);
+   view.document.capture_next(path);
    rib_host_end_after_script_shot(path);
 }
 
@@ -78,7 +81,7 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
           * the tray closes. For a row whose action never ran, we report the
           * index in the core, which is the disc it started on. */
          rib_host_script_finished();
-         rib_rmlui_script_shot();
+         shot();
       }
       return;
    }
@@ -130,7 +133,7 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
    {
       if (menu)
          fprintf(stderr, "[RIB] checkpoint %s %s\n", id + 7,
-               rib_rmlui_script_report(observation.screen, rib_host_menu_open(),
+               report(observation.screen, rib_host_menu_open(),
                      observation.transfer_pending, observation.capture_active, observation.profile,
                      rib_host_volume()));
       return;
@@ -138,7 +141,7 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
 
    /* The command for Escape, not a click. When the menu is closed there is no
     * element to click, so this is the only way to script pause and resume. */
-   if (!strcmp(id, "toggle"))
+   if (!strcmp(id, document_contract::Toggle))
    {
       rib_host_resume();
       RARCH_LOG("[RIB] menu script toggled the menu.\n");
@@ -148,7 +151,7 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
    if (!strncmp(id, "hover:", 6))
    {
       strlcpy(hover, id + 6, sizeof(hover));
-      if (!rib_rmlui_move_pointer_to(hover))
+      if (!view.move_pointer_to(hover))
       {
          RARCH_ERR("[RIB] menu script cannot hover '%s'; stopping so no "
                "screenshot is taken of the wrong screen.\n", hover);
@@ -162,7 +165,7 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
       if (mark)
       {
          *mark = '\0';
-         if (!rib_rmlui_commit_slider(id, (float)strtof(mark + 1, NULL)))
+         if (!view.parts.commit_slider(id, (float)strtof(mark + 1, NULL)))
          {
             RARCH_ERR("[RIB] menu script names no slider '%s'; stopping so no "
                   "screenshot is taken of the wrong screen.\n", id);
@@ -172,7 +175,7 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
       }
    }
 
-   if (!rib_rmlui_click_element(id))
+   if (!view.document.click_element(id))
    {
       RARCH_ERR("[RIB] menu script names no element '%s'; stopping so no "
             "screenshot is taken of the wrong screen.\n", id);
@@ -185,5 +188,5 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
 void rib::Script::restore_hover() const
 {
    if (running && hover[0])
-      rib_rmlui_move_pointer_to(hover);
+      view.move_pointer_to(hover);
 }

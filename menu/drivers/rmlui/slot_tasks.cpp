@@ -1,7 +1,7 @@
+#include "words.hpp"
 #include "slots.hpp"
 #include "host.h"
 #include "status.hpp"
-#include "../rmlui_bridge.h"
 #include <cstdio>
 
 namespace rib {
@@ -42,7 +42,7 @@ void Slots::request(Transfer kind)
    char message[64];
    const bool save = kind == Transfer::Save;
    std::snprintf(message, sizeof(message),
-         save ? "SAVING SLOT %d..." : "LOADING SLOT %d...", selected_slot);
+         save ? rib::words::SavingSlot : rib::words::LoadingSlot, selected_slot);
    status.set_main(message);
    const bool accepted = save ? rib_host_save_state() : rib_host_load_state();
    // With a synchronous host callback, the request may already be complete.
@@ -52,16 +52,16 @@ void Slots::request(Transfer kind)
 
 void Slots::notify_task(const char *path, int slot, bool is_save, bool success)
 {
-   if (!rib_rmlui_state_task_matches(transfer.pending,
+   if (!state_task_matches(transfer.pending,
          transfer.kind == Transfer::Save, transfer.path, transfer.slot,
          path, slot, is_save)) return;
    transfer.pending = false;
    char message[64];
    if (success)
       std::snprintf(message, sizeof(message),
-            is_save ? "SLOT %d SAVED" : "SLOT %d LOADED", transfer.slot);
+            is_save ? rib::words::SavedSlot : rib::words::LoadedSlot, transfer.slot);
    else
-      std::snprintf(message, sizeof(message), is_save ? "SAVE FAILED" : "LOAD FAILED");
+      std::snprintf(message, sizeof(message), is_save ? rib::words::SaveFailed : rib::words::LoadFailed);
    status.set_main(message);
 }
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include "document_contract.hpp"
 
 #include <RmlUi/Core.h>
 #include <algorithm>
@@ -79,11 +80,11 @@ inline int focusable_ids(Rml::Element *document, const char *panel,
    std::vector<std::string> found;
    walk(root, [&](Rml::Element *element) {
       if (display_none(element) || element->HasAttribute("disabled")
-            || element->IsClassSet("disabled"))
+            || element->IsClassSet(document_contract::Disabled))
          return Walk::SkipChildren;
-      const bool part = !element->IsClassSet("volume-arrow")
-            && (element->IsClassSet("slider") || element->IsClassSet("toggle")
-               || element->IsClassSet("menu-action"));
+      const bool part = !element->IsClassSet(document_contract::VolumeArrow)
+            && (element->IsClassSet(document_contract::Slider) || element->IsClassSet(document_contract::Toggle)
+               || element->IsClassSet(document_contract::MenuAction));
       if (part && !element->GetId().empty())
          found.push_back(element->GetId());
       return Walk::Continue;

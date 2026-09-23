@@ -9,7 +9,7 @@ class Document;
 class EventQueue;
 
 /* The slider and toggle parts of the design, their listeners, and a pointer
- * drag. The elements belong to Document, so call clear_drag before teardown. */
+ * drag. The elements belong to Document, and on shutdown we clear the drag. */
 class Parts
 {
 public:
@@ -27,7 +27,6 @@ public:
    void drag_to(int x);
    void end_drag();
    void clear_drag();
-   void clear();
    const std::map<std::string, float>& fractions() const { return slider_fraction; }
 
 private:

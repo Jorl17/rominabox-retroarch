@@ -1,3 +1,4 @@
+#include "document_contract.hpp"
 #include "lists.hpp"
 
 #include "binds_popup.hpp"
@@ -17,7 +18,7 @@ namespace {
 bool under_hidden_page(Rml::Element *element)
 {
    for (auto *cursor = element; cursor; cursor = cursor->GetParentNode())
-      if (cursor->IsClassSet("list-page") && display_none(cursor))
+      if (cursor->IsClassSet(document_contract::ListPage) && display_none(cursor))
          return true;
    return false;
 }
@@ -32,7 +33,7 @@ public:
    {
       auto *element = event.GetCurrentElement();
       if (!element || element->HasAttribute("disabled") ||
-            element->IsClassSet("disabled"))
+            element->IsClassSet(document_contract::Disabled))
          return;
       events.push({kind == Choose ? RIB_RMLUI_ACTION_LIST_CHOOSE
             : RIB_RMLUI_ACTION_LIST_PAGE,
@@ -53,7 +54,7 @@ public:
    {
       auto *element = event.GetCurrentElement();
       if (!element || element->HasAttribute("disabled") ||
-            element->IsClassSet("disabled"))
+            element->IsClassSet(document_contract::Disabled))
          return;
       events.push({RIB_RMLUI_ACTION_TOGGLE, element->GetId()});
    }
@@ -104,17 +105,17 @@ void Lists::wire_lists()
 {
    if (!document.root()) return;
    std::vector<Rml::Element*> rows;
-   collect(document.root(), "list-row", rows);
+   collect(document.root(), document_contract::ListRow, rows);
    for (auto *row : rows)
       row->AddEventListener(Rml::EventId::Click,
             new ListListener(events, ListListener::Choose, ""));
    std::vector<Rml::Element*> previous;
-   collect(document.root(), "list-pager-prev", previous);
+   collect(document.root(), document_contract::ListPagerPrev, previous);
    for (auto *button : previous)
       button->AddEventListener(Rml::EventId::Click,
             new ListListener(events, ListListener::Page, "prev"));
    std::vector<Rml::Element*> next;
-   collect(document.root(), "list-pager-next", next);
+   collect(document.root(), document_contract::ListPagerNext, next);
    for (auto *button : next)
       button->AddEventListener(Rml::EventId::Click,
             new ListListener(events, ListListener::Page, "next"));
@@ -124,7 +125,7 @@ void Lists::wire_toggles()
 {
    if (!document.root()) return;
    std::vector<Rml::Element*> toggles;
-   collect(document.root(), "list-toggle", toggles);
+   collect(document.root(), document_contract::ListToggle, toggles);
    for (auto *toggle : toggles)
       toggle->AddEventListener(Rml::EventId::Click, new ToggleListener(events));
 }
@@ -133,7 +134,7 @@ void Lists::set_toggle(const char *id, const char *state, bool on)
 {
    if (!document.root() || !id || !*id) return;
    if (auto *toggle = document.root()->GetElementById(id))
-      toggle->SetClass("on", on);
+      toggle->SetClass(document_contract::On, on);
    set_text(std::string(id) + "-state", state);
 }
 
@@ -141,7 +142,7 @@ Rml::Element *Lists::visible_list() const
 {
    if (!document.root()) return nullptr;
    std::vector<Rml::Element*> lists;
-   collect(document.root(), "list", lists);
+   collect(document.root(), document_contract::List, lists);
    for (auto *list : lists)
       if (!hidden(list)) return list;
    return nullptr;
@@ -153,7 +154,7 @@ void Lists::visible_rows(std::vector<Rml::Element*> &rows) const
    auto *list = visible_list();
    if (!list) return;
    std::vector<Rml::Element*> all;
-   collect(list, "list-row", all);
+   collect(list, document_contract::ListRow, all);
    for (auto *row : all)
       if (!under_hidden_page(row) && !display_none(row)) rows.push_back(row);
 }
@@ -162,7 +163,7 @@ Rml::Element *Lists::visible_panel() const
 {
    if (!document.root()) return nullptr;
    std::vector<Rml::Element*> panels;
-   collect(document.root(), "screen-panel", panels);
+   collect(document.root(), document_contract::ScreenPanel, panels);
    for (auto *panel : panels)
       if (!display_none(panel)) return panel;
    return nullptr;
@@ -173,7 +174,7 @@ void Lists::visible_controls(std::vector<Rml::Element*> &out) const
    out.clear();
    auto *panel = visible_panel();
    if (!panel) return;
-   for (const char *name : {"option-entry", "list-toggle", "list-back", "options-back"})
+   for (const char *name : {document_contract::OptionEntry, document_contract::ListToggle, document_contract::ListBack, document_contract::OptionsBack})
       collect(panel, name, out);
 }
 
@@ -182,8 +183,8 @@ bool Lists::click_screen_back() const
    auto *panel = visible_panel();
    if (!panel) return false;
    std::vector<Rml::Element*> back;
-   collect(panel, "list-back", back);
-   collect(panel, "options-back", back);
+   collect(panel, document_contract::ListBack, back);
+   collect(panel, document_contract::OptionsBack, back);
    if (back.empty()) return false;
    const auto& id = back.front()->GetId();
    if (id.empty()) return false;
@@ -205,12 +206,12 @@ void Lists::focus_list_row(int index) const
 {
    if (!document.root()) return;
    std::vector<Rml::Element*> all;
-   collect(document.root(), "list-row", all);
-   for (auto *row : all) row->SetClass("focused", false);
+   collect(document.root(), document_contract::ListRow, all);
+   for (auto *row : all) row->SetClass(document_contract::Focused, false);
    std::vector<Rml::Element*> rows;
    visible_rows(rows);
    if (index >= 0 && index < (int)rows.size())
-      rows[index]->SetClass("focused", true);
+      rows[index]->SetClass(document_contract::Focused, true);
 }
 
 int Lists::list_control_count() const
@@ -235,7 +236,7 @@ void Lists::focus_list_control(int index) const
    std::vector<Rml::Element*> controls;
    visible_controls(controls);
    for (size_t at = 0; at < controls.size(); ++at)
-      controls[at]->SetClass("focused", (int)at == index);
+      controls[at]->SetClass(document_contract::Focused, (int)at == index);
 }
 
 const char *Lists::list_row_id(int index)
@@ -254,7 +255,7 @@ int Lists::hovered_list_row() const
    auto *cursor = document.get_context()->GetHoverElement();
    Rml::Element *row = nullptr;
    for (; cursor; cursor = cursor->GetParentNode())
-      if (cursor->IsClassSet("list-row")) { row = cursor; break; }
+      if (cursor->IsClassSet(document_contract::ListRow)) { row = cursor; break; }
    if (!row) return -1;
    std::vector<Rml::Element*> rows;
    visible_rows(rows);
@@ -266,7 +267,7 @@ int Lists::hovered_list_row() const
 bool Lists::page_has_row(Rml::Element *page)
 {
    std::vector<Rml::Element*> rows;
-   collect(page, "list-row", rows);
+   collect(page, document_contract::ListRow, rows);
    for (auto *row : rows)
    {
       /* The page may be hidden, so we read only the local display of the row. */
@@ -279,13 +280,13 @@ bool Lists::page_has_row(Rml::Element *page)
 void Lists::mark_pager(Rml::Element *list, int page, int pages)
 {
    struct Arrow { const char *name; bool dead; };
-   const Arrow arrows[] = {{"list-pager-prev", page <= 0},
-                           {"list-pager-next", page >= pages - 1}};
+   const Arrow arrows[] = {{document_contract::ListPagerPrev, page <= 0},
+                           {document_contract::ListPagerNext, page >= pages - 1}};
    for (const auto& arrow : arrows)
    {
       std::vector<Rml::Element*> found;
       collect(list, arrow.name, found);
-      for (auto *element : found) element->SetClass("disabled", arrow.dead);
+      for (auto *element : found) element->SetClass(document_contract::Disabled, arrow.dead);
    }
 }
 
@@ -294,7 +295,7 @@ int Lists::turn_list_page(int delta) const
    auto *list = visible_list();
    if (!list) return -1;
    std::vector<Rml::Element*> pages;
-   collect(list, "list-page", pages);
+   collect(list, document_contract::ListPage, pages);
    std::vector<Rml::Element*> usable;
    for (auto *page : pages)
       if (page_has_row(page)) usable.push_back(page);
@@ -308,7 +309,7 @@ int Lists::turn_list_page(int delta) const
       if ((int)index == next) usable[index]->RemoveProperty("display");
       else usable[index]->SetProperty("display", "none");
    std::vector<Rml::Element*> counts;
-   collect(list, "list-pager-count", counts);
+   collect(list, document_contract::ListPagerCount, counts);
    if (!counts.empty())
    {
       char label[32];
@@ -323,11 +324,11 @@ void Lists::select_in(Rml::Element *list, const char *row_id,
       const char *on, const char *off) const
 {
    std::vector<Rml::Element*> rows;
-   collect(list, "list-row", rows);
+   collect(list, document_contract::ListRow, rows);
    for (auto *row : rows)
    {
       const bool selected = row_id && row->GetId() == row_id;
-      row->SetClass("selected", selected);
+      row->SetClass(document_contract::Selected, selected);
       if (auto *state = document.root()->GetElementById(row->GetId() + "-state"))
          state->SetInnerRML(Rml::StringUtilities::EncodeRml(
                selected ? (on ? on : "") : (off ? off : "")));
@@ -434,14 +435,14 @@ Rml::Element *Lists::list_element(const char *list_id) const
 int Lists::rows_in(const char *list_id) const
 {
    std::vector<Rml::Element*> rows;
-   collect(list_element(list_id), "list-row", rows);
+   collect(list_element(list_id), document_contract::ListRow, rows);
    return (int)rows.size();
 }
 
 const char *Lists::row_in(const char *list_id, int index)
 {
    std::vector<Rml::Element*> rows;
-   collect(list_element(list_id), "list-row", rows);
+   collect(list_element(list_id), document_contract::ListRow, rows);
    row_in_buffer.clear();
    if (index >= 0 && index < (int)rows.size()) row_in_buffer = rows[index]->GetId();
    return row_in_buffer.c_str();
@@ -452,7 +453,7 @@ void Lists::retarget_pages(const char *list_id) const
    auto *list = list_element(list_id);
    if (!list) return;
    std::vector<Rml::Element*> pages;
-   collect(list, "list-page", pages);
+   collect(list, document_contract::ListPage, pages);
    std::vector<Rml::Element*> usable;
    for (auto *page : pages)
       if (page_has_row(page)) usable.push_back(page);
@@ -461,7 +462,7 @@ void Lists::retarget_pages(const char *list_id) const
       if (index == 0) usable[index]->RemoveProperty("display");
       else usable[index]->SetProperty("display", "none");
    std::vector<Rml::Element*> pagers;
-   collect(list, "list-pager", pagers);
+   collect(list, document_contract::ListPager, pagers);
    if (pagers.empty()) return;
    if (usable.size() < 2)
    {
@@ -470,7 +471,7 @@ void Lists::retarget_pages(const char *list_id) const
    }
    pagers[0]->RemoveProperty("display");
    std::vector<Rml::Element*> counts;
-   collect(list, "list-pager-count", counts);
+   collect(list, document_contract::ListPagerCount, counts);
    if (!counts.empty())
    {
       char label[32];

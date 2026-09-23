@@ -3,8 +3,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace rib {
+class View;
 struct ScriptObservation
 {
    const char *screen;
@@ -18,11 +20,18 @@ struct ScriptObservation
 class Script
 {
 public:
+   explicit Script(View& view) : view(view) {}
    void run(void *menu, const ScriptObservation& observation);
    void restore_hover() const;
+   // We report state only at explicit checkpoints, and not in normal frames.
+   const char *report(const char *screen, bool menu_open, bool transfer_pending,
+         bool capture_active, const char *profile, float volume_db);
    bool wants_frames() const { return running; }
    bool has_hover() const { return hover[0] != 0; }
 private:
+   void shot();
+   View& view;
+   std::string report_text;
    const char *script = nullptr;
    size_t at = 0;
    bool started = false;

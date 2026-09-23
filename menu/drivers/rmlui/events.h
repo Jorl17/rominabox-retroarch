@@ -77,6 +77,5 @@ private:
    size_t head = 0, count = 0;
 };
 }
-rib::Event rib_rmlui_take_event();
 #endif
 #endif

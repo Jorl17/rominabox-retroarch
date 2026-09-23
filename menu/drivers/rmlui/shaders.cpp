@@ -1,6 +1,10 @@
 #include "shaders.hpp"
 #include "host.h"
-#include "../rmlui_bridge.h"
+#include "document.hpp"
+#include "lists.hpp"
+#include "parts.hpp"
+#include "slots.hpp"
+#include "../../../audio/volume_range.h"
 #include "../rmlui_shader_mark.h"
 #include "../../../verbosity.h"
 #include <streams/file_stream.h>
@@ -26,10 +30,10 @@ void Shaders::show_running() const
 
    if (catalog.count <= 0)
       return;
-   rows = rib_rmlui_visible_row_count();
+   rows = lists.visible_row_count();
    for (row = 0; row < rows && !ours; ++row)
    {
-      const char *id = rib_rmlui_list_row_id(row);
+      const char *id = lists.list_row_id(row);
 
       for (index = 0; index < catalog.count; ++index)
          if (id && string_is_equal(id, catalog.entries[index].id))
@@ -46,11 +50,11 @@ void Shaders::show_running() const
    {
       fprintf(stderr, "[RIB] no bundled shader matches the one running: %s\n",
             current && current[0] ? current : "none");
-      rib_rmlui_mark_row("", catalog.state_on, catalog.state_off);
+      lists.mark_row("", catalog.state_on, catalog.state_off);
       return;
    }
    fprintf(stderr, "[RIB] shader row '%s' is the one running\n", catalog.entries[matched].id);
-   rib_rmlui_mark_row(catalog.entries[matched].id,
+   lists.mark_row(catalog.entries[matched].id,
          catalog.state_on, catalog.state_off);
 }
 

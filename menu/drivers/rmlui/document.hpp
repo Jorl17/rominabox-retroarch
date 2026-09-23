@@ -27,6 +27,18 @@ public:
    bool reload_if_changed();
    void render(int width, int height);
    void capture_next(const char *path);
+   bool click_element(const char *id);
+   int focusables(const char *panel, char ids[][64], int capacity);
+   void mark_focused(const char *panel, const char *id);
+   bool element_center(const char *id, int *x, int *y);
+   bool element_box(const char *id, int *x, int *y, int *w, int *h);
+   bool element_disabled(const char *id);
+   bool pointer_inside(const char *id, int x, int y);
+   bool has_element(const char *id);
+   void set_element_text(const char *id, const char *text);
+   void set_shown(const char *id, bool shown);
+   void set_disabled(const char *id, bool disabled);
+   void set_class(const char *id, const char *name, bool enabled);
    void release_texture(const std::string& path);
    Rml::ElementDocument *root() const { return document; }
    Rml::Context *get_context() const { return context; }

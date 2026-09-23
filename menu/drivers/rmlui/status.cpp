@@ -1,3 +1,4 @@
+#include "document_contract.hpp"
 #include "status.hpp"
 
 #include "document.hpp"
@@ -21,17 +22,17 @@ void Status::expire(Message& message, const char *id)
 
 void Status::set_main(const char *text)
 {
-   show(main, "status", text);
+   show(main, document_contract::Status, text);
 }
 
 void Status::set_controls(const char *text)
 {
-   show(controls, "controls-status", text);
+   show(controls, document_contract::ControlsStatus, text);
 }
 
 void Status::expire()
 {
-   expire(main, "status");
-   expire(controls, "controls-status");
+   expire(main, document_contract::Status);
+   expire(controls, document_contract::ControlsStatus);
 }
 }

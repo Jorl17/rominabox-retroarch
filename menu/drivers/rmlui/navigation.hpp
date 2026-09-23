@@ -7,13 +7,18 @@ class Focus;
 class Screens;
 class Controls;
 class Slots;
+class Document;
+class Lists;
+class Parts;
 /* The navigation rules for every region of the menu. We return immediate
  * intents to Menu to dispatch, and send clicks to the element listeners. */
 class Navigation
 {
 public:
-   Navigation(Focus& focus, Screens& screens, Controls& controls, Slots& slots)
-      : focus(focus), screens(screens), controls(controls), slots(slots) {}
+   Navigation(Focus& focus, Screens& screens, Controls& controls, Slots& slots,
+         Document& document, Lists& lists, Parts& parts)
+      : focus(focus), screens(screens), controls(controls), slots(slots),
+        document(document), lists(lists), parts(parts) {}
    Event key(rib_key action);
    void focus_list(int index);
    void paint_list();
@@ -31,5 +36,8 @@ private:
    Screens& screens;
    Controls& controls;
    Slots& slots;
+   Document& document;
+   Lists& lists;
+   Parts& parts;
 };
 }

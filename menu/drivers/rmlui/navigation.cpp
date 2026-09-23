@@ -4,20 +4,22 @@
 #include "controls.hpp"
 #include "slots.hpp"
 #include "sounds.hpp"
-#include "../rmlui_bridge.h"
+#include "document.hpp"
+#include "lists.hpp"
+#include "parts.hpp"
 #include <string/stdstring.h>
 
 namespace rib {
 int Navigation::pause_row(char ids[][64], int capacity)
 {
    char all[16][64];
-   int found = rib_rmlui_focusables("pause-panel", all, 16);
+   int found = document.focusables("pause-panel", all, 16);
    int count = 0;
    int index;
 
    for (index = 0; index < found && count < capacity; ++index)
    {
-      if (rib_rmlui_element_disabled(all[index]))
+      if (document.element_disabled(all[index]))
          continue;
       strlcpy(ids[count], all[index], 64);
       ++count;
@@ -27,7 +29,7 @@ int Navigation::pause_row(char ids[][64], int capacity)
 
 int Navigation::pause_row_index(const char ids[][64], int count)
 {
-   const char *focused = rib_rmlui_focused_element();
+   const char *focused = focus.pause_element().c_str();
    int index;
 
    if (focused && *focused)
@@ -47,7 +49,7 @@ void Navigation::focus_pause_row(int index,
       return;
    index = Focus::ring(index, count, 0);
    focus.pause_row(index);
-   rib_rmlui_focus_element(ids[index]);
+   slots.focus_element(ids[index]);
    play_move_sound(direction_up);
 }
 
@@ -65,7 +67,7 @@ void Navigation::focus_pause(rib::Event focused,
    /* Focusing an action or a slot here moves the focus off the row. We track
     * the row by id, not by this enum. */
    focus.pause_row(-1);
-   rib_rmlui_set_focused(focused);
+   slots.focus_action(focused);
    if (focused.kind == RIB_RMLUI_ACTION_SELECT_SLOT && valid_slot(focused.slot))
       slots.set_selected_slot(focused.slot);
    if (changed)
@@ -74,16 +76,16 @@ void Navigation::focus_pause(rib::Event focused,
 
 void Navigation::paint_list()
 {
-   const int rows = rib_rmlui_visible_row_count();
+   const int rows = lists.visible_row_count();
 
    if (focus.position(rib::FocusRegion::List) < rows)
    {
-      rib_rmlui_focus_list_row(focus.position(rib::FocusRegion::List));
-      rib_rmlui_focus_list_control(-1);
+      lists.focus_list_row(focus.position(rib::FocusRegion::List));
+      lists.focus_list_control(-1);
       return;
    }
-   rib_rmlui_focus_list_row(-1);
-   rib_rmlui_focus_list_control(focus.position(rib::FocusRegion::List) - rows);
+   lists.focus_list_row(-1);
+   lists.focus_list_control(focus.position(rib::FocusRegion::List) - rows);
 }
 
 void Navigation::focus_list(int index)
@@ -97,8 +99,8 @@ void Navigation::focus_list(int index)
 Event Navigation::part_key(rib_key action)
 {
    char ids[16][64];
-   const char *panel = rib_rmlui_screen_panel(screens.current());
-   int count = rib_rmlui_focusables(panel, ids, 16);
+   const char *panel = screens.screen_panel(screens.current());
+   int count = document.focusables(panel, ids, 16);
 
    if (count <= 0)
       return {};
@@ -110,26 +112,26 @@ Event Navigation::part_key(rib_key action)
       case RIB_KEY_UP:
       case RIB_KEY_DOWN:
          focus.move(FocusRegion::Parts, count, action == RIB_KEY_UP ? -1 : 1);
-         rib_rmlui_mark_focused(panel, ids[focus.position(FocusRegion::Parts)]);
+         document.mark_focused(panel, ids[focus.position(FocusRegion::Parts)]);
          play_move_sound(action == RIB_KEY_UP);
          return {};
       case RIB_KEY_LEFT:
       case RIB_KEY_RIGHT:
-         if (rib_rmlui_part_is_slider(ids[focus.position(rib::FocusRegion::Parts)]))
-            rib_rmlui_nudge_slider(ids[focus.position(rib::FocusRegion::Parts)],
+         if (parts.part_is_slider(ids[focus.position(rib::FocusRegion::Parts)]))
+            parts.nudge_slider(ids[focus.position(rib::FocusRegion::Parts)],
                   action == RIB_KEY_RIGHT ? 1 : -1);
          return {};
       case RIB_KEY_OK:
       case RIB_KEY_SELECT:
-         rib_rmlui_click_element(ids[focus.position(rib::FocusRegion::Parts)]);
+         document.click_element(ids[focus.position(rib::FocusRegion::Parts)]);
          return {};
       case RIB_KEY_CANCEL:
       case RIB_KEY_RESUME:
       case RIB_KEY_TOGGLE:
          play_action_sound(RIB_RMLUI_ACTION_CONTROLS_BACK);
          screens.remember("pause");
-         rib_rmlui_show_screen("pause");
-         rib_rmlui_mark_focused(panel, NULL);
+         screens.show_screen("pause");
+         document.mark_focused(panel, NULL);
          return {};
       default:
          return {};
@@ -139,7 +141,7 @@ Event Navigation::part_key(rib_key action)
 Event Navigation::back()
 {
    // Press the Back button of the screen, with its declared destination.
-   if (!rib_rmlui_click_screen_back())
+   if (!lists.click_screen_back())
       return RIB_RMLUI_ACTION_CONTROLS_BACK;
    return {};
 }
@@ -150,19 +152,19 @@ Event Navigation::key(rib_key action)
    if (string_is_equal(screens.current(), "pause")) return pause_key(action);
 
    char ids[16][64];
-   const char *panel = rib_rmlui_screen_panel(screens.current());
-   const int count = rib_rmlui_focusables(panel, ids, 16);
-   const int rows = rib_rmlui_visible_row_count();
+   const char *panel = screens.screen_panel(screens.current());
+   const int count = document.focusables(panel, ids, 16);
+   const int rows = lists.visible_row_count();
    // In a panel with both, Left and Right move a slider, not the list page.
    bool slider = false;
    for (int index = 0; index < count; ++index)
-      if (rib_rmlui_part_is_slider(ids[index])) slider = true;
+      if (parts.part_is_slider(ids[index])) slider = true;
    return slider || rows <= 0 ? part_key(action) : list_key(action, rows);
 }
 
 Event Navigation::list_key(rib_key action, int rows)
 {
-   const int stops = rows + rib_rmlui_list_control_count();
+   const int stops = rows + lists.list_control_count();
 
    switch (action)
    {
@@ -177,7 +179,7 @@ Event Navigation::list_key(rib_key action, int rows)
          return {};
       case RIB_KEY_LEFT:
       case RIB_KEY_RIGHT:
-         if (rib_rmlui_turn_list_page(action == RIB_KEY_LEFT ? -1 : 1) >= 0)
+         if (lists.turn_list_page(action == RIB_KEY_LEFT ? -1 : 1) >= 0)
          {
             focus_list(0);
             play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
@@ -189,13 +191,13 @@ Event Navigation::list_key(rib_key action, int rows)
          {
             /* We go through the listener of the element, as for a pointer, where
              * we already handle the switch and BACK. */
-            rib_rmlui_click_element(
-                  rib_rmlui_list_control_id(focus.position(rib::FocusRegion::List) - rows));
+            document.click_element(
+                  lists.list_control_id(focus.position(rib::FocusRegion::List) - rows));
          }
          else if (rows > 0)
          {
             return {RIB_RMLUI_ACTION_LIST_CHOOSE,
-                  rib_rmlui_list_row_id(focus.position(rib::FocusRegion::List))};
+                  lists.list_row_id(focus.position(rib::FocusRegion::List))};
          }
          return {};
       case RIB_KEY_CANCEL:
@@ -347,7 +349,7 @@ Event Navigation::pause_key(rib_key action)
             const int index =
                   pause_row_index((const char (*)[64])ids, count);
             if (count > 0)
-               rib_rmlui_click_element(ids[index]);
+               document.click_element(ids[index]);
          }
          return {};
       case RIB_KEY_CANCEL:

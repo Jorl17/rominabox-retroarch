@@ -74,7 +74,7 @@ void Overlays::update(bool script_pending)
       if (want != overlay.state)
       {
          overlay.state = want;
-         rib_rmlui_set_overlay(declaration.id, want);
+         paint_overlay(document, declaration.id, want);
       }
       if (!overlay.finished)
          pending = true;

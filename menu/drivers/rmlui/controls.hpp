@@ -12,12 +12,19 @@ struct config_file;
 enum { RIB_CONTROL_CAPTURE_SECONDS = 10 };
 
 namespace rib {
+class Document;
+class ControlView;
+class Lists;
+class Status;
 /* Binding configuration, capture, the controller picker and the timed
  * binding list. The runtime commands are in host.h. */
 class Controls
 {
 public:
-   Controls(Focus& focus, Screens& screens) : focus_state(focus), screens(screens) {}
+   Controls(Focus& focus, Screens& screens, Document& document, ControlView& control_view,
+         Lists& lists, Status& status, const Event& hovered)
+      : focus_state(focus), screens(screens), document(document), control_view(control_view),
+        lists(lists), status(status), hovered(hovered) {}
    int index_of(const char *id) const;
    bool active(int index) const;
    FocusTarget first() const;
@@ -46,6 +53,11 @@ public:
 private:
    Focus& focus_state;
    Screens& screens;
+   Document& document;
+   ControlView& control_view;
+   Lists& lists;
+   Status& status;
+   const Event& hovered;
    void reload();
    bool save();
    const char *console_name(int index) const;

@@ -1,3 +1,4 @@
+#include "document_contract.hpp"
 #include "binds_popup.hpp"
 #include "elements.hpp"
 #include <RmlUi/Core/ElementUtilities.h>
@@ -36,14 +37,14 @@ struct PopupLayout
     * the pager is open, the width is at least that of its buttons. */
    int rib_list_width(Rml::Element *list, int declared)
    {
-      const char *const parts[] = {"list-row-title", "list-row-detail",
-            "list-row-state"};
+      const char *const parts[] = {document_contract::ListRowTitle, document_contract::ListRowDetail,
+            document_contract::ListRowState};
       const float density = std::max(context
             ? context->GetDensityIndependentPixelRatio() : 1.f, 0.1f);
       float widest = 0.f;
       std::vector<Rml::Element*> rows;
 
-      rib::collect(list, "list-row", rows);
+      rib::collect(list, document_contract::ListRow, rows);
       for (Rml::Element *row : rows)
       {
          if (rib::hidden(row))
@@ -88,11 +89,11 @@ struct PopupLayout
       }
 
       std::vector<Rml::Element*> pagers;
-      rib::collect(list, "list-pager", pagers);
+      rib::collect(list, document_contract::ListPager, pagers);
       if (!pagers.empty() && !rib::display_none(pagers[0]) && !rib::hidden(pagers[0]))
       {
-         for (const char *cls : {"list-pager-prev", "list-pager-count",
-               "list-pager-next"})
+         for (const char *cls : {document_contract::ListPagerPrev, document_contract::ListPagerCount,
+               document_contract::ListPagerNext})
          {
             std::vector<Rml::Element*> found;
             rib::collect(pagers[0], cls, found);
@@ -121,7 +122,7 @@ struct PopupLayout
       extra_left = extra_top = extra_right = extra_bottom = 0.f;
       const Rml::Vector2f list_at = list->GetAbsoluteOffset(Rml::BoxArea::Border);
       const Rml::Vector2f list_size = list->GetBox().GetSize(Rml::BoxArea::Border);
-      const char *classes[] = {"list-row", "list-pager"};
+      const char *classes[] = {document_contract::ListRow, document_contract::ListPager};
       for (const char *cls : classes)
       {
          std::vector<Rml::Element*> found;
@@ -204,12 +205,12 @@ struct PopupLayout
 
    static constexpr rib_keep_clear rib_keep_clear_rules[] = {
       {"control-callout", false, true},
-      {"control-group", false, true},
-      {"menu-action", false, false},
-      {"heading", true, false},
+      {document_contract::ControlGroup, false, true},
+      {document_contract::MenuAction, false, false},
+      {document_contract::Heading, true, false},
       {"control-picker-label", false, false},
       {"control-picker-current", false, false},
-      {"controls-status", true, false},
+      {document_contract::ControlsStatus, true, false},
       {"footer", true, false},
    };
 
@@ -266,7 +267,7 @@ struct PopupLayout
    {
       Rml::Element *list = rib_list_element(list_id);
       Rml::Element *anchor = document && anchor_id ? document->GetElementById(anchor_id) : nullptr;
-      Rml::Element *screen = document ? document->GetElementById("screen") : nullptr;
+      Rml::Element *screen = document ? document->GetElementById(document_contract::Screen) : nullptr;
       if (!list || !context)
          return;
       list->RemoveProperty("display");
@@ -289,7 +290,7 @@ struct PopupLayout
       /* Beside the label, toward the pad (over the drawing), then below, then
        * above. Covering the drawing is fine. Covering another label is not. */
       float scene_cx = anchor_at.x + anchor_size.x * 0.5f;
-      if (Rml::Element *scene = document->GetElementById("controller-scene"))
+      if (Rml::Element *scene = document->GetElementById(document_contract::ControllerScene))
       {
          const Rml::Vector2f scene_at = scene->GetAbsoluteOffset(Rml::BoxArea::Border);
          const Rml::Vector2f scene_size = scene->GetBox().GetSize(Rml::BoxArea::Border);
@@ -312,7 +313,7 @@ struct PopupLayout
          screen_at.x + 8.f,
          screen_at.x + screen_size.x - list_size.x - 8.f,
       };
-      if (Rml::Element *scene = document->GetElementById("controller-scene"))
+      if (Rml::Element *scene = document->GetElementById(document_contract::ControllerScene))
       {
          const Rml::Vector2f scene_at = scene->GetAbsoluteOffset(Rml::BoxArea::Border);
          const Rml::Vector2f scene_size = scene->GetBox().GetSize(Rml::BoxArea::Border);
@@ -417,7 +418,7 @@ struct PopupLayout
       if (!document || !context || width <= 0 || height <= 0)
          return 0;
       context->Update();
-      Rml::Element *screen = document->GetElementById("screen");
+      Rml::Element *screen = document->GetElementById(document_contract::Screen);
       if (!screen)
          return 0;
       const Rml::Vector2f origin = screen->GetAbsoluteOffset(Rml::BoxArea::Border);

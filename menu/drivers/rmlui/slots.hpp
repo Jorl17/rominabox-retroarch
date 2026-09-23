@@ -1,10 +1,28 @@
 #pragma once
+#include "document_contract.hpp"
 
 #include <string>
+#include <cstring>
+#include "events.h"
 #include <retro_miscellaneous.h>
 
 namespace rib {
-inline constexpr int kSlotCount = 6;
+static inline bool state_task_matches(
+      bool pending, bool pending_is_save, const char *pending_path,
+      int pending_slot, const char *path, int slot, bool is_save)
+{
+   if (!pending || pending_is_save != is_save)
+      return false;
+   if (path && path[0] && pending_path && pending_path[0]
+         && strcmp(pending_path, path) != 0)
+      return false;
+   if (slot >= 0 && pending_slot >= 0 && slot != pending_slot)
+      return false;
+   return true;
+}
+
+
+using document_contract::kSlotCount;
 inline bool valid_slot(int slot) { return slot >= 1 && slot <= kSlotCount; }
 
 class Document;
@@ -17,10 +35,7 @@ class Slots
 {
 public:
    Slots(Document& document, Focus& focus, Status& status)
-      : document(document), focus(&focus), status(status) {}
-   /* A new menu has a new Focus, but we keep this display state across new
-    * documents and new menus. */
-   void bind_focus(Focus& next) { focus = &next; }
+      : document(document), focus(focus), status(status) {}
    enum class Transfer { Save, Load };
    void reset_transfer() { transfer = {}; }
    bool transfer_pending() const { return transfer.pending; }
@@ -28,6 +43,8 @@ public:
    void refresh();
    void request(Transfer kind);
    void notify_task(const char *path, int slot, bool is_save, bool success);
+   void focus_action(const Event& event);
+   void focus_element(const char *id);
    void paint() const;
    void set_selected_slot(int slot);
    void set_slot_state(int slot, bool occupied, const char *thumbnail_path);
@@ -57,7 +74,7 @@ private:
    static bool thumbnail_ready(const std::string& path);
    static std::string quoted_css_path(const std::string& path);
    Document& document;
-   Focus *focus;
+   Focus& focus;
    Status& status;
    float game_aspect = 4.0f / 3.0f;
    int selected_slot = 1;

@@ -1,6 +1,10 @@
 #include "discs.hpp"
 #include "host.h"
-#include "../rmlui_bridge.h"
+#include "document.hpp"
+#include "lists.hpp"
+#include "parts.hpp"
+#include "slots.hpp"
+#include "../../../audio/volume_range.h"
 #include <retro_miscellaneous.h>
 #include <string/stdstring.h>
 #include <cstdio>
@@ -45,39 +49,39 @@ void Discs::sync() const
    count = rib_host_disc_count();
    if (list_button[0])
    {
-      rib_rmlui_set_shown(list_button, count > 1);
-      rib_rmlui_set_disabled(list_button, count <= 1);
+      document.set_shown(list_button, count > 1);
+      document.set_disabled(list_button, count <= 1);
    }
    snprintf(rows_id, sizeof(rows_id), "%s-list", list_id);
-   rows = rib_rmlui_rows_in(rows_id);
+   rows = lists.rows_in(rows_id);
    current = rib_host_disc_index();
    for (index = 0; index < rows; index++)
    {
-      const char *row = rib_rmlui_row_in(rows_id, index);
+      const char *row = lists.row_in(rows_id, index);
       char label[PATH_MAX_LENGTH];
 
       if (!row)
          continue;
       if ((unsigned)index >= count)
       {
-         rib_rmlui_set_shown(row, false);
+         document.set_shown(row, false);
          continue;
       }
       label[0] = '\0';
       rib_host_disc_label((unsigned)index, label, sizeof(label));
       if (!label[0])
          snprintf(label, sizeof(label), "Disc %u", (unsigned)index + 1);
-      rib_rmlui_set_shown(row, true);
-      rib_rmlui_fit_row_title(row, label);
+      document.set_shown(row, true);
+      lists.fit_row_title(row, label);
    }
    if (rows > 0)
-      rib_rmlui_retarget_pages(rows_id);
+      lists.retarget_pages(rows_id);
    if (count > 0 && current < (unsigned)rows)
    {
-      const char *row = rib_rmlui_row_in(rows_id, (int)current);
+      const char *row = lists.row_in(rows_id, (int)current);
 
       if (row)
-         rib_rmlui_select_row(rows_id, row, mark, "");
+         lists.select_row(rows_id, row, mark, "");
    }
    {
       char status_id[40];
@@ -87,7 +91,7 @@ void Discs::sync() const
       status[0] = '\0';
       if (rows > 0 && count > (unsigned)rows)
          snprintf(status, sizeof(status), "SHOWING %d OF %u", rows, count);
-      rib_rmlui_set_element_text(status_id, status);
+      document.set_element_text(status_id, status);
    }
 }
 
@@ -103,11 +107,11 @@ bool Discs::choose(const char *screen, const char *id) const
    if (!string_is_equal(screen, list_id))
       return false;
    snprintf(rows_id, sizeof(rows_id), "%s-list", list_id);
-   rows = rib_rmlui_rows_in(rows_id);
+   rows = lists.rows_in(rows_id);
    count = rib_host_disc_count();
    for (index = 0; index < rows; index++)
    {
-      const char *row = rib_rmlui_row_in(rows_id, index);
+      const char *row = lists.row_in(rows_id, index);
       unsigned image;
 
       if (!row || !string_is_equal(row, id))

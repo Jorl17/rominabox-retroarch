@@ -1,3 +1,5 @@
+#include "words.hpp"
+#include "document_contract.hpp"
 #include "slots.hpp"
 
 #include "document.hpp"
@@ -56,34 +58,34 @@ void Slots::paint() const
    if (!document.root()) return;
 
    char row[16][64];
-   const int row_count = focusable_ids(document.root(), "pause-panel", row, 16);
+   const int row_count = focusable_ids(document.root(), document_contract::PausePanel, row, 16);
    for (int index = 0; index < row_count; ++index)
       if (auto *element = document.root()->GetElementById(row[index]))
-         element->SetClass("focused", focus->pause_element() == row[index]);
+         element->SetClass(document_contract::Focused, focus.pause_element() == row[index]);
 
    for (int index = 0; index < kSlotCount; ++index)
    {
       const int slot = index + 1;
       const std::string suffix = std::to_string(slot);
-      if (auto *element = document.root()->GetElementById("slot-" + suffix))
+      if (auto *element = document.root()->GetElementById(document_contract::Slot + suffix))
       {
-         element->SetClass("selected", slot == selected_slot);
-         element->SetClass("focused", focus->highlighted_slot() == slot);
-         element->SetClass("occupied", slots[index].occupied);
-         element->SetClass("empty", !slots[index].occupied);
-         element->SetClass("disabled", !guard.empty());
+         element->SetClass(document_contract::Selected, slot == selected_slot);
+         element->SetClass(document_contract::Focused, focus.highlighted_slot() == slot);
+         element->SetClass(document_contract::Occupied, slots[index].occupied);
+         element->SetClass(document_contract::Empty, !slots[index].occupied);
+         element->SetClass(document_contract::Disabled, !guard.empty());
          if (guard.empty())
             element->RemoveAttribute("disabled");
          else
             element->SetAttribute("disabled", "disabled");
       }
-      if (auto *label = document.root()->GetElementById("slot-label-" + suffix))
-         label->SetInnerRML("SLOT " + suffix);
-      if (auto *state = document.root()->GetElementById("slot-state-" + suffix))
+      if (auto *label = document.root()->GetElementById(document_contract::SlotLabelPrefix + suffix))
+         label->SetInnerRML(rib::words::SlotLabel + suffix);
+      if (auto *state = document.root()->GetElementById(document_contract::SlotStatePrefix + suffix))
          state->SetInnerRML(guard.empty()
-               ? (slots[index].occupied ? "OCCUPIED" : "EMPTY")
+               ? (slots[index].occupied ? rib::words::Occupied : rib::words::Empty)
                : Rml::StringUtilities::EncodeRml(guard));
-      if (auto *image = document.root()->GetElementById("slot-image-" + suffix))
+      if (auto *image = document.root()->GetElementById(document_contract::SlotImagePrefix + suffix))
       {
          const float height = std::min(138.0f, 230.0f / game_aspect);
          if (auto *picture = image->GetParentNode())
@@ -101,19 +103,19 @@ void Slots::paint() const
       }
    }
 
-   for (const char *id : {"save", "load"})
+   for (const char *id : {document_contract::Save, document_contract::Load})
       if (auto *button = document.root()->GetElementById(id))
       {
          const bool disabled = !guard.empty() ||
-               (std::string(id) == "load" && !slots[selected_slot - 1].occupied);
-         button->SetClass("disabled", disabled);
+               (std::string(id) == document_contract::Load && !slots[selected_slot - 1].occupied);
+         button->SetClass(document_contract::Disabled, disabled);
          if (disabled)
             button->SetAttribute("disabled", "disabled");
          else
             button->RemoveAttribute("disabled");
       }
 
-   if (auto *line = document.root()->GetElementById("status"))
+   if (auto *line = document.root()->GetElementById(document_contract::Status))
    {
       const std::string& shown = status.main_text().empty()
             ? guard_reason : status.main_text();
@@ -176,5 +178,18 @@ bool Slots::occupied(int slot) const
 bool Slots::has_thumbnail(int slot) const
 {
    return valid_slot(slot) && !slots[slot - 1].thumbnail_path.empty();
+}
+}
+
+namespace rib {
+void Slots::focus_action(const Event& event)
+{
+   focus.pause_action(event);
+   paint();
+}
+void Slots::focus_element(const char *id)
+{
+   focus.pause_element(id);
+   paint();
 }
 }

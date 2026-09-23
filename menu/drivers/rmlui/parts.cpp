@@ -1,3 +1,4 @@
+#include "document_contract.hpp"
 #include "parts.hpp"
 
 #include "document.hpp"
@@ -14,7 +15,7 @@ namespace {
 Rml::Element *slider_ancestor(Rml::Element *node)
 {
    for (; node; node = node->GetParentNode())
-      if (node->IsClassSet("slider")) return node;
+      if (node->IsClassSet(document_contract::Slider)) return node;
    return nullptr;
 }
 
@@ -27,10 +28,10 @@ public:
    {
       auto *element = event.GetCurrentElement();
       if (!element || element->HasAttribute("disabled")
-            || element->IsClassSet("disabled"))
+            || element->IsClassSet(document_contract::Disabled))
          return;
-      const bool on = !element->IsClassSet("on");
-      element->SetClass("on", on);
+      const bool on = !element->IsClassSet(document_contract::On);
+      element->SetClass(document_contract::On, on);
       events.push({RIB_RMLUI_ACTION_PART_TOGGLE, id, 0.0f, on});
    }
    void OnDetach(Rml::Element*) override { delete this; }
@@ -48,7 +49,7 @@ public:
    {
       auto *element = event.GetCurrentElement();
       if (!element || element->HasAttribute("disabled")
-            || element->IsClassSet("disabled") || direction == 0)
+            || element->IsClassSet(document_contract::Disabled) || direction == 0)
          return;
       parts.nudge_slider(slider.c_str(), direction);
    }
@@ -63,7 +64,7 @@ private:
 void Parts::wire_part_toggles()
 {
    walk(document.root(), [&](Rml::Element *element) {
-      if (element->IsClassSet("toggle") && !element->GetId().empty())
+      if (element->IsClassSet(document_contract::Toggle) && !element->GetId().empty())
          element->AddEventListener(Rml::EventId::Click,
                new PartToggleListener(events, element->GetId()));
       return Walk::Continue;
@@ -73,11 +74,11 @@ void Parts::wire_part_toggles()
 void Parts::wire_arrows()
 {
    walk(document.root(), [&](Rml::Element *element) {
-      if (element->IsClassSet("volume-arrow"))
+      if (element->IsClassSet(document_contract::VolumeArrow))
       {
-         const int direction = element->IsClassSet("arrow-down") ? -1
-               : element->IsClassSet("arrow-up") ? 1 : 0;
-         auto *slider = find_class(element->GetParentNode(), "slider", true);
+         const int direction = element->IsClassSet(document_contract::ArrowDown) ? -1
+               : element->IsClassSet(document_contract::ArrowUp) ? 1 : 0;
+         auto *slider = find_class(element->GetParentNode(), document_contract::Slider, true);
          if (slider && direction != 0)
             element->AddEventListener(Rml::EventId::Click,
                   new ArrowListener(*this, slider->GetId(), direction));
@@ -95,7 +96,7 @@ float Parts::clamp_fraction(float fraction)
 
 float Parts::fraction_at(Rml::Element *slider, int x) const
 {
-   auto *track = find_class(slider, "slider-track");
+   auto *track = find_class(slider, document_contract::SliderTrack);
    if (!track) return 0.0f;
    if (document.get_context()) document.get_context()->Update();
    const float left = track->GetAbsoluteOffset(Rml::BoxArea::Border).x;
@@ -110,9 +111,9 @@ void Parts::paint_slider(Rml::Element *slider, float fraction, const char *reado
    fraction = clamp_fraction(fraction);
    slider_fraction[slider->GetId()] = fraction;
    if (document.get_context()) document.get_context()->Update();
-   auto *track = find_class(slider, "slider-track");
-   auto *fill = find_class(slider, "slider-fill");
-   auto *thumb = find_class(slider, "slider-thumb");
+   auto *track = find_class(slider, document_contract::SliderTrack);
+   auto *fill = find_class(slider, document_contract::SliderFill);
+   auto *thumb = find_class(slider, document_contract::SliderThumb);
    const float width = track ? track->GetBox().GetSize(Rml::BoxArea::Content).x : 0.0f;
    const float thumb_width = thumb ? thumb->GetBox().GetSize(Rml::BoxArea::Border).x : 0.0f;
    if (fill && width > 0.0f)
@@ -123,7 +124,7 @@ void Parts::paint_slider(Rml::Element *slider, float fraction, const char *reado
       thumb->SetProperty("left", std::to_string(travel * fraction) + "px");
    }
    if (readout)
-      if (auto *text = find_class(slider, "slider-readout"))
+      if (auto *text = find_class(slider, document_contract::SliderReadout))
          text->SetInnerRML(Rml::StringUtilities::EncodeRml(readout));
 }
 
@@ -147,7 +148,7 @@ void Parts::set_slider(const char *id, float fraction, const char *readout)
 {
    if (!document.root() || !id) return;
    if (auto *slider = document.root()->GetElementById(id))
-      if (slider->IsClassSet("slider"))
+      if (slider->IsClassSet(document_contract::Slider))
          paint_slider(slider, fraction, readout);
 }
 
@@ -171,7 +172,7 @@ bool Parts::commit_slider(const char *id, float fraction)
 {
    if (!document.root() || !id) return false;
    auto *slider = document.root()->GetElementById(id);
-   if (!slider || !slider->IsClassSet("slider")) return false;
+   if (!slider || !slider->IsClassSet(document_contract::Slider)) return false;
    float before = 0.0f;
    const auto found = slider_fraction.find(slider->GetId());
    if (found != slider_fraction.end()) before = found->second;
@@ -194,7 +195,7 @@ bool Parts::part_is_slider(const char *id) const
 {
    if (!document.root() || !id) return false;
    auto *element = document.root()->GetElementById(id);
-   return element && element->IsClassSet("slider");
+   return element && element->IsClassSet(document_contract::Slider);
 }
 
 void Parts::begin_drag(Rml::Element *hovered, int x)
@@ -206,7 +207,7 @@ void Parts::begin_drag(Rml::Element *hovered, int x)
    drag_origin = 0.0f;
    const auto painted = slider_fraction.find(slider->GetId());
    if (painted != slider_fraction.end()) drag_origin = painted->second;
-   slider->SetClass("dragging", true);
+   slider->SetClass(document_contract::Dragging, true);
    drag_to(x);
 }
 
@@ -220,7 +221,7 @@ void Parts::drag_to(int x)
 void Parts::end_drag()
 {
    if (!drag_element) return;
-   drag_element->SetClass("dragging", false);
+   drag_element->SetClass(document_contract::Dragging, false);
    const float after = clamp_fraction(drag_fraction);
    remember_slider(drag_id, drag_fraction);
    note_slider_move(drag_origin, after);
@@ -232,8 +233,4 @@ void Parts::clear_drag()
    drag_element = nullptr;
 }
 
-void Parts::clear()
-{
-   clear_drag();
-}
 }

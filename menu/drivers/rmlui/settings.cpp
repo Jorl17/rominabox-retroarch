@@ -1,7 +1,11 @@
 #include "settings.hpp"
 #include "host.h"
 #include "files.h"
-#include "../rmlui_bridge.h"
+#include "document.hpp"
+#include "lists.hpp"
+#include "parts.hpp"
+#include "slots.hpp"
+#include "../../../audio/volume_range.h"
 #include "../../../verbosity.h"
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
@@ -70,12 +74,12 @@ void Toggles::apply() const
    for (index = 0; index < count; ++index)
    {
       const rib_toggle_t *toggle = &entries[index];
-      rib_rmlui_set_toggle(toggle->id,
+      lists.set_toggle(toggle->id,
             toggle->state ? toggle->on : toggle->off, toggle->state);
       if (toggle->state && toggle->guard == RIB_TOGGLE_GUARD_SAVES && !guarding)
          guarding = toggle;
    }
-   rib_rmlui_guard_slots(guarding ? guarding->guard_label : NULL,
+   slots.guard_slots(guarding ? guarding->guard_label : NULL,
          guarding ? guarding->guard_status : NULL);
 }
 
@@ -103,7 +107,7 @@ void Volume::configure_path(const char *data)
 
 void Volume::initialize()
 {
-   rib_rmlui_set_slider_step(RIB_VOLUME_SLIDER_ID,
+   parts.set_slider_step(RIB_VOLUME_SLIDER_ID,
          AUDIO_VOLUME_STEP_DB / (AUDIO_VOLUME_MAX_DB - AUDIO_VOLUME_MIN_DB));
    // A stored level may be muted or above the maximum. Write it again only
    // when the quantized, unmuted level differs from the stored one.
@@ -116,7 +120,7 @@ void Volume::initialize()
 void Volume::paint() const
 {
    const float db = rib_volume_quantize_db(rib_host_volume());
-   rib_rmlui_set_slider(RIB_VOLUME_SLIDER_ID, rib_volume_fraction_from_db(db), "");
+   parts.set_slider(RIB_VOLUME_SLIDER_ID, rib_volume_fraction_from_db(db), "");
 }
 
 void Volume::set(float db, bool persist)

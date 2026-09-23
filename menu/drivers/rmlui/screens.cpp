@@ -1,3 +1,5 @@
+#include "words.hpp"
+#include "document_contract.hpp"
 #include "screens.hpp"
 
 #include "document.hpp"
@@ -39,10 +41,10 @@ void Screens::remember(const char *id)
 void Screens::built_in_screens()
 {
    /* Declare it and add its listeners once, as for a design screen. */
-   declare_screen("pause", "pause-panel", "GAME PAUSED",
-         "ESC  CONTINUE", "controls-back");
-   declare_screen("controls", "controls-panel", "CONTROLS",
-         "ESC  BACK", "controls");
+   declare_screen("pause", document_contract::PausePanel, rib::words::PausedHeading,
+         rib::words::ContinueHint, document_contract::ControlsBack);
+   declare_screen("controls", document_contract::ControlsPanel, rib::words::ControlsHeading,
+         rib::words::BackHint, document_contract::Controls);
 }
 
 void Screens::clear_screens()
@@ -107,10 +109,10 @@ bool Screens::show_screen(const char *id)
          else
             panel->SetProperty("display", "none");
       }
-   if (auto *heading = document.root()->GetElementById("heading"))
+   if (auto *heading = document.root()->GetElementById(document_contract::Heading))
       heading->SetInnerRML(Rml::StringUtilities::EncodeRml(wanted->heading));
    if (!wanted->footer.empty())
-      if (auto *footer = document.root()->GetElementById("footer-hint"))
+      if (auto *footer = document.root()->GetElementById(document_contract::FooterHint))
          footer->SetInnerRML(Rml::StringUtilities::EncodeRml(wanted->footer));
    return true;
 }
@@ -164,7 +166,7 @@ void Screens::set_footer_hint(const char *hint) const
 {
    if (!document.root())
       return;
-   if (auto *footer = document.root()->GetElementById("footer-hint"))
+   if (auto *footer = document.root()->GetElementById(document_contract::FooterHint))
       footer->SetInnerRML(Rml::StringUtilities::EncodeRml(hint ? hint : ""));
 }
 }
