@@ -1,15 +1,13 @@
 #include "rmlui_bridge.h"
+#include "rmlui/elements.hpp"
+#include "rmlui/document.hpp"
+#include "rmlui/binds_popup.hpp"
 
 #include <RmlUi/Core.h>
-#include <RmlUi/Core/Factory.h>
 #include <RmlUi/Core/ElementUtilities.h>
 #include <RmlUi/Core/StringUtilities.h>
-#include <RmlUi/Core/SystemInterface.h>
-#include <filesystem>
 
 #ifndef RIB_RMLUI_HEADLESS
-#include "rmlui/render/rmlui_gl.h"
-#include "rmlui/render/platform.h"
 #include "third_party/lodepng.h"
 #endif
 
@@ -30,64 +28,7 @@ static void wire_arrows(Rml::Element *node);
 
 namespace
 {
-#ifdef RIB_RMLUI_HEADLESS
-static unsigned test_texture_loads = 0;
-class RominaboxRenderer : public Rml::RenderInterface
-{
-public:
-   void SetViewport(int, int) {}
-   void BeginFrame() {}
-   void EndFrame() {}
-
-   Rml::CompiledGeometryHandle CompileGeometry(
-         Rml::Span<const Rml::Vertex>, Rml::Span<const int>) override
-   {
-      return ++geometry;
-   }
-   void RenderGeometry(Rml::CompiledGeometryHandle, Rml::Vector2f,
-         Rml::TextureHandle) override {}
-   void ReleaseGeometry(Rml::CompiledGeometryHandle) override {}
-   Rml::TextureHandle LoadTexture(Rml::Vector2i& dimensions,
-         const Rml::String&) override
-   {
-      ++test_texture_loads;
-      dimensions = {1, 1};
-      return 1;
-   }
-   Rml::TextureHandle GenerateTexture(Rml::Span<const Rml::byte>,
-         Rml::Vector2i) override
-   {
-      return 1;
-   }
-   void ReleaseTexture(Rml::TextureHandle) override {}
-   void EnableScissorRegion(bool) override {}
-   void SetScissorRegion(Rml::Rectanglei) override {}
-
-private:
-   Rml::CompiledGeometryHandle geometry = 0;
-};
-
-#endif
-
-#ifdef RIB_RMLUI_HEADLESS
-static double test_clock_offset = 0;
-#endif
-class LocalSystemInterface : public Rml::SystemInterface
-{
-public:
-#ifdef RIB_RMLUI_HEADLESS
-   double GetElapsedTime() override { return Rml::SystemInterface::GetElapsedTime() + test_clock_offset; }
-#endif
-   void JoinPath(Rml::String& output, const Rml::String& document_path,
-         const Rml::String& path) override
-   {
-      // These are filesystem resources, not web-root-relative URLs.
-      const auto child = std::filesystem::u8path(path);
-      const auto base = std::filesystem::u8path(document_path).parent_path();
-      output = (child.is_absolute() ? child : base / child).lexically_normal().u8string();
-   }
-};
-LocalSystemInterface system_interface;
+rib::Document view;
 
 class ActionListener : public Rml::EventListener
 {
@@ -197,10 +138,6 @@ extern "C" const char *rib_rmlui_chosen_device(void)
    return chosen_device.c_str();
 }
 
-std::unique_ptr<RominaboxRenderer> renderer;
-Rml::Context *context = nullptr;
-Rml::ElementDocument *document = nullptr;
-std::string asset_dir;
 struct StatusMessage { std::string text; double expires = 0; };
 StatusMessage main_status, controls_status;
 /* Click an element by id, as with a pointer.
@@ -216,9 +153,9 @@ StatusMessage main_status, controls_status;
  */
 extern "C" bool rib_rmlui_click_element(const char *id)
 {
-   if (!document || !id || !*id)
+   if (!view.root() || !id || !*id)
       return false;
-   Rml::Element *element = document->GetElementById(id);
+   Rml::Element *element = view.root()->GetElementById(id);
    if (!element)
       return false;
    element->Click();
@@ -228,14 +165,14 @@ extern "C" bool rib_rmlui_click_element(const char *id)
 void show_status(StatusMessage& message, const char *id, const char *text)
 {
    message.text = text ? text : "";
-   message.expires = system_interface.GetElapsedTime() + 5.0;
-   if (document)
-      if (auto *element = document->GetElementById(id))
+   message.expires = view.elapsed() + 5.0;
+   if (view.root())
+      if (auto *element = view.root()->GetElementById(id))
          element->SetInnerRML(Rml::StringUtilities::EncodeRml(message.text));
 }
 void expire_status(StatusMessage& message, const char *id)
 {
-   if (!message.text.empty() && system_interface.GetElapsedTime() >= message.expires)
+   if (!message.text.empty() && view.elapsed() >= message.expires)
       show_status(message, id, "");
 }
 float game_aspect = 4.0f / 3.0f;
@@ -254,15 +191,7 @@ struct SlotState
    std::string thumbnail_version;
 };
 SlotState slots[6];
-time_t rml_mtime = 0;
-time_t rcss_mtime = 0;
 bool pointer_down = false;
-
-time_t modification_time(const std::string& path)
-{
-   struct stat info = {};
-   return stat(path.c_str(), &info) == 0 ? info.st_mtime : 0;
-}
 
 std::string thumbnail_version(const std::string& path)
 {
@@ -291,11 +220,6 @@ bool thumbnail_ready(const std::string& path)
 #endif
 }
 
-std::string asset_path(const char *name)
-{
-   return asset_dir + "/" + name;
-}
-
 /* Why the save slots are unusable, in the words of the design: the word on
  * each slot and the line that explains it. Empty means they are usable. The
  * decision is elsewhere in the player, and here we only draw it. */
@@ -315,21 +239,21 @@ std::string quoted_css_path(const std::string& path)
 
 void update_document_state()
 {
-   if (!document)
+   if (!view.root())
       return;
 
    /* The contents of the pause panel, in document order. */
    char row[16][64];
    const int row_count = rib_rmlui_focusables("pause-panel", row, 16);
    for (int index = 0; index < row_count; ++index)
-      if (Rml::Element *element = document->GetElementById(row[index]))
+      if (Rml::Element *element = view.root()->GetElementById(row[index]))
          element->SetClass("focused", focused_element == row[index]);
 
    for (int index = 0; index < 6; ++index)
    {
       const int slot = index + 1;
       const std::string suffix = std::to_string(slot);
-      if (Rml::Element *element = document->GetElementById("slot-" + suffix))
+      if (Rml::Element *element = view.root()->GetElementById("slot-" + suffix))
       {
          element->SetClass("selected", slot == selected_slot);
          element->SetClass("focused",
@@ -342,13 +266,13 @@ void update_document_state()
          else
             element->SetAttribute("disabled", "disabled");
       }
-      if (Rml::Element *label = document->GetElementById("slot-label-" + suffix))
+      if (Rml::Element *label = view.root()->GetElementById("slot-label-" + suffix))
          label->SetInnerRML("SLOT " + suffix);
-      if (Rml::Element *state = document->GetElementById("slot-state-" + suffix))
+      if (Rml::Element *state = view.root()->GetElementById("slot-state-" + suffix))
          state->SetInnerRML(slots_guard.empty()
                ? (slots[index].occupied ? "OCCUPIED" : "EMPTY")
                : Rml::StringUtilities::EncodeRml(slots_guard));
-      if (Rml::Element *image = document->GetElementById("slot-image-" + suffix))
+      if (Rml::Element *image = view.root()->GetElementById("slot-image-" + suffix))
       {
          // The core DAR corrects non-square source pixels. The well has that
          // ratio, and we fill it in RmlUi without a second letterbox.
@@ -369,7 +293,7 @@ void update_document_state()
    }
 
    for (const char *id : {"save", "load"})
-      if (Rml::Element *button = document->GetElementById(id))
+      if (Rml::Element *button = view.root()->GetElementById(id))
       {
          const bool disabled = !slots_guard.empty() ||
                (std::string(id) == "load" && !slots[selected_slot - 1].occupied);
@@ -380,7 +304,7 @@ void update_document_state()
             button->RemoveAttribute("disabled");
       }
 
-   if (Rml::Element *status = document->GetElementById("status"))
+   if (Rml::Element *status = view.root()->GetElementById("status"))
    {
       /* Why the slots are unusable is a lasting state, not a message, so we keep
        * it while they are locked. Messages go in front of it and expire. */
@@ -404,9 +328,9 @@ void update_document_state()
  */
 extern "C" void rib_rmlui_wire_device_picker(void)
 {
-   if (!document)
+   if (!view.root())
       return;
-   if (Rml::Element *current = document->GetElementById("controls-device-current"))
+   if (Rml::Element *current = view.root()->GetElementById("controls-device-current"))
       current->AddEventListener(Rml::EventId::Click,
             new ActionListener(RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE));
 
@@ -416,7 +340,7 @@ extern "C" void rib_rmlui_wire_device_picker(void)
       if (!id || !*id)
          continue;
       if (Rml::Element *option =
-            document->GetElementById("controls-device-option-" + std::string(id)))
+            view.root()->GetElementById("controls-device-option-" + std::string(id)))
          option->AddEventListener(Rml::EventId::Click,
                new DeviceOptionListener(id));
    }
@@ -425,9 +349,9 @@ extern "C" void rib_rmlui_wire_device_picker(void)
 /* Show or hide the picker's list, and mark which option is in use. */
 extern "C" void rib_rmlui_set_device_picker(bool open, const char *chosen)
 {
-   if (!document)
+   if (!view.root())
       return;
-   if (Rml::Element *list = document->GetElementById("controls-device-list"))
+   if (Rml::Element *list = view.root()->GetElementById("controls-device-list"))
    {
       if (open)
          list->RemoveProperty("display");
@@ -440,10 +364,10 @@ extern "C" void rib_rmlui_set_device_picker(bool open, const char *chosen)
       if (!id || !*id)
          continue;
       if (Rml::Element *option =
-            document->GetElementById("controls-device-option-" + std::string(id)))
+            view.root()->GetElementById("controls-device-option-" + std::string(id)))
          option->SetClass("selected", chosen && !std::strcmp(chosen, id));
    }
-   if (Rml::Element *current = document->GetElementById("controls-device-current"))
+   if (Rml::Element *current = view.root()->GetElementById("controls-device-current"))
       for (int index = 0; index < rib_rmlui_device_count(); ++index)
          if (chosen && rib_rmlui_device_id(index)
                && !std::strcmp(chosen, rib_rmlui_device_id(index)))
@@ -456,7 +380,7 @@ extern "C" void rib_rmlui_set_device_picker(bool open, const char *chosen)
 
 extern "C" void rib_rmlui_wire_controls(void)
 {
-   if (!document)
+   if (!view.root())
       return;
    /* Walk the elements in the document, not a list of ids.
     *
@@ -475,7 +399,7 @@ extern "C" void rib_rmlui_wire_controls(void)
          "control-hit-" + std::string(control_id)
       };
       for (const std::string& id : ids)
-         if (Rml::Element *element = document->GetElementById(id))
+         if (Rml::Element *element = view.root()->GetElementById(id))
          {
             element->AddEventListener(Rml::EventId::Click,
                   new ActionListener(action));
@@ -495,7 +419,7 @@ extern "C" void rib_rmlui_wire_controls(void)
       if (seen)
          continue;
       wired_groups.push_back(name);
-      if (Rml::Element *element = document->GetElementById("control-group-" + name))
+      if (Rml::Element *element = view.root()->GetElementById("control-group-" + name))
       {
          element->AddEventListener(Rml::EventId::Click,
                new ActionListener(action));
@@ -522,12 +446,8 @@ static void rib_rmlui_built_in_screens(void)
          "ESC  BACK", "controls");
 }
 
-bool load_document()
+void wire_document()
 {
-   document = context ? context->LoadDocument(asset_path("menu.rml")) : nullptr;
-   if (!document)
-      return false;
-
    /* `opens_screen` means we handle the click through the screen declaration
     * in the design, not through this table. Hover still comes from here,
     * because we track keyboard focus by action, and the player can also reach
@@ -552,7 +472,7 @@ bool load_document()
    };
 
    for (const Binding& binding : bindings)
-      if (Rml::Element *element = document->GetElementById(binding.id))
+      if (Rml::Element *element = view.root()->GetElementById(binding.id))
       {
          if (!binding.opens_screen)
             element->AddEventListener(Rml::EventId::Click,
@@ -565,7 +485,7 @@ bool load_document()
 
    rib_rmlui_wire_controls();
    rib_rmlui_wire_toggles();
-   wire_arrows(document);
+   wire_arrows(view.root());
    rib_rmlui_wire_lists();
    /* When a design declares screens, we replace these before the first frame,
     * and when it declares none we keep them. In both cases we attach the
@@ -573,54 +493,19 @@ bool load_document()
    rib_rmlui_built_in_screens();
 
    update_document_state();
-   document->Show();
-   rml_mtime = modification_time(asset_path("menu.rml"));
-   rcss_mtime = modification_time(asset_path("menu.rcss"));
-   return true;
+   view.show();
 }
 }
 
 extern "C" bool rib_rmlui_init(
       const char *asset_directory, int width, int height, bool core_context)
 {
-   if (context)
+   if (view.get_context())
       return true;
-   if (!asset_directory || !*asset_directory)
+   if (!view.initialize(asset_directory, width, height, core_context))
       return false;
-
-   asset_dir = asset_directory;
-#ifdef RIB_RMLUI_HEADLESS
-   (void)core_context;
-   renderer = std::make_unique<RominaboxRenderer>();
-#else
-   renderer = rib_menu_renderer(core_context);
-#endif
-   renderer->SetViewport(width, height);
-   Rml::SetSystemInterface(&system_interface);
-   Rml::SetRenderInterface(renderer.get());
-
-   if (!Rml::Initialise())
-      return false;
-
-   if (!Rml::LoadFontFace(asset_path("Silkscreen-Regular.ttf"), false) ||
-       !Rml::LoadFontFace(asset_path("Silkscreen-Regular.ttf"), true))
-   {
-      Rml::Shutdown();
-      renderer.reset();
-      return false;
-   }
-
-   context = Rml::CreateContext("rominabox-menu", Rml::Vector2i(width, height));
-   if (!context || !load_document())
-   {
-      Rml::Shutdown();
-      context = nullptr;
-      document = nullptr;
-      renderer.reset();
-      return false;
-   }
-   context->SetDensityIndependentPixelRatio(1.0f);
-   context->Update();
+   wire_document();
+   view.settle();
    return true;
 }
 
@@ -628,88 +513,25 @@ static Rml::Element *slider_drag = nullptr;
 
 extern "C" void rib_rmlui_shutdown(void)
 {
-   if (context)
-      Rml::RemoveContext("rominabox-menu");
-   context = nullptr;
-   document = nullptr;
-   if (renderer)
-      Rml::Shutdown();
-   renderer.reset();
+   view.shutdown();
    ActionListener::clear();
    HoverListener::hovered_action = RIB_RMLUI_ACTION_NONE;
    pointer_down = false;
    slider_drag = nullptr;
 }
 
-/* Where we write the next rendered frame. We set it in
- * rib_rmlui_capture_next() and clear it after the write. */
-std::string capture_path;
-
-/* Read the frame we have just drawn for the menu, and write it.
- *
- * We do not use the RetroArch screenshot, whose code is in the runloop after
- * the buffer is presented. A viewport read at that point returns an empty
- * buffer, so the result is a black picture written without an error. Here
- * the frame of the core and the menu over it are still in the back buffer.
- *
- * GL returns the rows bottom-up, so we flip them. We drop alpha, because we
- * draw the menu over the game and a screenshot of it is opaque.
- */
-static void rib_rmlui_write_capture(int width, int height)
-{
-   if (capture_path.empty() || width <= 0 || height <= 0)
-      return;
-#ifdef RIB_RMLUI_HEADLESS
-   /* There is no renderer to read from in the headless build, and in the
-    * bridge tests we send events and check no pixels. */
-   capture_path.clear();
-#else
-
-   const std::string path = capture_path;
-   capture_path.clear();
-   std::vector<unsigned char> pixels((size_t)width * (size_t)height * 4);
-   glPixelStorei(GL_PACK_ALIGNMENT, 1);
-   glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-
-   std::vector<unsigned char> flipped(pixels.size());
-   const size_t stride = (size_t)width * 4;
-   for (int row = 0; row < height; ++row)
-      std::memcpy(&flipped[(size_t)row * stride],
-            &pixels[(size_t)(height - 1 - row) * stride], stride);
-   for (size_t i = 3; i < flipped.size(); i += 4)
-      flipped[i] = 255;
-
-   const unsigned error = lodepng::encode(path, flipped,
-         (unsigned)width, (unsigned)height);
-   if (error)
-      std::fprintf(stderr, "[RIB] could not write %s: %s\n",
-            path.c_str(), lodepng_error_text(error));
-#endif
-}
-
 extern "C" void rib_rmlui_capture_next(const char *path)
 {
-   capture_path = (path && *path) ? path : "";
+   view.capture_next(path);
 }
 
 extern "C" void rib_rmlui_render(int width, int height)
 {
-   if (!context || !renderer)
+   if (!view.get_context())
       return;
    expire_status(main_status, "status");
    expire_status(controls_status, "controls-status");
-   context->SetDimensions(Rml::Vector2i(width, height));
-   const float density = std::min(
-         static_cast<float>(width) / 960.0f,
-         static_cast<float>(height) / 600.0f);
-   context->SetDensityIndependentPixelRatio(std::max(density, 0.1f));
-   renderer->SetViewport(width, height);
-   context->Update();
-   renderer->BeginFrame();
-   context->Render();
-   renderer->EndFrame();
-   /* After the menu is drawn and before the frame is presented. */
-   rib_rmlui_write_capture(width, height);
+   view.render(width, height);
 }
 
 extern "C" void rib_rmlui_set_selected_slot(int slot)
@@ -760,8 +582,8 @@ extern "C" void rib_rmlui_set_slot_state(int slot, bool occupied,
       update_document_state();
       return;
    }
-   if (!state.thumbnail_path.empty() && renderer)
-      Rml::ReleaseTexture(state.thumbnail_path, renderer.get());
+   if (!state.thumbnail_path.empty())
+      view.release_texture(state.thumbnail_path);
    state.thumbnail_path = next_path;
    state.thumbnail_version = version;
    update_document_state();
@@ -849,9 +671,9 @@ extern "C" enum rib_menu_sound rib_rmlui_action_sound(int action)
  */
 extern "C" bool rib_rmlui_set_scene(const char *markup)
 {
-   if (!document || !markup)
+   if (!view.root() || !markup)
       return false;
-   Rml::Element *scene = document->GetElementById("controller-scene");
+   Rml::Element *scene = view.root()->GetElementById("controller-scene");
    if (!scene)
       return false;
    scene->SetInnerRML(markup);
@@ -876,47 +698,26 @@ extern "C" const char *rib_rmlui_chosen_item(void)
 /* A generated list is one class of row and one class of page. The list is on
  * whichever panel is shown, and in the bridge we do not know whether the rows
  * are shaders, achievements or anything else. */
-static bool rib_display_none(Rml::Element *element)
-{
-   const Rml::Property *property = element ? element->GetProperty("display") : nullptr;
-   return property && property->ToString() == "none";
-}
-
-static bool rib_hidden(Rml::Element *element)
-{
-   for (Rml::Element *cursor = element; cursor; cursor = cursor->GetParentNode())
-      if (rib_display_none(cursor))
-         return true;
-   return false;
-}
-
-static void rib_collect(Rml::Element *element, const char *class_name,
-      std::vector<Rml::Element*> &out)
-{
-   if (!element)
-      return;
-   if (element->IsClassSet(class_name))
-      out.push_back(element);
-   for (int index = 0; index < element->GetNumChildren(); ++index)
-      rib_collect(element->GetChild(index), class_name, out);
-}
+using rib::display_none;
+using rib::hidden;
+using rib::collect;
 
 static bool rib_under_class_hidden(Rml::Element *element, const char *class_name)
 {
    for (Rml::Element *cursor = element; cursor; cursor = cursor->GetParentNode())
-      if (cursor->IsClassSet(class_name) && rib_display_none(cursor))
+      if (cursor->IsClassSet(class_name) && display_none(cursor))
          return true;
    return false;
 }
 
 static Rml::Element *rib_visible_list(void)
 {
-   if (!document)
+   if (!view.root())
       return nullptr;
    std::vector<Rml::Element*> lists;
-   rib_collect(document, "list", lists);
+   collect(view.root(), "list", lists);
    for (Rml::Element *list : lists)
-      if (!rib_hidden(list))
+      if (!hidden(list))
          return list;
    return nullptr;
 }
@@ -928,9 +729,9 @@ static void rib_visible_rows(std::vector<Rml::Element*> &rows)
    if (!list)
       return;
    std::vector<Rml::Element*> all;
-   rib_collect(list, "list-row", all);
+   collect(list, "list-row", all);
    for (Rml::Element *row : all)
-      if (!rib_under_class_hidden(row, "list-page") && !rib_display_none(row))
+      if (!rib_under_class_hidden(row, "list-page") && !display_none(row))
          rows.push_back(row);
 }
 
@@ -980,22 +781,22 @@ static void wire_part_toggles(Rml::Element *node);
 
 extern "C" void rib_rmlui_wire_toggles(void)
 {
-   if (!document)
+   if (!view.root())
       return;
    std::vector<Rml::Element*> toggles;
-   rib_collect(document, "list-toggle", toggles);
+   collect(view.root(), "list-toggle", toggles);
    for (Rml::Element *toggle : toggles)
       toggle->AddEventListener(Rml::EventId::Click, new ToggleListener());
-   wire_part_toggles(document);
+   wire_part_toggles(view.root());
 }
 
 extern "C" void rib_rmlui_set_toggle(const char *id, const char *state, bool on)
 {
-   if (!document || !id || !*id)
+   if (!view.root() || !id || !*id)
       return;
-   if (Rml::Element *toggle = document->GetElementById(id))
+   if (Rml::Element *toggle = view.root()->GetElementById(id))
       toggle->SetClass("on", on);
-   if (Rml::Element *word = document->GetElementById(std::string(id) + "-state"))
+   if (Rml::Element *word = view.root()->GetElementById(std::string(id) + "-state"))
       word->SetInnerRML(Rml::StringUtilities::EncodeRml(state ? state : ""));
 }
 
@@ -1017,20 +818,20 @@ extern "C" bool rib_rmlui_slots_guarded(void)
 
 extern "C" void rib_rmlui_wire_lists(void)
 {
-   if (!document)
+   if (!view.root())
       return;
    std::vector<Rml::Element*> rows;
-   rib_collect(document, "list-row", rows);
+   collect(view.root(), "list-row", rows);
    for (Rml::Element *row : rows)
       row->AddEventListener(Rml::EventId::Click,
             new ListListener(ListListener::Choose, ""));
    std::vector<Rml::Element*> previous;
-   rib_collect(document, "list-pager-prev", previous);
+   collect(view.root(), "list-pager-prev", previous);
    for (Rml::Element *button : previous)
       button->AddEventListener(Rml::EventId::Click,
             new ListListener(ListListener::Page, "prev"));
    std::vector<Rml::Element*> next;
-   rib_collect(document, "list-pager-next", next);
+   collect(view.root(), "list-pager-next", next);
    for (Rml::Element *button : next)
       button->AddEventListener(Rml::EventId::Click,
             new ListListener(ListListener::Page, "next"));
@@ -1045,10 +846,10 @@ extern "C" int rib_rmlui_visible_row_count(void)
 
 extern "C" void rib_rmlui_focus_list_row(int index)
 {
-   if (!document)
+   if (!view.root())
       return;
    std::vector<Rml::Element*> all;
-   rib_collect(document, "list-row", all);
+   collect(view.root(), "list-row", all);
    for (Rml::Element *row : all)
       row->SetClass("focused", false);
    std::vector<Rml::Element*> rows;
@@ -1059,12 +860,12 @@ extern "C" void rib_rmlui_focus_list_row(int index)
 
 static Rml::Element *rib_visible_panel(void)
 {
-   if (!document)
+   if (!view.root())
       return nullptr;
    std::vector<Rml::Element*> panels;
-   rib_collect(document, "screen-panel", panels);
+   collect(view.root(), "screen-panel", panels);
    for (Rml::Element *panel : panels)
-      if (!rib_display_none(panel))
+      if (!display_none(panel))
          return panel;
    return nullptr;
 }
@@ -1080,7 +881,7 @@ static void rib_visible_controls(std::vector<Rml::Element*> &out)
    if (!panel)
       return;
    for (const char *name : {"option-entry", "list-toggle", "list-back", "options-back"})
-      rib_collect(panel, name, out);
+      collect(panel, name, out);
 }
 
 /* Press the way back from the screen shown, through the listener of the
@@ -1092,8 +893,8 @@ extern "C" bool rib_rmlui_click_screen_back(void)
    if (!panel)
       return false;
    std::vector<Rml::Element*> back;
-   rib_collect(panel, "list-back", back);
-   rib_collect(panel, "options-back", back);
+   collect(panel, "list-back", back);
+   collect(panel, "options-back", back);
    if (back.empty())
       return false;
    return rib_rmlui_click_element(back.front()->GetId().c_str());
@@ -1109,9 +910,9 @@ extern "C" const char *rib_rmlui_pause_screen_button(void)
 {
    static std::string id;
    id.clear();
-   if (!document || screens.empty())
+   if (!view.root() || screens.empty())
       return id.c_str();
-   Rml::Element *pause = document->GetElementById(screens.front().panel);
+   Rml::Element *pause = view.root()->GetElementById(screens.front().panel);
    if (!pause)
       return id.c_str();
    for (const Screen& screen : screens)
@@ -1127,7 +928,7 @@ extern "C" const char *rib_rmlui_pause_screen_button(void)
          if (end > cursor)
          {
             const std::string one(cursor, end);
-            for (Rml::Element *e = document->GetElementById(one); e;
+            for (Rml::Element *e = view.root()->GetElementById(one); e;
                   e = e->GetParentNode())
                if (e == pause)
                {
@@ -1181,7 +982,7 @@ extern "C" const char *rib_rmlui_list_row_id(int index)
 static bool rib_page_has_row(Rml::Element *page)
 {
    std::vector<Rml::Element*> rows;
-   rib_collect(page, "list-row", rows);
+   collect(page, "list-row", rows);
    for (Rml::Element *row : rows)
    {
       /* The page itself may be hidden. The computed display would then be none
@@ -1207,7 +1008,7 @@ static void rib_mark_pager(Rml::Element *list, int page, int pages)
    for (const Arrow& arrow : arrows)
    {
       std::vector<Rml::Element*> found;
-      rib_collect(list, arrow.name, found);
+      collect(list, arrow.name, found);
       for (Rml::Element *element : found)
          element->SetClass("disabled", arrow.dead);
    }
@@ -1219,7 +1020,7 @@ extern "C" int rib_rmlui_turn_list_page(int delta)
    if (!list)
       return -1;
    std::vector<Rml::Element*> pages;
-   rib_collect(list, "list-page", pages);
+   collect(list, "list-page", pages);
    std::vector<Rml::Element*> usable;
    for (Rml::Element *page : pages)
       if (rib_page_has_row(page))
@@ -1228,7 +1029,7 @@ extern "C" int rib_rmlui_turn_list_page(int delta)
       return -1;
    int current = 0;
    for (size_t index = 0; index < usable.size(); ++index)
-      if (!rib_display_none(usable[index]))
+      if (!display_none(usable[index]))
          current = (int)index;
    int next = current + (delta < 0 ? -1 : 1);
    if (next < 0 || next >= (int)usable.size())
@@ -1241,7 +1042,7 @@ extern "C" int rib_rmlui_turn_list_page(int delta)
          usable[index]->SetProperty("display", "none");
    }
    std::vector<Rml::Element*> counts;
-   rib_collect(list, "list-pager-count", counts);
+   collect(list, "list-pager-count", counts);
    if (!counts.empty())
    {
       char label[32];
@@ -1255,15 +1056,15 @@ extern "C" int rib_rmlui_turn_list_page(int delta)
 extern "C" void rib_rmlui_mark_row(const char *id, const char *on, const char *off)
 {
    Rml::Element *list = rib_visible_list();
-   if (!document || !list)
+   if (!view.root() || !list)
       return;
    std::vector<Rml::Element*> rows;
-   rib_collect(list, "list-row", rows);
+   collect(list, "list-row", rows);
    for (Rml::Element *row : rows)
    {
       const bool selected = id && row->GetId() == id;
       row->SetClass("selected", selected);
-      if (Rml::Element *state = document->GetElementById(row->GetId() + "-state"))
+      if (Rml::Element *state = view.root()->GetElementById(row->GetId() + "-state"))
          state->SetInnerRML(Rml::StringUtilities::EncodeRml(
                selected ? (on ? on : "") : (off ? off : "")));
    }
@@ -1289,7 +1090,7 @@ extern "C" void rib_rmlui_declare_screen(const char *id, const char *panel,
     * to the button here and not during the load. A screen may list several
     * buttons, separated by spaces. The BACK button of a list opens the screen
     * it returns to, so we add that button to the declaration from the host. */
-   if (document && button && *button)
+   if (view.root() && button && *button)
    {
       const char *cursor = button;
       while (*cursor)
@@ -1303,7 +1104,7 @@ extern "C" void rib_rmlui_declare_screen(const char *id, const char *panel,
          {
             std::string one(cursor, end);
             if (wired_screen_buttons.insert(one).second)
-               if (Rml::Element *element = document->GetElementById(one))
+               if (Rml::Element *element = view.root()->GetElementById(one))
                   element->AddEventListener(Rml::EventId::Click,
                         new ScreenListener(id));
          }
@@ -1322,7 +1123,7 @@ extern "C" void rib_rmlui_declare_screen(const char *id, const char *panel,
  */
 extern "C" bool rib_rmlui_show_screen(const char *id)
 {
-   if (!document || !id || !*id)
+   if (!view.root() || !id || !*id)
       return false;
    const Screen *wanted = nullptr;
    for (const Screen& screen : screens)
@@ -1336,17 +1137,17 @@ extern "C" bool rib_rmlui_show_screen(const char *id)
 
    rib_rmlui_clear_intents();
    for (const Screen& screen : screens)
-      if (Rml::Element *panel = document->GetElementById(screen.panel))
+      if (Rml::Element *panel = view.root()->GetElementById(screen.panel))
       {
          if (&screen == wanted)
             panel->RemoveProperty("display");
          else
             panel->SetProperty("display", "none");
       }
-   if (Rml::Element *heading = document->GetElementById("heading"))
+   if (Rml::Element *heading = view.root()->GetElementById("heading"))
       heading->SetInnerRML(Rml::StringUtilities::EncodeRml(wanted->heading));
    if (!wanted->footer.empty())
-      if (Rml::Element *footer = document->GetElementById("footer-hint"))
+      if (Rml::Element *footer = view.root()->GetElementById("footer-hint"))
          footer->SetInnerRML(Rml::StringUtilities::EncodeRml(wanted->footer));
    return true;
 }
@@ -1360,25 +1161,25 @@ extern "C" void rib_rmlui_show_controls(bool visible)
 extern "C" void rib_rmlui_set_control_state(const char *id,
       const char *label, const char *binding, bool focused, bool capturing)
 {
-   if (!document || !id)
+   if (!view.root() || !id)
       return;
    const std::string suffix(id);
-   if (Rml::Element *control = document->GetElementById("control-" + suffix))
+   if (Rml::Element *control = view.root()->GetElementById("control-" + suffix))
    {
       control->SetClass("focused", focused);
       control->SetClass("capturing", capturing);
    }
-   if (Rml::Element *hit = document->GetElementById("control-hit-" + suffix))
+   if (Rml::Element *hit = view.root()->GetElementById("control-hit-" + suffix))
    {
       hit->SetClass("focused", focused);
       hit->SetClass("capturing", capturing);
    }
    if (Rml::Element *label_element =
-         document->GetElementById("control-label-" + suffix))
+         view.root()->GetElementById("control-label-" + suffix))
       label_element->SetInnerRML(Rml::StringUtilities::EncodeRml(
             label ? label : ""));
    if (Rml::Element *binding_element =
-         document->GetElementById("control-binding-" + suffix))
+         view.root()->GetElementById("control-binding-" + suffix))
       binding_element->SetInnerRML(Rml::StringUtilities::EncodeRml(
             binding ? binding : ""));
 }
@@ -1391,13 +1192,13 @@ extern "C" void rib_rmlui_set_controls_status(const char *status)
 extern "C" void rib_rmlui_set_controls_action_focus(
       bool reset, bool back, bool cancel)
 {
-   if (!document)
+   if (!view.root())
       return;
-   if (Rml::Element *element = document->GetElementById("controls-reset"))
+   if (Rml::Element *element = view.root()->GetElementById("controls-reset"))
       element->SetClass("focused", reset);
-   if (Rml::Element *element = document->GetElementById("controls-back"))
+   if (Rml::Element *element = view.root()->GetElementById("controls-back"))
       element->SetClass("focused", back);
-   if (Rml::Element *element = document->GetElementById("controls-cancel"))
+   if (Rml::Element *element = view.root()->GetElementById("controls-cancel"))
    {
       element->SetClass("focused", cancel);
       if (cancel)
@@ -1409,9 +1210,9 @@ extern "C" void rib_rmlui_set_controls_action_focus(
 
 extern "C" void rib_rmlui_set_footer_hint(const char *hint)
 {
-   if (!document)
+   if (!view.root())
       return;
-   if (Rml::Element *element = document->GetElementById("footer-hint"))
+   if (Rml::Element *element = view.root()->GetElementById("footer-hint"))
       element->SetInnerRML(Rml::StringUtilities::EncodeRml(
             hint ? hint : ""));
 }
@@ -1420,18 +1221,18 @@ extern "C" void rib_rmlui_set_overlay_mode(bool only_overlays)
 {
    if (only_overlays)
       rib_rmlui_clear_intents();
-   if (!document)
+   if (!view.root())
       return;
-   if (Rml::Element *body = document->GetElementById("body"))
+   if (Rml::Element *body = view.root()->GetElementById("body"))
       body->SetClass("overlay", only_overlays);
 }
 
 extern "C" void rib_rmlui_set_overlay(const char *element,
       enum rib_overlay_state state)
 {
-   if (!document || !element || !*element)
+   if (!view.root() || !element || !*element)
       return;
-   if (Rml::Element *overlay = document->GetElementById(element))
+   if (Rml::Element *overlay = view.root()->GetElementById(element))
    {
       overlay->SetClass("showing", state == RIB_OVERLAY_SHOWING);
       overlay->SetClass("leaving", state == RIB_OVERLAY_LEAVING);
@@ -1440,18 +1241,7 @@ extern "C" void rib_rmlui_set_overlay(const char *element,
 
 /* A slider or a toggle, found by its class in the design. We never describe
  * the markup in the control, and only ask for the part. */
-static Rml::Element *find_class(Rml::Element *node, const char *cls)
-{
-   if (!node)
-      return nullptr;
-   if (node->IsClassSet(cls))
-      return node;
-   const int count = node->GetNumChildren();
-   for (int index = 0; index < count; ++index)
-      if (Rml::Element *found = find_class(node->GetChild(index), cls))
-         return found;
-   return nullptr;
-}
+using rib::find_class;
 
 static Rml::Element *slider_ancestor(Rml::Element *node)
 {
@@ -1486,8 +1276,8 @@ static float fraction_at(Rml::Element *slider, int x)
    Rml::Element *track = find_class(slider, "slider-track");
    if (!track)
       return 0.0f;
-   if (context)
-      context->Update();
+   if (view.get_context())
+      view.get_context()->Update();
    const float left = track->GetAbsoluteOffset(Rml::BoxArea::Border).x;
    const float width = track->GetBox().GetSize(Rml::BoxArea::Border).x;
    if (width <= 1.0f)
@@ -1501,8 +1291,8 @@ static void paint_slider(Rml::Element *slider, float fraction, const char *reado
       return;
    fraction = clamp_fraction(fraction);
    slider_fraction[slider->GetId()] = fraction;
-   if (context)
-      context->Update();
+   if (view.get_context())
+      view.get_context()->Update();
    Rml::Element *track = find_class(slider, "slider-track");
    Rml::Element *fill = find_class(slider, "slider-fill");
    Rml::Element *thumb = find_class(slider, "slider-thumb");
@@ -1565,13 +1355,11 @@ private:
 
 static void wire_part_toggles(Rml::Element *node)
 {
-   if (!node)
-      return;
-   if (node->IsClassSet("toggle") && !node->GetId().empty())
-      node->AddEventListener(Rml::EventId::Click, new PartToggleListener(node->GetId()));
-   const int count = node->GetNumChildren();
-   for (int index = 0; index < count; ++index)
-      wire_part_toggles(node->GetChild(index));
+   rib::walk(node, [](Rml::Element *element) {
+      if (element->IsClassSet("toggle") && !element->GetId().empty())
+         element->AddEventListener(Rml::EventId::Click, new PartToggleListener(element->GetId()));
+      return rib::Walk::Continue;
+   });
 }
 
 /* An arrow next to a slider. A click on it moves the slider by the step of
@@ -1596,35 +1384,20 @@ private:
    int direction;
 };
 
-static Rml::Element *find_slider(Rml::Element *node)
-{
-   if (!node)
-      return nullptr;
-   if (node->IsClassSet("slider") && !node->GetId().empty())
-      return node;
-   const int count = node->GetNumChildren();
-   for (int index = 0; index < count; ++index)
-      if (Rml::Element *found = find_slider(node->GetChild(index)))
-         return found;
-   return nullptr;
-}
-
 static void wire_arrows(Rml::Element *node)
 {
-   if (!node)
-      return;
-   if (node->IsClassSet("volume-arrow"))
-   {
-      const int direction = node->IsClassSet("arrow-down") ? -1
-            : node->IsClassSet("arrow-up") ? 1 : 0;
-      Rml::Element *slider = find_slider(node->GetParentNode());
-      if (slider && direction != 0)
-         node->AddEventListener(Rml::EventId::Click,
-               new ArrowListener(slider->GetId(), direction));
-   }
-   const int count = node->GetNumChildren();
-   for (int index = 0; index < count; ++index)
-      wire_arrows(node->GetChild(index));
+   rib::walk(node, [](Rml::Element *element) {
+      if (element->IsClassSet("volume-arrow"))
+      {
+         const int direction = element->IsClassSet("arrow-down") ? -1
+               : element->IsClassSet("arrow-up") ? 1 : 0;
+         Rml::Element *slider = find_class(element->GetParentNode(), "slider", true);
+         if (slider && direction != 0)
+            element->AddEventListener(Rml::EventId::Click,
+                  new ArrowListener(slider->GetId(), direction));
+      }
+      return rib::Walk::Continue;
+   });
 }
 
 extern "C" const char *rib_rmlui_changed_part(void)
@@ -1654,9 +1427,9 @@ extern "C" const char *rib_rmlui_screen_panel(const char *id)
 
 extern "C" void rib_rmlui_set_slider(const char *id, float fraction, const char *readout)
 {
-   if (!document || !id)
+   if (!view.root() || !id)
       return;
-   if (Rml::Element *slider = document->GetElementById(id))
+   if (Rml::Element *slider = view.root()->GetElementById(id))
       if (slider->IsClassSet("slider"))
          paint_slider(slider, fraction, readout);
 }
@@ -1685,9 +1458,9 @@ extern "C" bool rib_rmlui_nudge_slider(const char *id, int direction)
 
 extern "C" bool rib_rmlui_commit_slider(const char *id, float fraction)
 {
-   if (!document || !id)
+   if (!view.root() || !id)
       return false;
-   Rml::Element *slider = document->GetElementById(id);
+   Rml::Element *slider = view.root()->GetElementById(id);
    if (!slider || !slider->IsClassSet("slider"))
       return false;
    float before = 0.0f;
@@ -1733,35 +1506,25 @@ static void end_drag(void)
 
 static void collect_focusable(Rml::Element *node, std::vector<std::string> &out)
 {
-   if (!node)
-      return;
-   /* We keep a hidden entry in the document, because we cannot create it in
-    * the player after the core reports how many discs it loaded. It must not
-    * be a stop, or moving down from CONTROLS would reach DISC and show nothing.
-    * display:none alone is not enough, because in the pause walk we skip only
-    * disabled entries. In this walk we skip both, and we also disable the
-    * entry. */
-   if (rib_display_none(node) || node->HasAttribute("disabled")
-         || node->IsClassSet("disabled"))
-      return;
-   /* The arrows next to a slider are for stepping it with a pointer. Left
-    * and right on the slider already step it, so an arrow is not a stop, and
-    * moving down from the slider does not reach the arrows. */
-   const bool affordance = node->IsClassSet("volume-arrow");
-   const bool part = !affordance && (node->IsClassSet("slider")
-         || node->IsClassSet("toggle") || node->IsClassSet("menu-action"));
-   if (part && !node->GetId().empty())
-      out.push_back(node->GetId());
-   const int count = node->GetNumChildren();
-   for (int index = 0; index < count; ++index)
-      collect_focusable(node->GetChild(index), out);
+   rib::walk(node, [&](Rml::Element *element) {
+      if (display_none(element) || element->HasAttribute("disabled")
+            || element->IsClassSet("disabled"))
+         return rib::Walk::SkipChildren;
+      // The pointer arrows are still not keyboard stops.
+      const bool part = !element->IsClassSet("volume-arrow")
+            && (element->IsClassSet("slider") || element->IsClassSet("toggle")
+               || element->IsClassSet("menu-action"));
+      if (part && !element->GetId().empty())
+         out.push_back(element->GetId());
+      return rib::Walk::Continue;
+   });
 }
 
 extern "C" int rib_rmlui_focusables(const char *panel, char ids[][64], int capacity)
 {
-   if (!document || !panel || !ids || capacity <= 0)
+   if (!view.root() || !panel || !ids || capacity <= 0)
       return 0;
-   Rml::Element *root = document->GetElementById(panel);
+   Rml::Element *root = view.root()->GetElementById(panel);
    std::vector<std::string> found;
    collect_focusable(root, found);
    int count = 0;
@@ -1780,15 +1543,15 @@ extern "C" void rib_rmlui_mark_focused(const char *panel, const char *id)
    char ids[16][64];
    const int count = rib_rmlui_focusables(panel, ids, 16);
    for (int index = 0; index < count; ++index)
-      if (Rml::Element *element = document->GetElementById(ids[index]))
+      if (Rml::Element *element = view.root()->GetElementById(ids[index]))
          element->SetClass("focused", id && std::strcmp(ids[index], id) == 0);
 }
 
 extern "C" bool rib_rmlui_part_is_slider(const char *id)
 {
-   if (!document || !id)
+   if (!view.root() || !id)
       return false;
-   Rml::Element *element = document->GetElementById(id);
+   Rml::Element *element = view.root()->GetElementById(id);
    return element && element->IsClassSet("slider");
 }
 
@@ -1796,23 +1559,23 @@ extern "C" void rib_rmlui_pointer_move(int x, int y)
 {
    pointer_x = x;
    pointer_y = y;
-   if (context)
-      context->ProcessMouseMove(x, y, 0);
+   if (view.get_context())
+      view.get_context()->ProcessMouseMove(x, y, 0);
    if (slider_drag)
       drag_to(x);
 }
 
 extern "C" void rib_rmlui_pointer_button(bool down)
 {
-   if (!context)
+   if (!view.get_context())
       return;
    if (down == pointer_down)
       return;
    pointer_down = down;
    if (down)
    {
-      context->ProcessMouseButtonDown(0, 0);
-      if (Rml::Element *slider = slider_ancestor(context->GetHoverElement()))
+      view.get_context()->ProcessMouseButtonDown(0, 0);
+      if (Rml::Element *slider = slider_ancestor(view.get_context()->GetHoverElement()))
       {
          slider_drag = slider;
          slider_drag_id = slider->GetId();
@@ -1828,7 +1591,7 @@ extern "C" void rib_rmlui_pointer_button(bool down)
    {
       if (slider_drag)
          drag_to(pointer_x);
-      context->ProcessMouseButtonUp(0, 0);
+      view.get_context()->ProcessMouseButtonUp(0, 0);
       end_drag();
    }
 }
@@ -1851,25 +1614,25 @@ extern "C" void rib_rmlui_clear_intents(void)
 
 extern "C" void rib_rmlui_pointer_leave(void)
 {
-   if (!context)
+   if (!view.get_context())
       return;
-   context->ProcessMouseLeave();
+   view.get_context()->ProcessMouseLeave();
    HoverListener::hovered_action = RIB_RMLUI_ACTION_NONE;
    if (slider_drag)
       end_drag();
    if (pointer_down)
    {
       pointer_down = false;
-      context->ProcessMouseButtonUp(0, 0);
+      view.get_context()->ProcessMouseButtonUp(0, 0);
    }
 }
 
 extern "C" bool rib_rmlui_element_center(const char *id, int *x, int *y)
 {
-   if (!context || !document || !id || !x || !y)
+   if (!view.get_context() || !view.root() || !id || !x || !y)
       return false;
-   context->Update();
-   Rml::Element *element = document->GetElementById(id);
+   view.get_context()->Update();
+   Rml::Element *element = view.root()->GetElementById(id);
    if (!element)
       return false;
    const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
@@ -1881,10 +1644,10 @@ extern "C" bool rib_rmlui_element_center(const char *id, int *x, int *y)
 
 extern "C" bool rib_rmlui_element_box(const char *id, int *x, int *y, int *w, int *h)
 {
-   if (!context || !document || !id || !x || !y || !w || !h)
+   if (!view.get_context() || !view.root() || !id || !x || !y || !w || !h)
       return false;
-   context->Update();
-   Rml::Element *element = document->GetElementById(id);
+   view.get_context()->Update();
+   Rml::Element *element = view.root()->GetElementById(id);
    if (!element)
       return false;
    const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
@@ -1898,9 +1661,9 @@ extern "C" bool rib_rmlui_element_box(const char *id, int *x, int *y, int *w, in
 
 extern "C" int rib_rmlui_hovered_list_row(void)
 {
-   if (!context || !document)
+   if (!view.get_context() || !view.root())
       return -1;
-   Rml::Element *cursor = context->GetHoverElement();
+   Rml::Element *cursor = view.get_context()->GetHoverElement();
    Rml::Element *row = nullptr;
    for (; cursor; cursor = cursor->GetParentNode())
    {
@@ -1922,33 +1685,25 @@ extern "C" int rib_rmlui_hovered_list_row(void)
 
 extern "C" bool rib_rmlui_element_disabled(const char *id)
 {
-   if (!document || !id)
+   if (!view.root() || !id)
       return false;
-   Rml::Element *element = document->GetElementById(id);
+   Rml::Element *element = view.root()->GetElementById(id);
    return element && element->HasAttribute("disabled");
 }
 
 extern "C" bool rib_rmlui_reload_if_changed(void)
 {
-   if (!context || !document)
+   if (!view.reload_if_changed())
       return false;
-
-   const time_t current_rml_mtime = modification_time(asset_path("menu.rml"));
-   const time_t current_rcss_mtime = modification_time(asset_path("menu.rcss"));
-   if (current_rml_mtime == rml_mtime && current_rcss_mtime == rcss_mtime)
-      return false;
-
-   document->Close();
-   document = nullptr;
-   Rml::Factory::ClearStyleSheetCache();
-   return load_document();
+   wire_document();
+   return true;
 }
 
 static void rib_set_text(const std::string& id, const char *text)
 {
-   if (!document)
+   if (!view.root())
       return;
-   if (Rml::Element *element = document->GetElementById(id))
+   if (Rml::Element *element = view.root()->GetElementById(id))
       element->SetInnerRML(Rml::StringUtilities::EncodeRml(text ? text : ""));
 }
 
@@ -1972,9 +1727,9 @@ extern "C" void rib_rmlui_set_row_text(const char *id, const char *title,
 
 extern "C" void rib_rmlui_set_shown(const char *id, bool shown)
 {
-   if (!document || !id)
+   if (!view.root() || !id)
       return;
-   if (Rml::Element *element = document->GetElementById(id))
+   if (Rml::Element *element = view.root()->GetElementById(id))
    {
       if (shown)
          element->RemoveProperty("display");
@@ -1985,9 +1740,9 @@ extern "C" void rib_rmlui_set_shown(const char *id, bool shown)
 
 extern "C" void rib_rmlui_set_disabled(const char *id, bool disabled)
 {
-   if (!document || !id)
+   if (!view.root() || !id)
       return;
-   Rml::Element *element = document->GetElementById(id);
+   Rml::Element *element = view.root()->GetElementById(id);
    if (!element)
       return;
    element->SetClass("disabled", disabled);
@@ -2066,14 +1821,14 @@ extern "C" void rib_rmlui_fit_row_title(const char *id, const char *text)
       return;
    const std::string title_id = std::string(id) + "-title";
    const std::string source = text ? text : "";
-   Rml::Element *element = document ? document->GetElementById(title_id) : nullptr;
-   if (!element || !context)
+   Rml::Element *element = view.root() ? view.root()->GetElementById(title_id) : nullptr;
+   if (!element || !view.get_context())
    {
       rib_set_text(title_id, source.c_str());
       return;
    }
-   context->Update();
-   const float density = std::max(context->GetDensityIndependentPixelRatio(), 0.1f);
+   view.get_context()->Update();
+   const float density = std::max(view.get_context()->GetDensityIndependentPixelRatio(), 0.1f);
    const float block = rib_block_dp(element);
    const float limit_dp = block
          - rib_specified_dp(element, "left")
@@ -2121,15 +1876,15 @@ extern "C" void rib_rmlui_fit_row_title(const char *id, const char *text)
 extern "C" void rib_rmlui_select_row(const char *list_id, const char *row_id,
       const char *on, const char *off)
 {
-   if (!document || !list_id)
+   if (!view.root() || !list_id)
       return;
    std::vector<Rml::Element*> rows;
-   rib_collect(rib_list_element(list_id), "list-row", rows);
+   collect(rib_list_element(list_id), "list-row", rows);
    for (Rml::Element *row : rows)
    {
       const bool selected = row_id && row->GetId() == row_id;
       row->SetClass("selected", selected);
-      if (Rml::Element *state = document->GetElementById(row->GetId() + "-state"))
+      if (Rml::Element *state = view.root()->GetElementById(row->GetId() + "-state"))
          state->SetInnerRML(Rml::StringUtilities::EncodeRml(
                selected ? (on ? on : "") : (off ? off : "")));
    }
@@ -2137,15 +1892,15 @@ extern "C" void rib_rmlui_select_row(const char *list_id, const char *row_id,
 
 static Rml::Element *rib_list_element(const char *list_id)
 {
-   if (!document || !list_id || !*list_id)
+   if (!view.root() || !list_id || !*list_id)
       return nullptr;
-   return document->GetElementById(list_id);
+   return view.root()->GetElementById(list_id);
 }
 
 extern "C" int rib_rmlui_rows_in(const char *list_id)
 {
    std::vector<Rml::Element*> rows;
-   rib_collect(rib_list_element(list_id), "list-row", rows);
+   collect(rib_list_element(list_id), "list-row", rows);
    return (int)rows.size();
 }
 
@@ -2153,7 +1908,7 @@ extern "C" const char *rib_rmlui_row_in(const char *list_id, int index)
 {
    static std::string id;
    std::vector<Rml::Element*> rows;
-   rib_collect(rib_list_element(list_id), "list-row", rows);
+   collect(rib_list_element(list_id), "list-row", rows);
    id.clear();
    if (index >= 0 && index < (int)rows.size())
       id = rows[index]->GetId();
@@ -2166,7 +1921,7 @@ extern "C" void rib_rmlui_retarget_pages(const char *list_id)
    if (!list)
       return;
    std::vector<Rml::Element*> pages;
-   rib_collect(list, "list-page", pages);
+   collect(list, "list-page", pages);
    std::vector<Rml::Element*> usable;
    for (Rml::Element *page : pages)
    {
@@ -2183,7 +1938,7 @@ extern "C" void rib_rmlui_retarget_pages(const char *list_id)
          usable[index]->SetProperty("display", "none");
    }
    std::vector<Rml::Element*> pagers;
-   rib_collect(list, "list-pager", pagers);
+   collect(list, "list-pager", pagers);
    if (pagers.empty())
       return;
    if (usable.size() < 2)
@@ -2193,7 +1948,7 @@ extern "C" void rib_rmlui_retarget_pages(const char *list_id)
    }
    pagers[0]->RemoveProperty("display");
    std::vector<Rml::Element*> counts;
-   rib_collect(list, "list-pager-count", counts);
+   collect(list, "list-pager-count", counts);
    if (!counts.empty())
    {
       char label[32];
@@ -2207,432 +1962,29 @@ extern "C" void rib_rmlui_retarget_pages(const char *list_id)
  * because they are not a gap to leave free for the text. */
 static float rib_specified_dp(Rml::Element *element, const char *name)
 {
-   const Rml::Property *property = element ? element->GetProperty(name) : nullptr;
-   if (!property)
-      return 0.f;
-   if (property->unit != Rml::Unit::DP && property->unit != Rml::Unit::PX
-         && property->unit != Rml::Unit::NUMBER)
-      return 0.f;
-   const float value = property->value.Get<float>();
-   if (property->unit != Rml::Unit::PX || !context)
-      return value;
-   const float density = std::max(
-         context->GetDensityIndependentPixelRatio(), 0.1f);
-   return value / density;
-}
-
-/* The width required for the widest row, in dp, at most the width in the
- * design.
- *
- * The three parts of a row are absolutely positioned, so the box has no
- * natural width. The `right` offset of the title is not the detail slot.
- * The title stops 120dp from the edge and the detail is 128dp wide, so a
- * size from that offset would draw the title on top of the detail.
- * The width is the words of the title, a gap, and the fixed slots. While
- * the pager is open, the width is at least that of its buttons. */
-static int rib_list_width(Rml::Element *list, int declared)
-{
-   static const char *const parts[] = {"list-row-title", "list-row-detail",
-         "list-row-state"};
-   const float density = std::max(context
-         ? context->GetDensityIndependentPixelRatio() : 1.f, 0.1f);
-   float widest = 0.f;
-   std::vector<Rml::Element*> rows;
-
-   rib_collect(list, "list-row", rows);
-   for (Rml::Element *row : rows)
-   {
-      if (rib_hidden(row))
-         continue;
-      float glyphs = 0.f;
-      float reserved = 0.f;
-      for (const char *part : parts)
-      {
-         std::vector<Rml::Element*> found;
-         rib_collect(row, part, found);
-         for (Rml::Element *element : found)
-         {
-            if (rib_display_none(element))
-               continue;
-            const Rml::String text = element->GetInnerRML();
-            if (text.empty())
-               continue;
-            const float words = Rml::ElementUtilities::GetStringWidth(
-                  element, text) / density;
-            const float left = rib_specified_dp(element, "left");
-            const float right = rib_specified_dp(element, "right");
-            const float width = rib_specified_dp(element, "width");
-            const Rml::Property *left_prop = element->GetProperty("left");
-            const Rml::Property *right_prop = element->GetProperty("right");
-            const bool left_set = left_prop
-                  && left_prop->unit != Rml::Unit::KEYWORD;
-            const bool right_set = right_prop
-                  && right_prop->unit != Rml::Unit::KEYWORD;
-            if (left_set && right_set && width <= 0.f)
-               glyphs = std::max(glyphs, left + words);
-            else if (width > 0.f && right_set)
-               reserved = std::max(reserved, right + std::max(width, words));
-            else
-               glyphs = std::max(glyphs, words);
-         }
-      }
-      /* 8dp between the title's last letter and the detail's slot. Without
-       * it the two strings run together, as in "ABUTTON". */
-      const float need = glyphs + reserved + (glyphs > 0.f && reserved > 0.f ? 8.f : 0.f);
-      if (need > widest)
-         widest = need;
-   }
-
-   std::vector<Rml::Element*> pagers;
-   rib_collect(list, "list-pager", pagers);
-   if (!pagers.empty() && !rib_display_none(pagers[0]) && !rib_hidden(pagers[0]))
-   {
-      for (const char *cls : {"list-pager-prev", "list-pager-count",
-            "list-pager-next"})
-      {
-         std::vector<Rml::Element*> found;
-         rib_collect(pagers[0], cls, found);
-         for (Rml::Element *button : found)
-         {
-            const float edge = rib_specified_dp(button, "left")
-                  + rib_specified_dp(button, "width");
-            if (edge > widest)
-               widest = edge;
-         }
-      }
-   }
-
-   if (widest <= 0.f)
-      return declared;
-   const int dp = (int)std::ceil(widest);
-   return dp < declared ? dp : declared;
-}
-
-/* How far a visible child is drawn outside the border box of the list. A
- * row is 100% wide plus its border, so it extends past the box. With a
- * clamp that measured only the list, the row would end on the last pixel. */
-static void rib_paint_overflow(Rml::Element *list,
-      float &extra_left, float &extra_top, float &extra_right, float &extra_bottom)
-{
-   extra_left = extra_top = extra_right = extra_bottom = 0.f;
-   const Rml::Vector2f list_at = list->GetAbsoluteOffset(Rml::BoxArea::Border);
-   const Rml::Vector2f list_size = list->GetBox().GetSize(Rml::BoxArea::Border);
-   const char *classes[] = {"list-row", "list-pager"};
-   for (const char *cls : classes)
-   {
-      std::vector<Rml::Element*> found;
-      rib_collect(list, cls, found);
-      for (Rml::Element *child : found)
-      {
-         if (rib_hidden(child))
-            continue;
-         const Rml::Vector2f at = child->GetAbsoluteOffset(Rml::BoxArea::Border);
-         const Rml::Vector2f size = child->GetBox().GetSize(Rml::BoxArea::Border);
-         extra_left = std::max(extra_left, list_at.x - at.x);
-         extra_top = std::max(extra_top, list_at.y - at.y);
-         extra_right = std::max(extra_right,
-               at.x + size.x - (list_at.x + list_size.x));
-         extra_bottom = std::max(extra_bottom,
-               at.y + size.y - (list_at.y + list_size.y));
-      }
-   }
-}
-
-/* `left`/`top` are added to the padding edge of the offset parent (and to the
- * margin of the element), so we store in the clamp a distance from that
- * padding edge. From the border edge of the screen, the list would be one
- * border width too far right, and in a 2x window its border would be on the
- * last pixel of the window. */
-static void rib_set_border_position(Rml::Element *list, float abs_x, float abs_y)
-{
-   float origin_x = 0.f;
-   float origin_y = 0.f;
-   if (Rml::Element *parent = list->GetOffsetParent())
-   {
-      const Rml::Vector2f padding =
-            parent->GetAbsoluteOffset(Rml::BoxArea::Padding);
-      origin_x = padding.x;
-      origin_y = padding.y;
-   }
-   const float margin_x = list->GetBox().GetEdge(
-         Rml::BoxArea::Margin, Rml::BoxEdge::Left);
-   const float margin_y = list->GetBox().GetEdge(
-         Rml::BoxArea::Margin, Rml::BoxEdge::Top);
-   list->SetProperty("left", std::to_string(
-         (int)std::lround(abs_x - origin_x - margin_x)) + "px");
-   list->SetProperty("top", std::to_string(
-         (int)std::lround(abs_y - origin_y - margin_y)) + "px");
-}
-
-static void rib_clamp_border(float &x, float &y, float w, float h,
-      const Rml::Vector2f &screen_at, const Rml::Vector2f &screen_size)
-{
-   const float margin = 8.f;
-   const float min_x = screen_at.x + margin;
-   const float min_y = screen_at.y + margin;
-   const float max_x = screen_at.x + screen_size.x - margin;
-   const float max_y = screen_at.y + screen_size.y - margin;
-   if (x + w > max_x)
-      x = max_x - w;
-   if (x < min_x)
-      x = min_x;
-   if (y + h > max_y)
-      y = max_y - h;
-   if (y < min_y)
-      y = min_y;
-}
-
-/* What a list must not cover.
- *
- * A callout or a stick group is a label, except the one the list is for.
- * The player is reading that box, so it counts as chrome, which the list
- * may never cover. The leader line and the hit ring are not in this table.
- * The heading, the label and button of the controller picker, the buttons
- * of the screen, the status line and the footer are chrome too. The option
- * list of the picker is display:none while a bind list is open, and we
- * skip the pager, a menu-action inside the list. */
-struct rib_keep_clear
-{
-   const char *name;
-   bool id;
-   bool label;
-};
-
-static const rib_keep_clear rib_keep_clear_rules[] = {
-   {"control-callout", false, true},
-   {"control-group", false, true},
-   {"menu-action", false, false},
-   {"heading", true, false},
-   {"control-picker-label", false, false},
-   {"control-picker-current", false, false},
-   {"controls-status", true, false},
-   {"footer", true, false},
-};
-
-static bool rib_under(Rml::Element *ancestor, Rml::Element *element)
-{
-   for (Rml::Element *node = element; node; node = node->GetParentNode())
-      if (node == ancestor)
-         return true;
-   return false;
-}
-
-static void rib_count_covered(Rml::Element *list, const char *anchor_id,
-      float left, float top, float width, float height,
-      int &labels, int &chrome)
-{
-   labels = 0;
-   chrome = 0;
-   std::set<Rml::String> seen;
-   for (const rib_keep_clear &rule : rib_keep_clear_rules)
-   {
-      std::vector<Rml::Element*> found;
-      if (rule.id)
-      {
-         if (Rml::Element *element = document->GetElementById(rule.name))
-            found.push_back(element);
-      }
-      else
-         rib_collect(document, rule.name, found);
-      for (Rml::Element *element : found)
-      {
-         if (!element || rib_hidden(element) || (list && rib_under(list, element)))
-            continue;
-         const Rml::String id = element->GetId();
-         if (id.empty() || !seen.insert(id).second)
-            continue;
-         const Rml::Vector2f at = element->GetAbsoluteOffset(Rml::BoxArea::Border);
-         const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
-         if (at.x < left + width && at.x + size.x > left
-               && at.y < top + height && at.y + size.y > top)
-         {
-            /* The anchor matches a label rule. Count it as chrome, so we
-             * prefer a spot that leaves the control being read uncovered. */
-            if (rule.label && !(anchor_id && id == anchor_id))
-               ++labels;
-            else
-               ++chrome;
-         }
-      }
-   }
+   return rib::specified_dp(element, name, view.get_context());
 }
 
 extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
       int width_dp)
 {
-   Rml::Element *list = rib_list_element(list_id);
-   Rml::Element *anchor = document && anchor_id ? document->GetElementById(anchor_id) : nullptr;
-   Rml::Element *screen = document ? document->GetElementById("screen") : nullptr;
-   if (!list || !context)
-      return;
-   list->RemoveProperty("display");
-   if (width_dp > 0)
-      list->SetProperty("width", std::to_string(rib_list_width(list, width_dp)) + "dp");
-   if (!anchor || !screen)
-      return;
-   context->Update();
-   const Rml::Vector2f screen_at = screen->GetAbsoluteOffset(Rml::BoxArea::Border);
-   const Rml::Vector2f anchor_at = anchor->GetAbsoluteOffset(Rml::BoxArea::Border);
-   const Rml::Vector2f anchor_size = anchor->GetBox().GetSize(Rml::BoxArea::Border);
-   const Rml::Vector2f list_size = list->GetBox().GetSize(Rml::BoxArea::Border);
-   const Rml::Vector2f screen_size = screen->GetBox().GetSize(Rml::BoxArea::Border);
-   float extra_left = 0.f, extra_top = 0.f, extra_right = 0.f, extra_bottom = 0.f;
-   rib_paint_overflow(list, extra_left, extra_top, extra_right, extra_bottom);
-   const float paint_w = list_size.x + extra_left + extra_right;
-   const float paint_h = list_size.y + extra_top + extra_bottom;
-   const float gap = 4.f;
-
-   /* Beside the label, toward the pad (over the drawing), then below, then
-    * above. Covering the drawing is fine. Covering another label is not. */
-   float scene_cx = anchor_at.x + anchor_size.x * 0.5f;
-   if (Rml::Element *scene = document->GetElementById("controller-scene"))
-   {
-      const Rml::Vector2f scene_at = scene->GetAbsoluteOffset(Rml::BoxArea::Border);
-      const Rml::Vector2f scene_size = scene->GetBox().GetSize(Rml::BoxArea::Border);
-      scene_cx = scene_at.x + scene_size.x * 0.5f;
-   }
-   const float anchor_cx = anchor_at.x + anchor_size.x * 0.5f;
-   const float beside_x = scene_cx >= anchor_cx
-         ? anchor_at.x + anchor_size.x + gap
-         : anchor_at.x - list_size.x - gap;
-   const float away_x = scene_cx >= anchor_cx
-         ? anchor_at.x - list_size.x - gap
-         : anchor_at.x + anchor_size.x + gap;
-   /* Clamping can move the spots beside and away back onto the anchor. We
-    * may cover the drawing, so once each of the four sides covers something,
-    * we also try the middle of the pad and the screen margins. */
-   std::vector<float> columns = {
-      beside_x,
-      anchor_at.x,
-      away_x,
-      screen_at.x + 8.f,
-      screen_at.x + screen_size.x - list_size.x - 8.f,
-   };
-   if (Rml::Element *scene = document->GetElementById("controller-scene"))
-   {
-      const Rml::Vector2f scene_at = scene->GetAbsoluteOffset(Rml::BoxArea::Border);
-      const Rml::Vector2f scene_size = scene->GetBox().GetSize(Rml::BoxArea::Border);
-      columns.push_back(scene_at.x + gap);
-      columns.push_back(scene_at.x + (scene_size.x - list_size.x) * 0.5f);
-      columns.push_back(scene_at.x + scene_size.x - list_size.x - gap);
-   }
-   std::vector<std::pair<float, float>> spots = {
-      {beside_x, anchor_at.y},
-      {anchor_at.x, anchor_at.y + anchor_size.y + gap},
-      {anchor_at.x, anchor_at.y - list_size.y - gap},
-      {away_x, anchor_at.y},
-   };
-
-   float best_x = anchor_at.x;
-   float best_y = anchor_at.y + anchor_size.y + gap;
-   int best_labels = 1000000;
-   int best_chrome = 1000000;
-   bool best_inside = false;
-   bool have = false;
-   bool settled = false;
-   for (size_t index = 0; index < spots.size() && !settled; ++index)
-   {
-      float x = spots[index].first;
-      float y = spots[index].second;
-      rib_clamp_border(x, y, paint_w, paint_h, screen_at, screen_size);
-      /* Clamping moves the border box of the list. Children that extend past
-       * it must stay inside the same margin, so we test the painted area. */
-      const float paint_x = x - extra_left;
-      const float paint_y = y - extra_top;
-      const bool inside =
-            paint_x >= screen_at.x + 8.f - 0.5f
-            && paint_y >= screen_at.y + 8.f - 0.5f
-            && paint_x + paint_w <= screen_at.x + screen_size.x - 8.f + 0.5f
-            && paint_y + paint_h <= screen_at.y + screen_size.y - 8.f + 0.5f;
-      int labels = 0;
-      int chrome = 0;
-      rib_count_covered(list, anchor_id, paint_x, paint_y, paint_w, paint_h,
-            labels, chrome);
-      if (inside && chrome == 0 && labels == 0)
-      {
-         best_x = x;
-         best_y = y;
-         settled = true;
-         break;
-      }
-      const bool better = !have
-            || (inside && !best_inside)
-            || (inside == best_inside && chrome < best_chrome)
-            || (inside == best_inside && chrome == best_chrome && labels < best_labels);
-      if (better)
-      {
-         best_x = x;
-         best_y = y;
-         best_labels = labels;
-         best_chrome = chrome;
-         best_inside = inside;
-         have = true;
-      }
-      /* We try the three sides first. Only when each of them covers a button,
-       * the status line or the footer do we look for a place clear of those.
-       * When we count what a side covers, we still count only labels. */
-      if (index == 3 && (best_chrome > 0 || best_labels > 0))
-      {
-         for (const rib_keep_clear &rule : rib_keep_clear_rules)
-         {
-            if (rule.label)
-               continue;
-            std::vector<Rml::Element*> found;
-            if (rule.id)
-            {
-               if (Rml::Element *element = document->GetElementById(rule.name))
-                  found.push_back(element);
-            }
-            else
-               rib_collect(document, rule.name, found);
-            for (Rml::Element *element : found)
-            {
-               if (!element || rib_hidden(element) || rib_under(list, element))
-                  continue;
-               const float top = element->GetAbsoluteOffset(Rml::BoxArea::Border).y;
-               for (float column : columns)
-                  spots.emplace_back(column, top - paint_h - gap);
-            }
-         }
-         const float min_y = screen_at.y + 8.f;
-         const float max_y = screen_at.y + screen_size.y - 8.f - paint_h;
-         for (float scan_y = min_y; scan_y <= max_y; scan_y += 24.f)
-            for (float column : columns)
-               spots.emplace_back(column, scan_y);
-      }
-   }
-   rib_set_border_position(list, best_x, best_y);
+   rib::place_binds_popup(view.root(), view.get_context(), list_id, anchor_id, width_dp);
 }
 
-/* Relative to the screen. The labels are the callout and group elements in
- * the document. The box of a stick is control-group-l_stick, not
- * control-group- plus an axis id, so we would not find it in the control table. */
 extern "C" int rib_rmlui_controls_covered(const char *anchor_id,
       int left, int top, int width, int height)
 {
-   if (!document || !context || width <= 0 || height <= 0)
-      return 0;
-   context->Update();
-   Rml::Element *screen = document->GetElementById("screen");
-   if (!screen)
-      return 0;
-   const Rml::Vector2f origin = screen->GetAbsoluteOffset(Rml::BoxArea::Border);
-   int labels = 0;
-   int chrome = 0;
-   rib_count_covered(nullptr, anchor_id,
-         origin.x + (float)left, origin.y + (float)top,
-         (float)width, (float)height, labels, chrome);
-   return labels;
+   return rib::popup_covered_labels(view.root(), view.get_context(), anchor_id, left, top, width, height);
 }
 
 extern "C" bool rib_rmlui_pointer_inside(const char *id, int x, int y)
 {
-   if (!document || !context || !id)
+   if (!view.root() || !view.get_context() || !id)
       return false;
-   Rml::Element *element = document->GetElementById(id);
-   if (!element || rib_hidden(element))
+   Rml::Element *element = view.root()->GetElementById(id);
+   if (!element || hidden(element))
       return false;
-   context->Update();
+   view.get_context()->Update();
    const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
    const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
    return x >= (int)offset.x && x < (int)(offset.x + size.x)
@@ -2651,15 +2003,15 @@ extern "C" bool rib_rmlui_move_pointer_to(const char *id)
 
 extern "C" bool rib_rmlui_has_element(const char *id)
 {
-   return document && id && document->GetElementById(id);
+   return view.root() && id && view.root()->GetElementById(id);
 }
 
 extern "C" void rib_rmlui_focus_group(const char *group)
 {
-   if (!document)
+   if (!view.root())
       return;
    std::vector<Rml::Element*> groups;
-   rib_collect(document, "control-group", groups);
+   collect(view.root(), "control-group", groups);
    const std::string wanted = group && *group
          ? std::string("control-group-") + group : std::string();
    for (Rml::Element *element : groups)
@@ -2672,15 +2024,15 @@ extern "C" void rib_rmlui_focus_group(const char *group)
  * space and draw it in another, and only from the box after layout can we tell which. */
 extern "C" bool rib_rmlui_test_row_glyphs_overlap(const char *row_id)
 {
-   if (!document || !context || !row_id)
+   if (!view.root() || !view.get_context() || !row_id)
       return false;
-   context->Update();
-   Rml::Element *row = document->GetElementById(row_id);
-   if (!row || rib_hidden(row))
+   view.get_context()->Update();
+   Rml::Element *row = view.root()->GetElementById(row_id);
+   if (!row || hidden(row))
       return false;
    auto span = [](Rml::Element *element, bool right_aligned,
          float &left, float &right) -> bool {
-      if (!element || rib_display_none(element))
+      if (!element || display_none(element))
          return false;
       const Rml::String text = element->GetInnerRML();
       if (text.empty())
@@ -2704,8 +2056,8 @@ extern "C" bool rib_rmlui_test_row_glyphs_overlap(const char *row_id)
    };
    std::vector<Rml::Element*> titles;
    std::vector<Rml::Element*> details;
-   rib_collect(row, "list-row-title", titles);
-   rib_collect(row, "list-row-detail", details);
+   collect(row, "list-row-title", titles);
+   collect(row, "list-row-detail", details);
    if (titles.empty() || details.empty())
       return false;
    float title_left = 0.f, title_right = 0.f, detail_left = 0.f, detail_right = 0.f;
@@ -2717,11 +2069,11 @@ extern "C" bool rib_rmlui_test_row_glyphs_overlap(const char *row_id)
 
 extern "C" bool rib_rmlui_test_box(const char *id, int *x, int *y, int *w, int *h)
 {
-   if (!document || !context || !id || !x || !y || !w || !h)
+   if (!view.root() || !view.get_context() || !id || !x || !y || !w || !h)
       return false;
-   context->Update();
-   Rml::Element *element = document->GetElementById(id);
-   if (!element || rib_hidden(element))
+   view.get_context()->Update();
+   Rml::Element *element = view.root()->GetElementById(id);
+   if (!element || hidden(element))
       return false;
    const Rml::Vector2f at = element->GetAbsoluteOffset(Rml::BoxArea::Border);
    const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
@@ -2740,9 +2092,9 @@ extern "C" int rib_rmlui_test_class_count(const char *class_name)
 {
    std::vector<Rml::Element*> found;
    int count = 0;
-   rib_collect(document, class_name, found);
+   collect(view.root(), class_name, found);
    for (Rml::Element *element : found)
-      if (!element->GetId().empty() && !rib_hidden(element))
+      if (!element->GetId().empty() && !hidden(element))
          ++count;
    return count;
 }
@@ -2753,10 +2105,10 @@ extern "C" const char *rib_rmlui_test_class_id(const char *class_name, int index
    std::vector<Rml::Element*> found;
    int seen = 0;
    id.clear();
-   rib_collect(document, class_name, found);
+   collect(view.root(), class_name, found);
    for (Rml::Element *element : found)
    {
-      if (element->GetId().empty() || rib_hidden(element))
+      if (element->GetId().empty() || hidden(element))
          continue;
       if (seen == index)
       {
@@ -2771,15 +2123,15 @@ extern "C" const char *rib_rmlui_test_class_id(const char *class_name, int index
 extern "C" const char *rib_rmlui_test_property(const char *id, const char *property)
 {
    static std::string value;
-   context->Update();
-   auto *element = document->GetElementById(id);
+   view.get_context()->Update();
+   auto *element = view.root()->GetElementById(id);
    value = element && element->GetProperty(property) ? element->GetProperty(property)->ToString() : "";
    return value.c_str();
 }
 #endif
 
 #ifdef RIB_RMLUI_HEADLESS
-extern "C" unsigned rib_rmlui_test_texture_loads() { return test_texture_loads; }
+extern "C" unsigned rib_rmlui_test_texture_loads() { return view.texture_loads(); }
 #endif
 
 /* We walk these classes only at explicit script checkpoints, never in normal
@@ -2816,11 +2168,11 @@ extern "C" const char *rib_rmlui_script_report(const char *screen, bool menu_ope
    {
       report += "," + quote(name) + ":[";
       std::vector<Rml::Element*> found;
-      rib_collect(document, name, found);
+      collect(view.root(), name, found);
       bool comma = false;
       for (Rml::Element *element : found)
       {
-         if (element->GetId().empty() || rib_hidden(element)) continue;
+         if (element->GetId().empty() || hidden(element)) continue;
          if (comma) report += ',';
          report += quote(element->GetId());
          comma = true;
@@ -2833,8 +2185,8 @@ extern "C" const char *rib_rmlui_script_report(const char *screen, bool menu_ope
          "controls-device-current", "volume-value", "shaders-page-count",
          "achievements-page-count", "achievement-mode-state", "control-binds"})
    {
-      Rml::Element *element = document ? document->GetElementById(id) : nullptr;
-      if (!element || rib_hidden(element)) continue;
+      Rml::Element *element = view.root() ? view.root()->GetElementById(id) : nullptr;
+      if (!element || hidden(element)) continue;
       if (comma) report += ',';
       report += quote(id) + ':' + quote(element->GetInnerRML());
       comma = true;
@@ -2855,8 +2207,8 @@ extern "C" const char *rib_rmlui_script_report(const char *screen, bool menu_ope
       comma = true;
    }
    report += "},\"bindsBox\":[";
-   Rml::Element *binds = document ? document->GetElementById("control-binds") : nullptr;
-   if (binds && !rib_hidden(binds))
+   Rml::Element *binds = view.root() ? view.root()->GetElementById("control-binds") : nullptr;
+   if (binds && !hidden(binds))
    {
       const auto at = binds->GetAbsoluteOffset(Rml::BoxArea::Border);
       const auto size = binds->GetBox().GetSize(Rml::BoxArea::Border);
@@ -2871,13 +2223,13 @@ extern "C" const char *rib_rmlui_script_report(const char *screen, bool menu_ope
 }
 
 #ifdef RIB_RMLUI_HEADLESS
-extern "C" void rib_rmlui_test_advance(double seconds) { test_clock_offset += seconds; }
+extern "C" void rib_rmlui_test_advance(double seconds) { view.advance(seconds); }
 /* A check for an element that is not there must fail, not crash. If we
  * dereferenced the lookup, one wrong id would end the whole run and hide
  * every check after it. */
 extern "C" const char *rib_rmlui_test_text(const char *id) {
    static std::string text;
-   Rml::Element *element = document ? document->GetElementById(id) : nullptr;
+   Rml::Element *element = view.root() ? view.root()->GetElementById(id) : nullptr;
    text = element ? element->GetInnerRML() : std::string("<no element ") + id + ">";
    return text.c_str();
 }
@@ -2885,10 +2237,10 @@ extern "C" const char *rib_rmlui_test_text(const char *id) {
  * and not the internal state of the driver. The focus record in the driver and
  * the classes in the document can differ, and we draw only the classes. */
 extern "C" bool rib_rmlui_test_has_class(const char *id, const char *name) {
-   Rml::Element *element = document && id ? document->GetElementById(id) : nullptr;
+   Rml::Element *element = view.root() && id ? view.root()->GetElementById(id) : nullptr;
    return element && name && element->IsClassSet(name);
 }
 extern "C" float rib_rmlui_test_picture_aspect() {
-   context->Update(); auto size = document->GetElementById("slot-image-1")->GetParentNode()->GetBox().GetSize(Rml::BoxArea::Content); return size.x / size.y;
+   view.get_context()->Update(); auto size = view.root()->GetElementById("slot-image-1")->GetParentNode()->GetBox().GetSize(Rml::BoxArea::Content); return size.x / size.y;
 }
 #endif
