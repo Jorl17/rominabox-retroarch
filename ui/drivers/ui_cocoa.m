@@ -1655,7 +1655,16 @@ int main(int argc, char *argv[])
       /* setActivationPolicy: is 10.6+.  On Snow Leopard and later,
        * this is the official way to promote a bare-binary background
        * process to a regular GUI app that receives keystrokes. */
-      [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+      /* We make an automated run (ROMINABOX_QUIET) an accessory app for this
+       * launch only, so a test game does not appear in the Dock. We never set
+       * the switch in an ordinary launch. */
+      if (getenv("ROMINABOX_QUIET"))
+      {
+         BOOL accessory = [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+         fprintf(stderr, "[RIB] quiet activation %s\n", accessory ? "accessory" : "refused");
+      }
+      else
+         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 #else
       /* Pre-10.6: setActivationPolicy: doesn't exist.  For bare-
        * binary builds (no .app bundle wrapping, no Info.plist the
@@ -1685,7 +1694,8 @@ int main(int argc, char *argv[])
        * context presents the first intended frame. */
       if (!rominabox_window_title())
          [window makeKeyAndOrderFront:nil];
-      [NSApp activateIgnoringOtherApps:YES];
+      if (!getenv("ROMINABOX_QUIET"))
+         [NSApp activateIgnoringOtherApps:YES];
       [NSApp run];
 #ifdef HAVE_COCOA_METAL
    }
