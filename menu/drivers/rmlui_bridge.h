@@ -128,23 +128,6 @@ void rib_rmlui_declare_screen(const char *id, const char *panel,
  * with that name, because the design did not declare it. */
 bool rib_rmlui_show_screen(const char *id);
 
-/* The cue for an intent. We name it, so we can check it in a test without an
- * audio device, and so a new action is never silent by accident. */
-enum rib_menu_sound
-{
-   RIB_MENU_SOUND_NONE = 0,
-   RIB_MENU_SOUND_OK,
-   RIB_MENU_SOUND_CANCEL
-};
-
-enum rib_menu_sound rib_rmlui_action_sound(int action);
-
-/* The move cue of the sound pack: up when the level rises, down when it
- * falls. We count it in the headless bridge test, and in the player we play
- * the wav for a move from the pack. Do not call this for a step that leaves
- * the level as it is, because a step past either end is not a move. */
-void rib_rmlui_play_move_sound(int direction);
-
 /* The panel for a declared screen. Empty when there is no screen with that
  * name in the design. */
 const char *rib_rmlui_screen_panel(const char *id);

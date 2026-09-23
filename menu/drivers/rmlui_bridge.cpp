@@ -400,36 +400,6 @@ extern "C" void rib_rmlui_set_status(const char *status)
    status_view.set_main(status);
 }
 
-/* The sound for an intent.
- *
- * We play a sound for every action and list the silent exceptions by name, so
- * an action added later has a sound by default, and we always make silence an
- * explicit choice.
- */
-extern "C" enum rib_menu_sound rib_rmlui_action_sound(int action)
-{
-   switch (action)
-   {
-      case RIB_RMLUI_ACTION_NONE:
-         return RIB_MENU_SOUND_NONE;
-      /* Leaving a screen, rather than choosing something on it. */
-      case RIB_RMLUI_ACTION_RESUME:
-      case RIB_RMLUI_ACTION_CONTROLS_BACK:
-      case RIB_RMLUI_ACTION_CONTROLS_CANCEL:
-         return RIB_MENU_SOUND_CANCEL;
-      /* A slider step is navigation. We play the up or down cue of the sound
-       * pack when the level changes. Confirm as well would be a second sound,
-       * even at an end where the level did not move. */
-      case RIB_RMLUI_ACTION_SLIDER:
-      /* Moving the highlight between save slots is navigation, and we already
-       * play the movement cue for it, so a second sound would be one too many. */
-      case RIB_RMLUI_ACTION_SELECT_SLOT:
-         return RIB_MENU_SOUND_NONE;
-      default:
-         return RIB_MENU_SOUND_OK;
-   }
-}
-
 /* Replace the drawing in the controller scene.
  *
  * The export contains one of these for each pad in the picker, because we

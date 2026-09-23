@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <retro_miscellaneous.h>
 
 namespace rib {
 inline constexpr int kSlotCount = 6;
@@ -10,8 +11,8 @@ class Document;
 class Focus;
 class Status;
 
-/* The six save slots on screen and the thumbnail data we keep for them. The
- * storage and the save and load tasks belong to the menu and the host. */
+/* The selected slot, kept thumbnails, checks and the current save or load
+ * task. We store through the host, and match each callback to its request. */
 class Slots
 {
 public:
@@ -20,6 +21,13 @@ public:
    /* A new menu has a new Focus, but we keep this display state across new
     * documents and new menus. */
    void bind_focus(Focus& next) { focus = &next; }
+   enum class Transfer { Save, Load };
+   void reset_transfer() { transfer = {}; }
+   bool transfer_pending() const { return transfer.pending; }
+   bool load_available() const;
+   void refresh();
+   void request(Transfer kind);
+   void notify_task(const char *path, int slot, bool is_save, bool success);
    void paint() const;
    void set_selected_slot(int slot);
    void set_slot_state(int slot, bool occupied, const char *thumbnail_path);
@@ -31,6 +39,14 @@ public:
    bool has_thumbnail(int slot) const;
 
 private:
+   bool begin_transfer(Transfer kind);
+   struct Request
+   {
+      bool pending = false;
+      Transfer kind = Transfer::Load;
+      int slot = 0;
+      char path[PATH_MAX_LENGTH]{};
+   } transfer;
    struct SlotState
    {
       bool occupied = false;
