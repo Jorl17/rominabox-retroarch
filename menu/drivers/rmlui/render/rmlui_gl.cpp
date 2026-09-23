@@ -1,20 +1,14 @@
 #include "rmlui_gl.h"
+#include "platform.h"
 
 #include <RmlUi_Renderer_GL2.h>
 #include <RmlUi_Renderer_GL2.cpp>
 #include <RmlUi_Renderer_GL3.h>
-#include "third_party/lodepng.h"
+#include "../../third_party/lodepng.h"
 
 #include <cstdio>
 #include <type_traits>
 #include <vector>
-
-/* With a core profile there is no glBindVertexArray in the gl.h we include
- * here for the legacy backend. The core entry point is in the framework. */
-#ifndef GL_VERTEX_ARRAY_BINDING
-#define GL_VERTEX_ARRAY_BINDING 0x85B5
-#endif
-extern "C" void glBindVertexArray(GLuint array);
 
 namespace
 {

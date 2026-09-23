@@ -27,6 +27,9 @@
 #include "../menu_cbs.h"
 #include "rmlui_bridge.h"
 #include "rmlui_shader_mark.h"
+#include "rmlui/bind_lines.h"
+#include "rmlui/files.h"
+#include "rmlui/declarations.h"
 #include <gfx/gl_capabilities.h>
 
 #ifndef RIB_RMLUI_DEFAULT_ASSETS
@@ -48,12 +51,6 @@
  * to the wrong preset. */
 #define RIB_SHADER_MAX 32
 
-/* How many overlays one design can declare, the size of a buffer. */
-#define RIB_OVERLAY_MAX 8
-
-/* How many switches a design can declare, the size of a buffer like the others. */
-#define RIB_TOGGLE_MAX 8
-
 typedef struct rib_control
 {
    char id[32];
@@ -62,28 +59,6 @@ typedef struct rib_control
    char group[32];
    unsigned bind_index;
 } rib_control_t;
-
-/* What changes while a switch is on. The set is closed, so a design cannot
- * declare an effect that the player lacks. We reject an unknown word when we
- * read the declaration, instead of ignoring it when the switch is pressed. */
-enum rib_toggle_guard
-{
-   RIB_TOGGLE_GUARD_NONE = 0,
-   RIB_TOGGLE_GUARD_SAVES
-};
-
-/* A switch declared in the design. Every word on screen comes from the design,
- * and there are no switches or switch names in the player. */
-typedef struct rib_toggle
-{
-   char id[64];
-   char on[32];
-   char off[32];
-   char guard_label[64];
-   char guard_status[128];
-   enum rib_toggle_guard guard;
-   bool state;
-} rib_toggle_t;
 
 typedef struct rib_rmlui_menu
 {
@@ -465,192 +440,6 @@ static bool rib_discs_choose(rib_rmlui_menu_t *menu, const char *id)
    return false;
 }
 
-static void rib_rmlui_discover_screens(const char *asset_directory)
-{
-   char path[PATH_MAX_LENGTH];
-   config_file_t *config;
-   char list[512];
-   char *cursor;
-   char *token;
-
-   rib_rmlui_clear_screens();
-   rib_disc_list_id[0] = '\0';
-   rib_disc_list_button[0] = '\0';
-   rib_disc_mark[0] = '\0';
-   rib_disc_redirect_from[0] = '\0';
-   rib_disc_redirect_to[0] = '\0';
-   if (!asset_directory || !*asset_directory)
-      return;
-   snprintf(path, sizeof(path), "%s/design.cfg", asset_directory);
-   if (!(config = config_file_new_from_path_to_string(path)))
-   {
-      RARCH_LOG("[RIB] no design declarations at %s; the menu has no screens "
-            "and nothing will switch.\n", path);
-      return;
-   }
-   if (!config_get_array(config, "screens", list, sizeof(list)))
-   {
-      config_file_free(config);
-      return;
-   }
-
-   cursor = list;
-   while ((token = strtok_r(cursor, " ", &cursor)))
-   {
-      char key[96];
-      char panel[128];
-      char heading[128];
-      char footer[128];
-      char button[128];
-
-      if (!*token)
-         continue;
-      snprintf(key, sizeof(key), "screen_panel_%s", token);
-      if (!config_get_array(config, key, panel, sizeof(panel)))
-         continue;
-      snprintf(key, sizeof(key), "screen_heading_%s", token);
-      if (!config_get_array(config, key, heading, sizeof(heading)))
-         heading[0] = '\0';
-      snprintf(key, sizeof(key), "screen_footer_%s", token);
-      if (!config_get_array(config, key, footer, sizeof(footer)))
-         footer[0] = '\0';
-      snprintf(key, sizeof(key), "screen_button_%s", token);
-      if (!config_get_array(config, key, button, sizeof(button)))
-         button[0] = '\0';
-      {
-         char images[64];
-
-         snprintf(key, sizeof(key), "screen_images_%s", token);
-         if (config_get_array(config, key, images, sizeof(images)) && images[0])
-         {
-            /* "list" means this screen is the disc list. Any other value is
-             * the screen to open instead, so there is still one button in the
-             * disc column and no second control. */
-            if (string_is_equal(images, "list"))
-            {
-               strlcpy(rib_disc_list_id, token, sizeof(rib_disc_list_id));
-               strlcpy(rib_disc_list_button, button, sizeof(rib_disc_list_button));
-               snprintf(key, sizeof(key), "screen_mark_%s", token);
-               if (!config_get_array(config, key, rib_disc_mark, sizeof(rib_disc_mark)))
-                  rib_disc_mark[0] = '\0';
-            }
-            else
-            {
-               strlcpy(rib_disc_redirect_from, token, sizeof(rib_disc_redirect_from));
-               strlcpy(rib_disc_redirect_to, images, sizeof(rib_disc_redirect_to));
-            }
-         }
-      }
-      rib_rmlui_declare_screen(token, panel, heading, footer, button);
-   }
-   config_file_free(config);
-}
-
-/* Read the overlays declared in this design.
- *
- * They are declared like the screens and the controller list: a space-separated
- * list of ids and one key per field. There are no overlay names in this code.
- * When the export does not contain the file for an overlay, we do not declare
- * the overlay at all, so it is never drawn empty.
- */
-static void rib_rmlui_discover_overlays(const char *asset_directory)
-{
-   char path[PATH_MAX_LENGTH];
-   config_file_t *config;
-   char list[512];
-   char *cursor;
-   char *token;
-
-   rib_overlay_count = 0;
-   if (!asset_directory || !*asset_directory)
-      return;
-   snprintf(path, sizeof(path), "%s/design.cfg", asset_directory);
-   if (!(config = config_file_new_from_path_to_string(path)))
-      return;
-   if (!config_get_array(config, "overlays", list, sizeof(list)))
-   {
-      config_file_free(config);
-      return;
-   }
-
-   cursor = list;
-   while ((token = strtok_r(cursor, " ", &cursor)))
-   {
-      char key[96];
-      char needs[128];
-      char follows[64];
-      int after = 0;
-      int hold  = 0;
-      int leave = 0;
-      rib_overlay_t *overlay;
-
-      if (!*token)
-         continue;
-      if (rib_overlay_count >= RIB_OVERLAY_MAX)
-      {
-         RARCH_WARN("[RIB] the design declares more than %d overlays; '%s' and "
-               "anything after it will not be drawn.\n", RIB_OVERLAY_MAX, token);
-         break;
-      }
-      snprintf(key, sizeof(key), "overlay_after_%s", token);
-      config_get_int(config, key, &after);
-      snprintf(key, sizeof(key), "overlay_hold_%s", token);
-      if (!config_get_int(config, key, &hold) || hold <= 0)
-         continue;
-      snprintf(key, sizeof(key), "overlay_leave_%s", token);
-      config_get_int(config, key, &leave);
-      snprintf(key, sizeof(key), "overlay_follows_%s", token);
-      if (!config_get_array(config, key, follows, sizeof(follows)))
-         follows[0] = '\0';
-      snprintf(key, sizeof(key), "overlay_needs_%s", token);
-      if (!config_get_array(config, key, needs, sizeof(needs)))
-         needs[0] = '\0';
-      if (*needs)
-      {
-         char required[PATH_MAX_LENGTH];
-         snprintf(required, sizeof(required), "%s/%s", asset_directory, needs);
-         if (!path_is_valid(required))
-         {
-            RARCH_LOG("[RIB] overlay '%s' needs %s, which this game does not "
-                  "carry; it will not be drawn.\n", token, needs);
-            continue;
-         }
-      }
-      overlay = &rib_overlays[rib_overlay_count++];
-      strlcpy(overlay->id, token, sizeof(overlay->id));
-      strlcpy(overlay->needs, needs, sizeof(overlay->needs));
-      strlcpy(overlay->follows, follows, sizeof(overlay->follows));
-      overlay->after_ms    = after;
-      overlay->hold_ms     = hold;
-      overlay->leave_ms    = leave;
-      overlay->started_at  = 0;
-      overlay->finished_at = 0;
-      overlay->state       = RIB_OVERLAY_HIDDEN;
-      overlay->finished    = false;
-   }
-   config_file_free(config);
-}
-
-static void rib_rmlui_discover_binds(const char *asset_directory)
-{
-   char path[PATH_MAX_LENGTH];
-   config_file_t *config;
-
-   rib_binds_list[0] = '\0';
-   rib_binds_after_ms = 0;
-   rib_binds_width = 0;
-   if (!asset_directory || !*asset_directory)
-      return;
-   snprintf(path, sizeof(path), "%s/design.cfg", asset_directory);
-   if (!(config = config_file_new_from_path_to_string(path)))
-      return;
-   if (!config_get_array(config, "binds_list", rib_binds_list, sizeof(rib_binds_list)))
-      rib_binds_list[0] = '\0';
-   config_get_int(config, "binds_after", &rib_binds_after_ms);
-   config_get_int(config, "binds_width", &rib_binds_width);
-   config_file_free(config);
-}
-
 static const char *rib_absolute_data_dir(void)
 {
    const char *data = getenv("ROMINABOX_DATA_DIR");
@@ -699,84 +488,62 @@ static bool rib_toggle_recall(rib_toggle_t *toggle)
    return true;
 }
 
-/* Read the switches declared in the design.
- *
- * They are declared in the same way as the screens and the controllers: a
- * space-separated list of ids, with the words for each switch. There are no
- * switches in the player, and of each one we know only what it changes.
- */
-static void rib_rmlui_discover_toggles(rib_rmlui_menu_t *menu,
-      const char *asset_directory)
+/* We load the declarations once. These assignments set the starting state of
+ * each feature. There is no document or input code in the loader. */
+static void rib_rmlui_load_design(rib_rmlui_menu_t *menu, const char *assets)
 {
-   char path[PATH_MAX_LENGTH];
-   config_file_t *config;
-   char list[256];
-   char *cursor;
-   char *token;
-
-   if (!menu)
-      return;
-   menu->toggle_count = 0;
-   if (!asset_directory || !*asset_directory)
-      return;
-   snprintf(path, sizeof(path), "%s/design.cfg", asset_directory);
-   if (!(config = config_file_new_from_path_to_string(path)))
-      return;
-   if (!config_get_array(config, "toggles", list, sizeof(list)))
+   rib_design_declarations *loaded = rib_load_design(assets);
+   const rib_design_data *design = rib_design_get(loaded);
+   size_t index;
+   rib_rmlui_clear_screens();
+   rib_disc_list_id[0] = '\0';
+   rib_disc_list_button[0] = '\0';
+   rib_disc_mark[0] = '\0';
+   rib_disc_redirect_from[0] = '\0';
+   rib_disc_redirect_to[0] = '\0';
+   for (index = 0; index < design->screen_count; ++index)
    {
-      config_file_free(config);
-      return;
+      const rib_screen_declaration *screen = &design->screens[index];
+      if (string_is_equal(screen->images, "list"))
+      {
+         strlcpy(rib_disc_list_id, screen->id, sizeof(rib_disc_list_id));
+         strlcpy(rib_disc_list_button, screen->button, sizeof(rib_disc_list_button));
+         strlcpy(rib_disc_mark, screen->mark, sizeof(rib_disc_mark));
+      }
+      else if (screen->images[0])
+      {
+         strlcpy(rib_disc_redirect_from, screen->id, sizeof(rib_disc_redirect_from));
+         strlcpy(rib_disc_redirect_to, screen->images, sizeof(rib_disc_redirect_to));
+      }
+      rib_rmlui_declare_screen(screen->id, screen->panel, screen->heading,
+            screen->footer, screen->button);
    }
-
-   cursor = list;
-   while ((token = strtok_r(cursor, " ", &cursor)))
+   menu->toggle_count = design->toggle_count;
+   for (index = 0; index < (size_t)menu->toggle_count; ++index)
    {
-      char key[128];
-      char value[128];
-      rib_toggle_t *toggle;
-
-      if (!*token)
-         continue;
-      if (menu->toggle_count >= RIB_TOGGLE_MAX)
-      {
-         RARCH_ERR("[RIB] more than %d switches are declared; '%s' and any "
-               "after it will not work.\n", RIB_TOGGLE_MAX, token);
-         break;
-      }
-      toggle = &menu->toggles[menu->toggle_count];
-      memset(toggle, 0, sizeof(*toggle));
-      strlcpy(toggle->id, token, sizeof(toggle->id));
-      snprintf(key, sizeof(key), "toggle_on_%s", token);
-      config_get_array(config, key, toggle->on, sizeof(toggle->on));
-      snprintf(key, sizeof(key), "toggle_off_%s", token);
-      config_get_array(config, key, toggle->off, sizeof(toggle->off));
-      snprintf(key, sizeof(key), "toggle_default_%s", token);
-      value[0] = '\0';
-      config_get_array(config, key, value, sizeof(value));
-      toggle->state = string_is_equal(value, "true");
-      snprintf(key, sizeof(key), "toggle_guard_%s", token);
-      value[0] = '\0';
-      config_get_array(config, key, value, sizeof(value));
-      if (!*value)
-         toggle->guard = RIB_TOGGLE_GUARD_NONE;
-      else if (string_is_equal(value, "saves"))
-         toggle->guard = RIB_TOGGLE_GUARD_SAVES;
-      else
-      {
-         RARCH_ERR("[RIB] the switch '%s' guards '%s', which this player does "
-               "not implement; it will guard nothing.\n", token, value);
-         toggle->guard = RIB_TOGGLE_GUARD_NONE;
-      }
-      snprintf(key, sizeof(key), "toggle_guard_label_%s", token);
-      config_get_array(config, key, toggle->guard_label,
-            sizeof(toggle->guard_label));
-      snprintf(key, sizeof(key), "toggle_guard_status_%s", token);
-      config_get_array(config, key, toggle->guard_status,
-            sizeof(toggle->guard_status));
-      rib_toggle_recall(toggle);
-      menu->toggle_count++;
+      menu->toggles[index] = design->toggles[index];
+      rib_toggle_recall(&menu->toggles[index]);
    }
-   config_file_free(config);
+   rib_overlay_count = design->overlay_count;
+   for (index = 0; index < (size_t)rib_overlay_count; ++index)
+   {
+      const rib_overlay_declaration *source = &design->overlays[index];
+      rib_overlay_t *overlay = &rib_overlays[index];
+      strlcpy(overlay->id, source->id, sizeof(overlay->id));
+      strlcpy(overlay->follows, source->follows, sizeof(overlay->follows));
+      strlcpy(overlay->needs, source->needs, sizeof(overlay->needs));
+      overlay->after_ms = source->after_ms;
+      overlay->hold_ms = source->hold_ms;
+      overlay->leave_ms = source->leave_ms;
+      overlay->started_at = 0;
+      overlay->finished_at = 0;
+      overlay->state = RIB_OVERLAY_HIDDEN;
+      overlay->finished = false;
+   }
+   strlcpy(rib_binds_list, design->binds_list, sizeof(rib_binds_list));
+   rib_binds_after_ms = design->binds_after_ms;
+   rib_binds_width = design->binds_width;
+   rib_design_free(loaded);
 }
 
 /* The combined effect of all switches. We combine them instead of applying
@@ -1354,7 +1121,7 @@ static void rib_rmlui_save_mouse_button(config_file_t *config,
 static bool rib_rmlui_save_controls(rib_rmlui_menu_t *menu)
 {
    config_file_t *config;
-   char temporary_path[PATH_MAX_LENGTH];
+   bool saved;
    int index;
 
    if (!menu || !menu->controls_path[0] || !(config = config_file_new_alloc()))
@@ -1384,16 +1151,10 @@ static bool rib_rmlui_save_controls(rib_rmlui_menu_t *menu)
       rib_rmlui_save_mouse_button(config, key, bind->mbutton);
    }
 
-   snprintf(temporary_path, sizeof(temporary_path), "%s.tmp",
-         menu->controls_path);
-   if (!config_file_write(config, temporary_path, true) ||
-       rename(temporary_path, menu->controls_path) != 0)
-   {
-      config_file_free(config);
-      return false;
-   }
+   saved = rib_write_menu_config(config, menu->controls_path,
+         RIB_CONFIG_WRITE_CONTROLS);
    config_file_free(config);
-   return true;
+   return saved;
 }
 
 static void rib_rmlui_refresh_controls(rib_rmlui_menu_t *menu)
@@ -1611,7 +1372,7 @@ static bool rib_rmlui_write_remap_device(const char *path, unsigned device)
 {
    config_file_t *conf;
    char directory[PATH_MAX_LENGTH];
-   char temporary[PATH_MAX_LENGTH];
+   bool saved;
    char existing[32];
    char wanted[32];
    bool existed;
@@ -1643,31 +1404,9 @@ static bool rib_rmlui_write_remap_device(const char *path, unsigned device)
       return false;
    }
 
-   if (strlcpy(temporary, path, sizeof(temporary)) >= sizeof(temporary)
-         || strlcat(temporary, ".tmp", sizeof(temporary)) >= sizeof(temporary))
-   {
-      config_file_free(conf);
-      return false;
-   }
-
-   if (!config_file_write(conf, temporary, true))
-   {
-      config_file_free(conf);
-      return false;
-   }
+   saved = rib_write_menu_config(conf, path, RIB_CONFIG_WRITE_REMAP);
    config_file_free(conf);
-
-   /* On POSIX rename() replaces an existing file, and on Windows it fails. */
-#if defined(_WIN32)
-   if (filestream_exists(path))
-      filestream_delete(path);
-#endif
-   if (filestream_rename(temporary, path) != 0)
-   {
-      filestream_delete(temporary);
-      return false;
-   }
-   return true;
+   return saved;
 }
 
 static bool rib_rmlui_persist_libretro_device(unsigned device)
@@ -1690,30 +1429,9 @@ static bool rib_rmlui_persist_libretro_device(unsigned device)
 
 static bool rib_save_volume(const rib_rmlui_menu_t *menu, float db)
 {
-   char temporary[PATH_MAX_LENGTH];
-   FILE *file;
-
    if (!menu || !menu->volume_path[0])
       return false;
-   snprintf(temporary, sizeof(temporary), "%s.tmp", menu->volume_path);
-   if (!(file = fopen(temporary, "w")))
-      return false;
-   fprintf(file, "%s = \"%.1f\"\n", RIB_VOLUME_KEY, db);
-   if (fclose(file) != 0)
-   {
-      filestream_delete(temporary);
-      return false;
-   }
-#if defined(_WIN32)
-   if (filestream_exists(menu->volume_path))
-      filestream_delete(menu->volume_path);
-#endif
-   if (rename(temporary, menu->volume_path) != 0)
-   {
-      filestream_delete(temporary);
-      return false;
-   }
-   return true;
+   return rib_write_menu_volume(menu->volume_path, db);
 }
 
 static void rib_paint_volume(void)
@@ -2665,118 +2383,6 @@ static void rib_rmlui_run_overlays(void)
    }
 }
 
-/* One line for each input in a retro_keybind. We read each field separately,
- * because with a comma inside a name, splitting a joined string would be
- * ambiguous. */
-#define RIB_BIND_LINE_MAX 64
-
-static void rib_mouse_label(uint16_t button, char *out, size_t length)
-{
-   const char *label = NULL;
-   switch (button)
-   {
-      case RETRO_DEVICE_ID_MOUSE_LEFT: label = "Left"; break;
-      case RETRO_DEVICE_ID_MOUSE_RIGHT: label = "Right"; break;
-      case RETRO_DEVICE_ID_MOUSE_MIDDLE: label = "Middle"; break;
-      case RETRO_DEVICE_ID_MOUSE_BUTTON_4: label = "Button 4"; break;
-      case RETRO_DEVICE_ID_MOUSE_BUTTON_5: label = "Button 5"; break;
-      case RETRO_DEVICE_ID_MOUSE_WHEELUP: label = "Wheel up"; break;
-      case RETRO_DEVICE_ID_MOUSE_WHEELDOWN: label = "Wheel down"; break;
-      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELUP: label = "Wheel left"; break;
-      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELDOWN: label = "Wheel right"; break;
-      default: break;
-   }
-   if (label)
-      strlcpy(out, label, length);
-   else
-      out[0] = '\0';
-}
-
-static void rib_push_bind_line(char details[][64], char kinds[][8], int *count,
-      const char *kind, const char *text)
-{
-   if (!text || !*text || *count >= RIB_BIND_LINE_MAX)
-      return;
-   strlcpy(kinds[*count], kind, 8);
-   strlcpy(details[*count], text, 64);
-   (*count)++;
-}
-
-/* The pad button and axis that a press comes from.
- *
- * In RetroArch a press comes from TWO arrays: the binds in the configuration,
- * and the binds from an autoconfig profile for the pad that is plugged in.
- * For each field, the explicit bind comes first when there is one, and the
- * autoconfigured one otherwise. In input_driver.c, `input_key_pressed`
- * contains
- *
- *     joykey = (bind_joykey != NO_BTN) ? bind_joykey : autobind_joykey;
- *
- * We read both arrays in the menu, so for a pad bound by autoconfig we show
- * its inputs on the controls screen next to the keyboard key, and when the
- * player hovers over a control, we list every input for it.
- *
- * That order comes from upstream, where it is written out in several files
- * (input_driver.c twice, winraw, x11, udev and dinput). We repeat it once,
- * here, so the vendored input drivers stay unchanged. We store nothing
- * extra: both arrays are in RetroArch.
- */
-static const struct retro_keybind *rib_effective_pad(
-      const struct retro_keybind *bind, unsigned index,
-      struct retro_keybind *scratch)
-{
-   const struct retro_keybind *automatic = &input_autoconf_binds[0][index];
-
-   if (!bind)
-      return NULL;
-   *scratch = *bind;
-   if (scratch->joykey == NO_BTN)
-   {
-      scratch->joykey       = automatic->joykey;
-      scratch->joykey_label = automatic->joykey_label;
-   }
-   if (scratch->joyaxis == AXIS_NONE)
-   {
-      scratch->joyaxis       = automatic->joyaxis;
-      scratch->joyaxis_label = automatic->joyaxis_label;
-   }
-   return scratch;
-}
-
-static void rib_lines_from_bind(const struct retro_keybind *bind,
-      unsigned bind_index, char details[][64], char kinds[][8], int *count)
-{
-   struct retro_keybind scratch;
-   const struct retro_keybind *effective;
-   char text[64];
-
-   if (!bind)
-      return;
-   effective = rib_effective_pad(bind, bind_index, &scratch);
-   text[0] = '\0';
-   /* There is no autoconfig for the keyboard, so we read the key from the bind. */
-   input_keymaps_translate_rk_to_str(bind->key, text, sizeof(text));
-   if (text[0] && strcmp(text, "nul") != 0)
-      rib_push_bind_line(details, kinds, count, "KEY", text);
-   if (effective->joykey != NO_BTN)
-   {
-      input_config_get_bind_string_joykey(false, text, "", effective,
-            sizeof(text));
-      rib_push_bind_line(details, kinds, count, "PAD", text);
-   }
-   if (effective->joyaxis != AXIS_NONE)
-   {
-      input_config_get_bind_string_joyaxis(false, text, "", effective,
-            sizeof(text));
-      rib_push_bind_line(details, kinds, count, "AXIS", text);
-   }
-   if (bind->mbutton != NO_BTN)
-   {
-      rib_mouse_label(bind->mbutton, text, sizeof(text));
-      rib_push_bind_line(details, kinds, count, "MOUSE", text);
-   }
-}
-
 static bool rib_same_bind_target(const rib_rmlui_menu_t *menu, int left, int right)
 {
    const char *group_left;
@@ -2842,7 +2448,7 @@ static void rib_callout_text(const rib_rmlui_menu_t *menu, int index,
    for (slot = 0; slot < member_count; ++slot)
    {
       const unsigned at = menu->controls[members[slot]].bind_index;
-      rib_lines_from_bind(&input_config_binds[0][at], at,
+      rib_lines_from_bind(&input_config_binds[0][at], &input_autoconf_binds[0][at],
             details, kinds, &lines);
    }
    if (lines <= 0)
@@ -2893,7 +2499,7 @@ static void rib_show_binds(rib_rmlui_menu_t *menu, int index)
    {
       int before = lines;
       const unsigned at = menu->controls[members[member]].bind_index;
-      rib_lines_from_bind(&input_config_binds[0][at], at,
+      rib_lines_from_bind(&input_config_binds[0][at], &input_autoconf_binds[0][at],
             details, kinds, &lines);
       for (slot = before; slot < lines; ++slot)
       {
@@ -3049,10 +2655,7 @@ static void rib_rmlui_frame(void *data, video_frame_info_t *video_info)
          return;
       }
       /* Read the screens and overlays in the design before we show any. */
-      rib_rmlui_discover_screens(asset_directory);
-      rib_rmlui_discover_toggles(menu, asset_directory);
-      rib_rmlui_discover_overlays(asset_directory);
-      rib_rmlui_discover_binds(asset_directory);
+      rib_rmlui_load_design(menu, asset_directory);
       rib_rmlui_load_shaders(menu, asset_directory);
       rib_rmlui_set_selected_slot(menu->selected_slot);
       rib_rmlui_set_focused(menu->focused);

@@ -8,8 +8,8 @@
 #include <filesystem>
 
 #ifndef RIB_RMLUI_HEADLESS
-#include "rmlui_gl.h"
-#include <OpenGL/gl.h>
+#include "rmlui/render/rmlui_gl.h"
+#include "rmlui/render/platform.h"
 #include "third_party/lodepng.h"
 #endif
 

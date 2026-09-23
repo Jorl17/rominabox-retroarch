@@ -1057,7 +1057,8 @@ ifeq ($(HAVE_MENU), 1)
 
    ifeq ($(HAVE_RMLUI), 1)
       OBJ += menu/drivers/rmlui.o menu/drivers/rmlui_bridge.o \
-             menu/drivers/rmlui_gl.o menu/drivers/rmlui_gl3.o \
+             menu/drivers/rmlui/files.o menu/drivers/rmlui/declarations.o \
+             menu/drivers/rmlui/render/rmlui_gl.o menu/drivers/rmlui/render/rmlui_gl3.o \
              menu/drivers/third_party/lodepng.o
       DEFINES += -DHAVE_RMLUI
       RMLUI_SOURCE_DIR ?= ../vendor/RmlUi
