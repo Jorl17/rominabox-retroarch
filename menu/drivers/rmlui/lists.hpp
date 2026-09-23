@@ -1,0 +1,60 @@
+#pragma once
+
+#include <RmlUi/Core.h>
+#include <string>
+#include <vector>
+
+namespace rib {
+class Document;
+class EventQueue;
+
+/* Here we work on the list markup from the selected design. The elements we
+ * return belong to Document, so do not keep them past a document reload. */
+class Lists
+{
+public:
+   Lists(Document& document, EventQueue& events) : document(document), events(events) {}
+
+   void wire_lists();
+   void wire_toggles();
+   void set_toggle(const char *id, const char *state, bool on);
+   Rml::Element *visible_list() const;
+   void visible_rows(std::vector<Rml::Element*> &rows) const;
+   Rml::Element *visible_panel() const;
+   void visible_controls(std::vector<Rml::Element*> &controls) const;
+   bool click_screen_back() const;
+   int visible_row_count() const;
+   void focus_list_row(int index) const;
+   int list_control_count() const;
+   const char *list_control_id(int index);
+   void focus_list_control(int index) const;
+   const char *list_row_id(int index);
+   int hovered_list_row() const;
+   int turn_list_page(int delta) const;
+   void mark_row(const char *id, const char *on, const char *off) const;
+   void select_row(const char *list_id, const char *row_id,
+         const char *on, const char *off) const;
+   void set_row_text(const char *id, const char *title,
+         const char *detail, const char *state) const;
+   void fit_row_title(const char *id, const char *text) const;
+   int rows_in(const char *list_id) const;
+   const char *row_in(const char *list_id, int index);
+   void retarget_pages(const char *list_id) const;
+   void place_list(const char *list_id, const char *anchor_id, int width_dp) const;
+
+private:
+   Rml::Element *list_element(const char *list_id) const;
+   void set_text(const std::string& id, const char *text) const;
+   void select_in(Rml::Element *list, const char *row_id,
+         const char *on, const char *off) const;
+   static bool page_has_row(Rml::Element *page);
+   static void mark_pager(Rml::Element *list, int page, int pages);
+   float block_dp(Rml::Element *element) const;
+
+   Document& document;
+   EventQueue& events;
+   std::string control_id_buffer;
+   std::string row_id_buffer;
+   std::string row_in_buffer;
+};
+}
