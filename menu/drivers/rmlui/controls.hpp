@@ -46,8 +46,6 @@ public:
 private:
    Focus& focus_state;
    Screens& screens;
-   void discover_controls(config_file *config);
-   void discover_devices(config_file *config);
    void reload();
    bool save();
    const char *console_name(int index) const;

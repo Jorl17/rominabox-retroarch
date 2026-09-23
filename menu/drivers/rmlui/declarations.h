@@ -101,6 +101,22 @@ typedef struct rib_controls_catalog
    int device_count;
 } rib_controls_catalog;
 
+struct config_file;
+/* Open one controls file and read its profile and, for defaults, its declared
+ * controls/devices. Keep the file open during host bind loading, and free it
+ * with config_file_free. We look up only exported bind ids in the fixed host
+ * table for bind_index. Existing catalog slots keep their ordinal state, apart
+ * from the fields that discovery writes again. */
+struct config_file *rib_open_controls(const char *path, bool defaults,
+      char profile_id[32], rib_controls_catalog *catalog,
+      bool *profile_present, bool (*bind_index)(const char *, unsigned *));
+/* Read the active-bind flags in the defaults after attaching the listeners,
+ * then each active label between host clear and host load. */
+void rib_controls_read_enabled(struct config_file *config,
+      rib_controls_catalog *catalog);
+void rib_controls_read_label(struct config_file *config,
+      rib_control_declaration *control);
+
 typedef struct rib_design_declarations rib_design_declarations;
 /* One read of design.cfg. The returned data is immutable and borrowed until
  * free. For a missing file, the result is an empty declaration and a

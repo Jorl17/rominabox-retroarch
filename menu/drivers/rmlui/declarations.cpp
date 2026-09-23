@@ -6,6 +6,8 @@
 #include <retro_miscellaneous.h>
 #include <string/stdstring.h>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -28,6 +30,128 @@ void each_id(config_file_t *config, const char *key, Visit visit)
    while (char *id = strtok_r(cursor, " ", &cursor))
       if (*id && !visit(id))
          break;
+}
+
+bool control_belongs(const char *list, const char *id)
+{
+   const char *at;
+   size_t length;
+
+   if (!list || !*list)
+      return true;
+   length = strlen(id);
+   for (at = list; (at = strstr(at, id)); at += length)
+   {
+      const bool starts = (at == list) || at[-1] == ' ';
+      const bool ends = at[length] == '\0' || at[length] == ' ';
+      if (starts && ends)
+         return true;
+   }
+   return false;
+}
+
+void discover_controls(config_file_t *config, const char *profile_id,
+      rib_controls_catalog *catalog,
+      bool (*bind_index_resolver)(const char *, unsigned *))
+{
+   struct config_file_entry entry;
+   bool present;
+   char key[96];
+   char belonging[1024];
+
+   catalog->count = 0;
+   belonging[0] = '\0';
+   if (profile_id[0])
+   {
+      snprintf(key, sizeof(key), "controls_variant_controls_%s", profile_id);
+      if (!config_get_array(config, key, belonging, sizeof(belonging)))
+         belonging[0] = '\0';
+   }
+   for (present = config_get_entry_list_head(config, &entry); present;
+        present = config_get_entry_list_next(&entry))
+   {
+      const char *id;
+      unsigned bind_index;
+
+      if (!entry.key || strncmp(entry.key, "rib_label_", 10))
+         continue;
+      id = entry.key + 10;
+      if (!*id)
+         continue;
+      if (!control_belongs(belonging, id))
+         continue;
+      if (!bind_index_resolver(id, &bind_index))
+      {
+         RARCH_WARN("[RIB] '%s' is not a libretro bind; the menu will not show "
+               "it. Check the id against DECLARE_BIND in configuration.c.\n", id);
+         continue;
+      }
+      if (catalog->count >= RIB_CONTROL_MAX)
+      {
+         /* We log this, so that a control left out, such as a DualShock
+          * stick, appears in the log. */
+         RARCH_ERR("[RIB] more than %d controls declared; '%s' and anything "
+               "after it are unreachable.\n", RIB_CONTROL_MAX, id);
+         return;
+      }
+      strlcpy(catalog->entries[catalog->count].id, id,
+            sizeof(catalog->entries[catalog->count].id));
+      catalog->entries[catalog->count].group[0] = '\0';
+      {
+         char group_key[96];
+         snprintf(group_key, sizeof(group_key), "rib_group_%s", id);
+         config_get_array(config, group_key,
+               catalog->entries[catalog->count].group,
+               sizeof(catalog->entries[catalog->count].group));
+      }
+      catalog->entries[catalog->count].bind_index = bind_index;
+      ++catalog->count;
+   }
+}
+
+void discover_devices(config_file_t *config, rib_controls_catalog *catalog)
+{
+   char list[512];
+   char *cursor;
+   char *token;
+
+   catalog->device_count = 0;
+   if (!config_get_array(config, "controls_variants", list, sizeof(list)))
+      return;
+
+   cursor = list;
+   while ((token = strtok_r(cursor, " ", &cursor)))
+   {
+      char key[96];
+      char name[NAME_MAX_LENGTH];
+
+      if (!*token)
+         continue;
+      if (catalog->device_count >= RIB_DEVICE_MAX)
+      {
+         RARCH_ERR("[RIB] more than %d controllers offered; '%s' and any after "
+               "it cannot be chosen.\n", RIB_DEVICE_MAX, token);
+         return;
+      }
+      strlcpy(catalog->devices[catalog->device_count].id, token,
+            sizeof(catalog->devices[catalog->device_count].id));
+      snprintf(key, sizeof(key), "controls_variant_device_%s", token);
+      catalog->devices[catalog->device_count].libretro = 0;
+      {
+         char device[32];
+         if (config_get_array(config, key, device, sizeof(device)))
+            catalog->devices[catalog->device_count].libretro =
+               (unsigned)strtoul(device, NULL, 10);
+      }
+      snprintf(key, sizeof(key), "controls_variant_name_%s", token);
+      if (config_get_array(config, key, name, sizeof(name)))
+         strlcpy(catalog->devices[catalog->device_count].name, name,
+               sizeof(catalog->devices[catalog->device_count].name));
+      else
+         strlcpy(catalog->devices[catalog->device_count].name, token,
+               sizeof(catalog->devices[catalog->device_count].name));
+      ++catalog->device_count;
+   }
 }
 
 void screens(config_file_t *config, rib_design_declarations &design)
@@ -216,4 +340,60 @@ void rib_load_shaders(const char *asset_directory, rib_shader_catalog *catalog)
       return true;
    });
    config_file_free(config);
+}
+
+config_file_t *rib_open_controls(const char *path, bool defaults,
+      char profile_id[32], rib_controls_catalog *catalog,
+      bool *profile_present, bool (*bind_index)(const char *, unsigned *))
+{
+   if (!path || !profile_id || !catalog || !profile_present || !bind_index)
+      return nullptr;
+   config_file_t *config = config_file_new_from_path_to_string(path);
+   if (!config)
+      return nullptr;
+
+   char profile[32] = {0};
+   *profile_present = config_get_array(config, "controls_profile", profile,
+         sizeof(profile)) && profile[0];
+   if (*profile_present)
+      strlcpy(profile_id, profile, 32);
+   if (defaults)
+   {
+      discover_controls(config, profile_id, catalog, bind_index);
+      discover_devices(config, catalog);
+   }
+   return config;
+}
+
+void rib_controls_read_enabled(config_file_t *config,
+      rib_controls_catalog *catalog)
+{
+   for (int index = 0; index < catalog->count; ++index)
+   {
+      char key[96];
+      const char *suffixes[] = {"", "_btn", "_axis", "_mbtn"};
+      unsigned suffix_index;
+      catalog->entries[index].enabled = false;
+      for (suffix_index = 0; suffix_index < ARRAY_SIZE(suffixes);
+            ++suffix_index)
+      {
+         snprintf(key, sizeof(key), "input_player1_%s%s",
+               catalog->entries[index].id, suffixes[suffix_index]);
+         if (config_get_entry(config, key))
+         {
+            catalog->entries[index].enabled = true;
+            break;
+         }
+      }
+   }
+}
+
+void rib_controls_read_label(config_file_t *config,
+      rib_control_declaration *control)
+{
+   char key[64];
+   char label[NAME_MAX_LENGTH] = {0};
+   snprintf(key, sizeof(key), "rib_label_%s", control->id);
+   if (config_get_array(config, key, label, sizeof(label)))
+      strlcpy(control->label, label, sizeof(control->label));
 }

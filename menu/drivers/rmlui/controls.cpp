@@ -15,127 +15,6 @@
 #endif
 
 namespace rib {
-static bool control_belongs(const char *list, const char *id)
-{
-   const char *at;
-   size_t length;
-
-   if (!list || !*list)
-      return true;
-   length = strlen(id);
-   for (at = list; (at = strstr(at, id)); at += length)
-   {
-      const bool starts = (at == list) || at[-1] == ' ';
-      const bool ends = at[length] == '\0' || at[length] == ' ';
-      if (starts && ends)
-         return true;
-   }
-   return false;
-}
-
-void Controls::discover_controls(config_file_t *config)
-{
-   struct config_file_entry entry;
-   bool present;
-   char key[96];
-   char belonging[1024];
-
-   catalog.count = 0;
-   belonging[0] = '\0';
-   if (profile_id[0])
-   {
-      snprintf(key, sizeof(key), "controls_variant_controls_%s",
-            profile_id);
-      if (!config_get_array(config, key, belonging, sizeof(belonging)))
-         belonging[0] = '\0';
-   }
-   for (present = config_get_entry_list_head(config, &entry); present;
-        present = config_get_entry_list_next(&entry))
-   {
-      const char *id;
-      unsigned bind_index;
-
-      if (!entry.key || strncmp(entry.key, "rib_label_", 10))
-         continue;
-      id = entry.key + 10;
-      if (!*id)
-         continue;
-      if (!control_belongs(belonging, id))
-         continue;
-      if (!rib_host_bind_index(id, &bind_index))
-      {
-         RARCH_WARN("[RIB] '%s' is not a libretro bind; the menu will not show "
-               "it. Check the id against DECLARE_BIND in configuration.c.\n", id);
-         continue;
-      }
-      if (catalog.count >= RIB_CONTROL_MAX)
-      {
-         /* We log this, so that a control left out, such as a DualShock
-          * stick, appears in the log. */
-         RARCH_ERR("[RIB] more than %d controls declared; '%s' and anything "
-               "after it are unreachable.\n", RIB_CONTROL_MAX, id);
-         return;
-      }
-      strlcpy(catalog.entries[catalog.count].id, id,
-            sizeof(catalog.entries[catalog.count].id));
-      catalog.entries[catalog.count].group[0] = '\0';
-      {
-         char group_key[96];
-         snprintf(group_key, sizeof(group_key), "rib_group_%s", id);
-         config_get_array(config, group_key,
-               catalog.entries[catalog.count].group,
-               sizeof(catalog.entries[catalog.count].group));
-      }
-      catalog.entries[catalog.count].bind_index = bind_index;
-      ++catalog.count;
-   }
-}
-
-void Controls::discover_devices(config_file_t *config)
-{
-   char list[512];
-   char *cursor;
-   char *token;
-
-   catalog.device_count = 0;
-   if (!config_get_array(config, "controls_variants", list, sizeof(list)))
-      return;
-
-   cursor = list;
-   while ((token = strtok_r(cursor, " ", &cursor)))
-   {
-      char key[96];
-      char name[NAME_MAX_LENGTH];
-
-      if (!*token)
-         continue;
-      if (catalog.device_count >= RIB_DEVICE_MAX)
-      {
-         RARCH_ERR("[RIB] more than %d controllers offered; '%s' and any after "
-               "it cannot be chosen.\n", RIB_DEVICE_MAX, token);
-         return;
-      }
-      strlcpy(catalog.devices[catalog.device_count].id, token,
-            sizeof(catalog.devices[catalog.device_count].id));
-      snprintf(key, sizeof(key), "controls_variant_device_%s", token);
-      catalog.devices[catalog.device_count].libretro = 0;
-      {
-         char device[32];
-         if (config_get_array(config, key, device, sizeof(device)))
-            catalog.devices[catalog.device_count].libretro =
-               (unsigned)strtoul(device, NULL, 10);
-      }
-      snprintf(key, sizeof(key), "controls_variant_name_%s", token);
-      if (config_get_array(config, key, name, sizeof(name)))
-         strlcpy(catalog.devices[catalog.device_count].name, name,
-               sizeof(catalog.devices[catalog.device_count].name));
-      else
-         strlcpy(catalog.devices[catalog.device_count].name, token,
-               sizeof(catalog.devices[catalog.device_count].name));
-      ++catalog.device_count;
-   }
-}
-
 int Controls::index_of(const char *id) const
 {
    for (int index = 0; id && index < catalog.count; ++index)
@@ -176,59 +55,34 @@ FocusTarget Controls::step(int direction) const
 bool Controls::load_file(const char *path, bool defaults)
 {
    config_file_t *config;
-   char profile[32] = {0};
+   bool profile_present = false;
    int index;
-
-   if (!path || !(config = config_file_new_from_path_to_string(path)))
-      return false;
 
    /* The starting pad is in the author's defaults. We load the per-game
     * override after them. It contains the pad the player chose later, so we
     * use that pad, and the player sees it in the picker at every launch. We
     * read the list of variants only from the defaults, because the override
     * does not contain it. */
-   if (config_get_array(config, "controls_profile", profile, sizeof(profile))
-         && profile[0])
-      strlcpy(profile_id, profile, sizeof(profile_id));
+   if (!(config = rib_open_controls(path, defaults, profile_id,
+               &catalog, &profile_present, rib_host_bind_index)))
+      return false;
 
    if (defaults)
    {
-      discover_controls(config);
-      discover_devices(config);
       /* We load the document before we build these lists, so there are no
        * listeners yet on its control and picker elements. */
       rib_rmlui_wire_controls();
       rib_rmlui_wire_device_picker();
       rib_rmlui_set_device_picker(false, profile_id);
    }
-   else if (profile[0])
+   else if (profile_present)
       rib_rmlui_set_device_picker(false, profile_id);
 
    if (defaults)
-      for (index = 0; index < catalog.count; ++index)
-      {
-         char key[96];
-         const char *suffixes[] = {"", "_btn", "_axis", "_mbtn"};
-         unsigned suffix_index;
-         catalog.entries[index].enabled = false;
-         for (suffix_index = 0; suffix_index < ARRAY_SIZE(suffixes);
-              ++suffix_index)
-         {
-            snprintf(key, sizeof(key), "input_player1_%s%s",
-                  catalog.entries[index].id, suffixes[suffix_index]);
-            if (config_get_entry(config, key))
-            {
-               catalog.entries[index].enabled = true;
-               break;
-            }
-         }
-      }
+      rib_controls_read_enabled(config, &catalog);
 
    for (index = 0; index < catalog.count; ++index)
    {
-      char key[64];
-      char label[NAME_MAX_LENGTH] = {0};
-
       if (!active(index))
          continue;
       if (defaults)
@@ -236,10 +90,7 @@ bool Controls::load_file(const char *path, bool defaults)
          catalog.entries[index].label[0] = '\0';
          rib_host_clear_bind(catalog.entries[index].bind_index);
       }
-      snprintf(key, sizeof(key), "rib_label_%s", catalog.entries[index].id);
-      if (config_get_array(config, key, label, sizeof(label)))
-         strlcpy(catalog.entries[index].label, label,
-               sizeof(catalog.entries[index].label));
+      rib_controls_read_label(config, &catalog.entries[index]);
       rib_host_load_bind(config, catalog.entries[index].id, catalog.entries[index].bind_index);
 
    }
