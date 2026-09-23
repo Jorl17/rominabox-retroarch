@@ -179,3 +179,41 @@ void rib_design_free(rib_design_declarations *design)
 {
    delete design;
 }
+
+void rib_load_shaders(const char *asset_directory, rib_shader_catalog *catalog)
+{
+   if (!catalog)
+      return;
+   *catalog = {};
+   if (!asset_directory || !*asset_directory)
+      return;
+
+   char path[PATH_MAX_LENGTH];
+   snprintf(path, sizeof(path), "%s/shaders.cfg", asset_directory);
+   config_file_t *config = config_file_new_from_path_to_string(path);
+   if (!config)
+      return;
+   config_get_array(config, "shader_state_on", catalog->state_on,
+         sizeof(catalog->state_on));
+   config_get_array(config, "shader_state_off", catalog->state_off,
+         sizeof(catalog->state_off));
+   each_id<1024>(config, "shader_ids", [&](const char *id) {
+      if (catalog->count >= RIB_SHADER_MAX)
+      {
+         RARCH_ERR("[RIB] shader list has more than %d entries; the rest "
+               "are not offered.\n", RIB_SHADER_MAX);
+         return false;
+      }
+      char key[96];
+      char preset[PATH_MAX_LENGTH];
+      rib_shader_declaration &shader = catalog->entries[catalog->count];
+      strlcpy(shader.id, id, sizeof(shader.id));
+      snprintf(key, sizeof(key), "shader_preset_%s", id);
+      preset[0] = '\0';
+      config_get_array(config, key, preset, sizeof(preset));
+      strlcpy(shader.preset, preset, sizeof(shader.preset));
+      ++catalog->count;
+      return true;
+   });
+   config_file_free(config);
+}
