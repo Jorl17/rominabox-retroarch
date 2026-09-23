@@ -230,14 +230,10 @@ void Parts::end_drag()
 void Parts::clear_drag()
 {
    drag_element = nullptr;
-   drag_id.clear();
-   drag_fraction = drag_origin = 0.0f;
 }
 
 void Parts::clear()
 {
    clear_drag();
-   slider_fraction.clear();
-   slider_step.clear();
 }
 }
