@@ -407,7 +407,7 @@ static void cocoa_gl_gfx_ctx_swap_buffers(void *data)
       if (rominabox_test_window_hidden())
       {
          [window orderFront:nil];
-         rib_window_prepared = true;
+         rib_window_prepared = false;
       }
       else if (getenv("ROMINABOX_MENU_SHOT") && !rominabox_test_window_shown())
       {

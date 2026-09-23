@@ -22,10 +22,11 @@ static inline void rominabox_prepare_test_window(NSWindow *window)
 {
    if (!window || !rominabox_test_window_hidden())
       return;
-   CGFloat right = 0;
-   for (NSScreen *screen in [NSScreen screens])
-      right = MAX(right, NSMaxX([screen frame]));
-   [window setFrameOrigin:NSMakePoint(right + 32, 0)];
+   /* An off-screen position alone does not hide the window, because a
+    * titled window may move back when we order it in or resize it. Keep
+    * its drawable, but never show the window in an automated run. */
+   [window setAlphaValue:0.0];
+   [window setIgnoresMouseEvents:YES];
 }
 
 #endif
