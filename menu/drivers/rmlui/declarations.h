@@ -11,7 +11,7 @@ extern "C" {
 
 /* The exported format's fixed bounds. */
 enum { RIB_OVERLAY_MAX = 8, RIB_TOGGLE_MAX = 8 };
-enum { RIB_SHADER_MAX = 32 };
+enum { RIB_SHADER_MAX = 32, RIB_CONTROL_MAX = 48, RIB_DEVICE_MAX = 8 };
 enum rib_toggle_guard { RIB_TOGGLE_GUARD_NONE, RIB_TOGGLE_GUARD_SAVES };
 
 typedef struct rib_toggle
@@ -74,6 +74,32 @@ typedef struct rib_shader_catalog
    char state_on[32];
    char state_off[32];
 } rib_shader_catalog;
+
+/* Controls and controller variants in the exported declaration order. We
+ * borrow this catalog in the view and never call into the menu for items. */
+typedef struct rib_control_declaration
+{
+   char id[32];
+   char group[32];
+   unsigned bind_index;
+   bool enabled;
+   char label[NAME_MAX_LENGTH];
+} rib_control_declaration;
+
+typedef struct rib_device_declaration
+{
+   char id[32];
+   char name[NAME_MAX_LENGTH];
+   unsigned libretro;
+} rib_device_declaration;
+
+typedef struct rib_controls_catalog
+{
+   rib_control_declaration entries[RIB_CONTROL_MAX];
+   int count;
+   rib_device_declaration devices[RIB_DEVICE_MAX];
+   int device_count;
+} rib_controls_catalog;
 
 typedef struct rib_design_declarations rib_design_declarations;
 /* One read of design.cfg. The returned data is immutable and borrowed until

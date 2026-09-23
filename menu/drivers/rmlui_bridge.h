@@ -6,31 +6,18 @@
 
 #include "../../audio/volume_range.h"
 #include "rmlui/events.h"
+#include "rmlui/declarations.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* How many control ids there are in the player, and each id in the order of
- * the console declaration. The code is in the menu, where we read the list
- * from the exported controls configuration. On purpose, there are no control
- * names in the bridge. */
 /* Attach listeners to control elements. Call it after we know the control
  * list. We load the document before that, so at load time there is nothing
  * to attach to. */
 void rib_rmlui_wire_controls(void);
 void rib_rmlui_wire_device_picker(void);
 void rib_rmlui_set_device_picker(bool open, const char *chosen);
-
-/* The controllers in the picker, which we read in the player from the exported
- * configuration, and the one in use now. There are no controller names in the
- * bridge, for the same reason there are no control names. */
-int rib_rmlui_device_count(void);
-const char *rib_rmlui_device_id(int index);
-const char *rib_rmlui_device_name(int index);
-
-int rib_rmlui_control_capacity(void);
-const char *rib_rmlui_control_id(int index);
 
 /* Escape/menu-toggle: cancel capture, then leave Controls, then resume. */
 static inline enum rib_rmlui_action rib_rmlui_map_menu_toggle(
@@ -76,8 +63,6 @@ static inline bool rib_rmlui_state_task_matches(
 
 /* core_context is a flag in the gl driver, set from the hw render type when
  * the context was created. We read it once, here, not per frame or per core. */
-bool rib_rmlui_init(const char *asset_directory, int width, int height,
-      bool core_context);
 void rib_rmlui_shutdown(void);
 void rib_rmlui_render(int width, int height);
 void rib_rmlui_set_selected_slot(int slot);
@@ -262,7 +247,6 @@ bool rib_rmlui_has_element(const char *id);
 /* The group of a control, or NULL. A stick is several controls and one box,
  * and in the bridge we attach listeners to that box from the group and not
  * from a second list of ids. */
-const char *rib_rmlui_control_group(int index);
 void rib_rmlui_focus_group(const char *group);
 
 /* Draw a different controller. The markup is a scene for that pad in the
@@ -294,6 +278,11 @@ void rib_rmlui_notify_state_task(const char *path, int slot,
 
 #ifdef __cplusplus
 }
+namespace rib { class Focus; class Slots; class Screens; }
+rib::Screens& rib_rmlui_screens();
+rib::Slots& rib_rmlui_bind_state(rib::Focus& focus, const rib_controls_catalog& controls);
+bool rib_rmlui_init(const char *asset_directory, int width, int height,
+      bool core_context, rib::Focus& focus, const rib_controls_catalog& controls);
 void rib_rmlui_set_focused(const rib::Event& focused);
 rib::Event rib_rmlui_hovered_event();
 #endif

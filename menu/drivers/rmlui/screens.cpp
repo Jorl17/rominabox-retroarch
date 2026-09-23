@@ -3,6 +3,8 @@
 #include "document.hpp"
 #include <RmlUi/Core/StringUtilities.h>
 #include <utility>
+#include <cstdio>
+#include <cstring>
 
 namespace rib {
 std::set<std::string> Screens::wired_screen_buttons;
@@ -22,6 +24,16 @@ private:
    EventQueue& events;
    std::string id;
 };
+}
+
+bool Screens::controls_visible() const
+{
+   return std::strcmp(active, "controls") == 0;
+}
+
+void Screens::remember(const char *id)
+{
+   std::snprintf(active, sizeof(active), "%s", id ? id : "");
 }
 
 void Screens::built_in_screens()

@@ -40,7 +40,7 @@ void Controls::discover_controls(config_file_t *config)
    char key[96];
    char belonging[1024];
 
-   count = 0;
+   catalog.count = 0;
    belonging[0] = '\0';
    if (profile_id[0])
    {
@@ -68,7 +68,7 @@ void Controls::discover_controls(config_file_t *config)
                "it. Check the id against DECLARE_BIND in configuration.c.\n", id);
          continue;
       }
-      if (count >= RIB_CONTROL_MAX)
+      if (catalog.count >= RIB_CONTROL_MAX)
       {
          /* We log this, so that a control left out, such as a DualShock
           * stick, appears in the log. */
@@ -76,18 +76,18 @@ void Controls::discover_controls(config_file_t *config)
                "after it are unreachable.\n", RIB_CONTROL_MAX, id);
          return;
       }
-      strlcpy(entries[count].id, id,
-            sizeof(entries[count].id));
-      entries[count].group[0] = '\0';
+      strlcpy(catalog.entries[catalog.count].id, id,
+            sizeof(catalog.entries[catalog.count].id));
+      catalog.entries[catalog.count].group[0] = '\0';
       {
          char group_key[96];
          snprintf(group_key, sizeof(group_key), "rib_group_%s", id);
          config_get_array(config, group_key,
-               entries[count].group,
-               sizeof(entries[count].group));
+               catalog.entries[catalog.count].group,
+               sizeof(catalog.entries[catalog.count].group));
       }
-      entries[count].bind_index = bind_index;
-      ++count;
+      catalog.entries[catalog.count].bind_index = bind_index;
+      ++catalog.count;
    }
 }
 
@@ -97,7 +97,7 @@ void Controls::discover_devices(config_file_t *config)
    char *cursor;
    char *token;
 
-   device_count = 0;
+   catalog.device_count = 0;
    if (!config_get_array(config, "controls_variants", list, sizeof(list)))
       return;
 
@@ -109,88 +109,68 @@ void Controls::discover_devices(config_file_t *config)
 
       if (!*token)
          continue;
-      if (device_count >= RIB_DEVICE_MAX)
+      if (catalog.device_count >= RIB_DEVICE_MAX)
       {
          RARCH_ERR("[RIB] more than %d controllers offered; '%s' and any after "
                "it cannot be chosen.\n", RIB_DEVICE_MAX, token);
          return;
       }
-      strlcpy(device_ids[device_count], token,
-            sizeof(device_ids[device_count]));
+      strlcpy(catalog.devices[catalog.device_count].id, token,
+            sizeof(catalog.devices[catalog.device_count].id));
       snprintf(key, sizeof(key), "controls_variant_device_%s", token);
-      device_libretro[device_count] = 0;
+      catalog.devices[catalog.device_count].libretro = 0;
       {
          char device[32];
          if (config_get_array(config, key, device, sizeof(device)))
-            device_libretro[device_count] =
+            catalog.devices[catalog.device_count].libretro =
                (unsigned)strtoul(device, NULL, 10);
       }
       snprintf(key, sizeof(key), "controls_variant_name_%s", token);
       if (config_get_array(config, key, name, sizeof(name)))
-         strlcpy(device_names[device_count], name,
-               sizeof(device_names[device_count]));
+         strlcpy(catalog.devices[catalog.device_count].name, name,
+               sizeof(catalog.devices[catalog.device_count].name));
       else
-         strlcpy(device_names[device_count], token,
-               sizeof(device_names[device_count]));
-      ++device_count;
+         strlcpy(catalog.devices[catalog.device_count].name, token,
+               sizeof(catalog.devices[catalog.device_count].name));
+      ++catalog.device_count;
    }
 }
 
 int Controls::index_of(const char *id) const
 {
-   for (int index = 0; id && index < count; ++index)
-      if (string_is_equal(entries[index].id, id)) return index;
+   for (int index = 0; id && index < catalog.count; ++index)
+      if (string_is_equal(catalog.entries[index].id, id)) return index;
    return -1;
 }
 
 bool Controls::active(int index) const
 {
-   return index >= 0 && index < count &&
-          enabled[index];
+   return index >= 0 && index < catalog.count &&
+          catalog.entries[index].enabled;
 }
 
 const char * Controls::console_name(int index) const
 {
-   if (labels[index][0])
-      return labels[index];
-   return entries[index].id;
+   if (catalog.entries[index].label[0])
+      return catalog.entries[index].label;
+   return catalog.entries[index].id;
 }
 
-int Controls::first() const
+FocusTarget Controls::first() const
 {
-   int index;
-   for (index = 0; index < count; ++index)
-      if (active(index))
-         return index;
-   return 0;
+   for (int index = 0; index < catalog.count; ++index)
+      if (active(index)) return FocusTarget::item(index);
+   return FocusTarget::item(0);
 }
 
-int Controls::step(int current, int direction) const
+FocusTarget Controls::step(int direction) const
 {
-   int sequence[RIB_CONTROL_MAX + 3];
-   int sequence_count = 0;
-   int position = 0;
-   int index;
-
-   /* The player moves through the controls in the order of their declaration.
-    *
-    * We declare the controls in each console package in the order the player
-    * moves through them. On the Game Boy, B comes before A because that is
-    * where the buttons are on the console. */
-   for (index = 0; index < count; ++index)
-      if (active(index))
-         sequence[sequence_count++] = index;
-   sequence[sequence_count++] = RIB_CONTROL_MAX;
-   sequence[sequence_count++] = RIB_CONTROL_MAX + 1;
-
-   for (position = 0; position < sequence_count; ++position)
-      if (sequence[position] == current)
-         break;
-   if (position == sequence_count)
-      position = 0;
-   else
-      position = (position + direction + sequence_count) % sequence_count;
-   return sequence[position];
+   std::vector<FocusTarget> stops;
+   for (int index = 0; index < catalog.count; ++index)
+      if (active(index)) stops.push_back(FocusTarget::item(index));
+   stops.push_back(FocusTarget::reset());
+   stops.push_back(FocusTarget::back());
+   return focus_state.next(FocusRegion::Controls, stops, direction);
 }
 
 bool Controls::load_file(const char *path, bool defaults)
@@ -225,26 +205,26 @@ bool Controls::load_file(const char *path, bool defaults)
       rib_rmlui_set_device_picker(false, profile_id);
 
    if (defaults)
-      for (index = 0; index < count; ++index)
+      for (index = 0; index < catalog.count; ++index)
       {
          char key[96];
          const char *suffixes[] = {"", "_btn", "_axis", "_mbtn"};
          unsigned suffix_index;
-         enabled[index] = false;
+         catalog.entries[index].enabled = false;
          for (suffix_index = 0; suffix_index < ARRAY_SIZE(suffixes);
               ++suffix_index)
          {
             snprintf(key, sizeof(key), "input_player1_%s%s",
-                  entries[index].id, suffixes[suffix_index]);
+                  catalog.entries[index].id, suffixes[suffix_index]);
             if (config_get_entry(config, key))
             {
-               enabled[index] = true;
+               catalog.entries[index].enabled = true;
                break;
             }
          }
       }
 
-   for (index = 0; index < count; ++index)
+   for (index = 0; index < catalog.count; ++index)
    {
       char key[64];
       char label[NAME_MAX_LENGTH] = {0};
@@ -253,14 +233,14 @@ bool Controls::load_file(const char *path, bool defaults)
          continue;
       if (defaults)
       {
-         labels[index][0] = '\0';
-         rib_host_clear_bind(entries[index].bind_index);
+         catalog.entries[index].label[0] = '\0';
+         rib_host_clear_bind(catalog.entries[index].bind_index);
       }
-      snprintf(key, sizeof(key), "rib_label_%s", entries[index].id);
+      snprintf(key, sizeof(key), "rib_label_%s", catalog.entries[index].id);
       if (config_get_array(config, key, label, sizeof(label)))
-         strlcpy(labels[index], label,
-               sizeof(labels[index]));
-      rib_host_load_bind(config, entries[index].id, entries[index].bind_index);
+         strlcpy(catalog.entries[index].label, label,
+               sizeof(catalog.entries[index].label));
+      rib_host_load_bind(config, catalog.entries[index].id, catalog.entries[index].bind_index);
 
    }
    rib_host_restore_keyboard_mapping();
@@ -278,7 +258,7 @@ void Controls::reload()
    snprintf(defaults_path, sizeof(defaults_path),
          "%s/controls-defaults.cfg", asset_directory);
 
-   focused = 0;
+   focus_state.set(FocusRegion::Controls, FocusTarget::item(0));
    if (!load_file(defaults_path, true))
    {
       RARCH_ERR("[RIB] could not re-read controls from %s after changing "
@@ -303,16 +283,16 @@ bool Controls::save()
       return false;
 
    config_set_string(config, "controls_profile", profile_id);
-   for (index = 0; index < count; ++index)
+   for (index = 0; index < catalog.count; ++index)
    {
       char key[96];
 
       if (!active(index))
          continue;
-      snprintf(key, sizeof(key), "rib_label_%s", entries[index].id);
-      config_set_string(config, key, labels[index]);
+      snprintf(key, sizeof(key), "rib_label_%s", catalog.entries[index].id);
+      config_set_string(config, key, catalog.entries[index].label);
 
-      rib_host_write_bind(config, entries[index].id, entries[index].bind_index);
+      rib_host_write_bind(config, catalog.entries[index].id, catalog.entries[index].bind_index);
    }
 
    saved = rib_write_menu_config(config, path,
@@ -323,8 +303,10 @@ bool Controls::save()
 
 void Controls::refresh()
 {
+   const auto target = focus_state.target(FocusRegion::Controls);
+   const int focused = target.kind == FocusTarget::Kind::Item ? target.index : -1;
    int index;
-   for (index = 0; index < count; ++index)
+   for (index = 0; index < catalog.count; ++index)
    {
       char display_label[NAME_MAX_LENGTH * 2];
       char binding[4096];
@@ -332,28 +314,28 @@ void Controls::refresh()
 
       if (!active(index))
          continue;
-      strlcpy(display_label, labels[index],
+      strlcpy(display_label, catalog.entries[index].label,
             sizeof(display_label));
       callout_text(index, binding, sizeof(binding));
-      rib_rmlui_set_control_state(entries[index].id,
+      rib_rmlui_set_control_state(catalog.entries[index].id,
             display_label, binding,
-            visible && focused == index,
+            screens.controls_visible() && focused == index,
             capture_active && capture_control == index);
-      if (entries[index].group[0])
+      if (catalog.entries[index].group[0])
       {
          snprintf(group_id, sizeof(group_id), "control-group-binding-%s",
-               entries[index].group);
+               catalog.entries[index].group);
          rib_rmlui_set_element_text(group_id, binding);
       }
    }
    rib_rmlui_set_controls_action_focus(
-         visible && focused == RIB_CONTROL_MAX,
-         visible && focused == RIB_CONTROL_MAX + 1,
+         screens.controls_visible() && target.kind == FocusTarget::Kind::Reset,
+         screens.controls_visible() && target.kind == FocusTarget::Kind::Back,
          capture_active);
-   if (visible && focused >= 0
-         && focused < count
-         && entries[focused].group[0])
-      rib_rmlui_focus_group(entries[focused].group);
+   if (screens.controls_visible() && focused >= 0
+         && focused < catalog.count
+         && catalog.entries[focused].group[0])
+      rib_rmlui_focus_group(catalog.entries[focused].group);
    else
       rib_rmlui_focus_group(NULL);
 }
@@ -365,7 +347,7 @@ void Controls::cancel_capture(const char *status)
    rib_host_capture_cancel();
    capture_active = false;
    rib_rmlui_set_controls_status(status ? status : "BINDING UNCHANGED");
-   rib_rmlui_set_footer_hint(visible ? "ESC  BACK" :
+   rib_rmlui_set_footer_hint(screens.controls_visible() ? "ESC  BACK" :
                                                        "ESC  CONTINUE");
    refresh();
 }
@@ -375,7 +357,7 @@ void Controls::start_capture(int index)
    char status[96];
    if (!active(index))
       return;
-   if (!rib_host_capture_start(entries[index].bind_index,
+   if (!rib_host_capture_start(catalog.entries[index].bind_index,
             RIB_CONTROL_CAPTURE_SECONDS))
    {
       rib_rmlui_set_controls_status("CAPTURE COULD NOT START");
@@ -396,12 +378,12 @@ int Controls::find_conflict(int changed_index) const
    int index;
    if (!active(changed_index))
       return -1;
-   for (index = 0; index < count; ++index)
+   for (index = 0; index < catalog.count; ++index)
    {
       if (index == changed_index || !active(index))
          continue;
-      if (rib_host_bind_conflicts(entries[changed_index].bind_index,
-               entries[index].bind_index))
+      if (rib_host_bind_conflicts(catalog.entries[changed_index].bind_index,
+               catalog.entries[index].bind_index))
          return index;
    }
    return -1;
@@ -414,25 +396,25 @@ bool Controls::same_bind_target(int left, int right) const
    if (left == right)
       return true;
    if (left < 0 || right < 0
-         || left >= count || right >= count)
+         || left >= catalog.count || right >= catalog.count)
       return false;
-   group_left = entries[left].group;
-   group_right = entries[right].group;
+   group_left = catalog.entries[left].group;
+   group_right = catalog.entries[right].group;
    return group_left[0] && group_right[0] && string_is_equal(group_left, group_right);
 }
 
 void Controls::bind_anchor(int index, char *out, size_t length) const
 {
-   if (entries[index].group[0])
+   if (catalog.entries[index].group[0])
    {
-      snprintf(out, length, "control-group-%s", entries[index].group);
+      snprintf(out, length, "control-group-%s", catalog.entries[index].group);
       if (rib_rmlui_has_element(out))
          return;
    }
-   snprintf(out, length, "control-%s", entries[index].id);
+   snprintf(out, length, "control-%s", catalog.entries[index].id);
    if (rib_rmlui_has_element(out))
       return;
-   snprintf(out, length, "control-hit-%s", entries[index].id);
+   snprintf(out, length, "control-hit-%s", catalog.entries[index].id);
 }
 
 void Controls::callout_text(int index, char *out, size_t length) const
@@ -448,7 +430,7 @@ void Controls::callout_text(int index, char *out, size_t length) const
    if (!out || !length)
       return;
    out[0] = '\0';
-   if (index < 0 || index >= count)
+   if (index < 0 || index >= catalog.count)
    {
       strlcpy(out, "---", length);
       return;
@@ -457,7 +439,7 @@ void Controls::callout_text(int index, char *out, size_t length) const
 
    for (slot = 0; slot < member_count; ++slot)
    {
-      const unsigned at = entries[members[slot]].bind_index;
+      const unsigned at = catalog.entries[members[slot]].bind_index;
       rib_host_bind_lines(at,
             details, kinds, &lines);
    }
@@ -498,14 +480,14 @@ void Controls::show_binds(int index)
    for (member = 0; member < member_count; ++member)
    {
       int before = lines;
-      const unsigned at = entries[members[member]].bind_index;
+      const unsigned at = catalog.entries[members[member]].bind_index;
       rib_host_bind_lines(at,
             details, kinds, &lines);
       for (slot = before; slot < lines; ++slot)
       {
-         const char *label = labels[members[member]];
+         const char *label = catalog.entries[members[member]].label;
          if (!label[0])
-            label = entries[members[member]].id;
+            label = catalog.entries[members[member]].id;
          strlcpy(titles[slot], label, sizeof(titles[slot]));
       }
    }
@@ -522,7 +504,7 @@ void Controls::show_binds(int index)
    if (lines > rows)
       RARCH_ERR("[RIB] '%s' has %d binds and the menu was built with %d rows; "
             "the rest are not shown.\n",
-            entries[index].id, lines, rows);
+            catalog.entries[index].id, lines, rows);
    for (slot = 0; slot < rows; ++slot)
    {
       const char *id = rib_rmlui_row_in(binds.list, slot);
@@ -551,15 +533,12 @@ void Controls::hide_binds()
    binds.open = false;
 }
 
-void Controls::focus(int index)
+void Controls::focus(FocusTarget target)
 {
-   if (index == focused)
-      return;
-   if (index < 0 || index > RIB_CONTROL_MAX + 1)
-      return;
-   if (index < RIB_CONTROL_MAX && !active(index))
-      return;
-   focused = index;
+   if (target == focus_state.target(FocusRegion::Controls)) return;
+   if (target.kind == FocusTarget::Kind::Item && !active(target.index)) return;
+   if (target.kind == FocusTarget::Kind::Slots) return;
+   focus_state.set(FocusRegion::Controls, target);
    refresh();
 }
 
@@ -569,7 +548,7 @@ void Controls::update_binds(int x, int y, bool pointer_active, bool hover_active
    rib::Event hovered;
    int64_t now;
 
-   if (!binds.list[0] || !visible
+   if (!binds.list[0] || !screens.controls_visible()
          || capture_active || device_picker_open)
    {
       hide_binds();
@@ -589,7 +568,7 @@ void Controls::update_binds(int x, int y, bool pointer_active, bool hover_active
          const int index = index_of(hovered.id.c_str());
          if (active(index))
          {
-            focus(index);
+            focus(FocusTarget::item(index));
             current = index;
          }
       }
@@ -597,12 +576,14 @@ void Controls::update_binds(int x, int y, bool pointer_active, bool hover_active
             || hovered.kind == RIB_RMLUI_ACTION_CONTROLS_BACK)
       {
          focus(hovered.kind == RIB_RMLUI_ACTION_CONTROLS_RESET
-               ? RIB_CONTROL_MAX : RIB_CONTROL_MAX + 1);
+               ? FocusTarget::reset() : FocusTarget::back());
          current = -1;
       }
    }
+   const auto target = focus_state.target(FocusRegion::Controls);
+   const int focused = target.kind == FocusTarget::Kind::Item ? target.index : -1;
    if (current < 0 && focused >= 0
-         && focused < count)
+         && focused < catalog.count)
       current = focused;
    if (!active(current))
       current = -1;
@@ -634,10 +615,10 @@ void Controls::choose_device(const char *chosen)
        * per-game override and never to the author's fixed defaults. */
       save();
 
-      for (index = 0; index < device_count; ++index)
-         if (string_is_equal(device_ids[index], chosen))
+      for (index = 0; index < catalog.device_count; ++index)
+         if (string_is_equal(catalog.devices[index].id, chosen))
          {
-            device = device_libretro[index];
+            device = catalog.devices[index].libretro;
             known = true;
             break;
          }
@@ -769,14 +750,14 @@ void Controls::toggle_picker()
 
 int Controls::bind_members(int index, int *members) const
 {
-   if (!entries[index].group[0])
+   if (!catalog.entries[index].group[0])
    {
       members[0] = index;
       return 1;
    }
    int found = 0;
-   for (int cursor = 0; cursor < count; ++cursor)
-      if (active(cursor) && string_is_equal(entries[cursor].group, entries[index].group))
+   for (int cursor = 0; cursor < catalog.count; ++cursor)
+      if (active(cursor) && string_is_equal(catalog.entries[cursor].group, catalog.entries[index].group))
          members[found++] = cursor;
    return found;
 }

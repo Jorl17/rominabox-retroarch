@@ -16,6 +16,9 @@ public:
    Screens(Document& document, EventQueue& events, Event& hovered)
       : document(document), events(events), hovered(hovered) {}
 
+   const char *current() const { return active; }
+   bool controls_visible() const;
+   void remember(const char *id);
    void built_in_screens();
    void clear_screens();
    void declare_screen(const char *id, const char *panel,
@@ -35,6 +38,7 @@ private:
    Event& hovered;
    std::vector<Screen> screens;
    std::string pause_button_id;
+   char active[32] = "pause";
    /* Neither clear_screens nor a document reset clears this set, so old
     * entries stop us adding listeners to a new document. */
    static std::set<std::string> wired_screen_buttons;

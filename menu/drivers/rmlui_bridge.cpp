@@ -3,6 +3,11 @@
 #include "rmlui/document.hpp"
 #include "rmlui/binds_popup.hpp"
 #include "rmlui/slots.hpp"
+#include "rmlui/lists.hpp"
+#include "rmlui/parts.hpp"
+#include "rmlui/focus.hpp"
+#include "rmlui/screens.hpp"
+#include "rmlui/status.hpp"
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/ElementUtilities.h>
@@ -25,12 +30,17 @@
 #include <vector>
 
 extern "C" void rib_rmlui_wire_toggles(void);
-static void wire_arrows(Rml::Element *node);
 
 namespace
 {
 rib::Document view;
+rib::Focus *focus = nullptr;
+const rib_controls_catalog *control_declarations = nullptr;
 rib::EventQueue intents;
+rib::Lists lists(view, intents);
+rib::Parts parts(view, intents);
+rib::Status status_view(view);
+std::unique_ptr<rib::Slots> slot_view;
 
 class ActionListener : public Rml::EventListener
 {
@@ -81,6 +91,7 @@ private:
 };
 
 rib::Event HoverListener::hovered_action = RIB_RMLUI_ACTION_NONE;
+rib::Screens screen_view(view, intents, HoverListener::hovered_action);
 
 class DeviceOptionListener : public Rml::EventListener
 {
@@ -97,8 +108,6 @@ private:
    std::string id;
 };
 
-struct StatusMessage { std::string text; double expires = 0; };
-StatusMessage main_status, controls_status;
 /* Click an element by id, as with a pointer.
  *
  * With the offscreen renderer we can show what a state looks like, but not
@@ -121,157 +130,9 @@ extern "C" bool rib_rmlui_click_element(const char *id)
    return true;
 }
 
-void show_status(StatusMessage& message, const char *id, const char *text)
-{
-   message.text = text ? text : "";
-   message.expires = view.elapsed() + 5.0;
-   if (view.root())
-      if (auto *element = view.root()->GetElementById(id))
-         element->SetInnerRML(Rml::StringUtilities::EncodeRml(message.text));
-}
-void expire_status(StatusMessage& message, const char *id)
-{
-   if (!message.text.empty() && view.elapsed() >= message.expires)
-      show_status(message, id, "");
-}
-float game_aspect = 4.0f / 3.0f;
-int selected_slot = 1;
-rib::Event focused_item = RIB_RMLUI_ACTION_RESUME;
-/* Which button on the pause row is focused, by id.
- *
- * The pause row contains what the design and the export put in it. With
- * Options on, the fourth button is `options`, not `controls`. So we track the
- * focus by element id and not by a fixed table of actions. */
-std::string focused_element = "resume";
-struct SlotState
-{
-   bool occupied = false;
-   std::string thumbnail_path;
-   std::string thumbnail_version;
-};
-SlotState slots[rib::kSlotCount];
 bool pointer_down = false;
 
-std::string thumbnail_version(const std::string& path)
-{
-   struct stat info = {};
-   if (path.empty() || stat(path.c_str(), &info) != 0) return {};
-   long nanoseconds = 0;
-#if defined(__APPLE__)
-   nanoseconds = info.st_mtimespec.tv_nsec;
-#elif !defined(_WIN32)
-   nanoseconds = info.st_mtim.tv_nsec;
-#endif
-   return std::to_string(info.st_mtime) + ":" +
-      std::to_string(nanoseconds) + ":" + std::to_string(info.st_size);
-}
-
-bool thumbnail_ready(const std::string& path)
-{
-#ifndef RIB_RMLUI_HEADLESS
-   // The screenshot is written asynchronously. Never pass RmlUi a partial PNG,
-   // because failed loads stay in its file-texture cache until a context rebuild.
-   std::vector<unsigned char> pixels;
-   unsigned width = 0, height = 0;
-   return lodepng::decode(pixels, width, height, path) == 0;
-#else
-   return !path.empty();
-#endif
-}
-
-/* Why the save slots are unusable, in the words of the design: the word on
- * each slot and the line that explains it. Empty means they are usable. The
- * decision is elsewhere in the player, and here we only draw it. */
-std::string slots_guard;
-std::string slots_guard_reason;
-
-std::string quoted_css_path(const std::string& path)
-{
-   std::string result;
-   for (char value : path)
-   {
-      if (value == '\\' || value == '"') result += '\\';
-      result += value;
-   }
-   return result;
-}
-
-void update_document_state()
-{
-   if (!view.root())
-      return;
-
-   /* The contents of the pause panel, in document order. */
-   char row[16][64];
-   const int row_count = rib_rmlui_focusables("pause-panel", row, 16);
-   for (int index = 0; index < row_count; ++index)
-      if (Rml::Element *element = view.root()->GetElementById(row[index]))
-         element->SetClass("focused", focused_element == row[index]);
-
-   for (int index = 0; index < rib::kSlotCount; ++index)
-   {
-      const int slot = index + 1;
-      const std::string suffix = std::to_string(slot);
-      if (Rml::Element *element = view.root()->GetElementById("slot-" + suffix))
-      {
-         element->SetClass("selected", slot == selected_slot);
-         element->SetClass("focused",
-               focused_item.kind == RIB_RMLUI_ACTION_SELECT_SLOT && focused_item.slot == slot);
-         element->SetClass("occupied", slots[index].occupied);
-         element->SetClass("empty", !slots[index].occupied);
-         element->SetClass("disabled", !slots_guard.empty());
-         if (slots_guard.empty())
-            element->RemoveAttribute("disabled");
-         else
-            element->SetAttribute("disabled", "disabled");
-      }
-      if (Rml::Element *label = view.root()->GetElementById("slot-label-" + suffix))
-         label->SetInnerRML("SLOT " + suffix);
-      if (Rml::Element *state = view.root()->GetElementById("slot-state-" + suffix))
-         state->SetInnerRML(slots_guard.empty()
-               ? (slots[index].occupied ? "OCCUPIED" : "EMPTY")
-               : Rml::StringUtilities::EncodeRml(slots_guard));
-      if (Rml::Element *image = view.root()->GetElementById("slot-image-" + suffix))
-      {
-         // The core DAR corrects non-square source pixels. The well has that
-         // ratio, and we fill it in RmlUi without a second letterbox.
-         const float height = std::min(138.0f, 230.0f / game_aspect);
-         if (auto *picture = image->GetParentNode())
-         {
-            picture->SetProperty("width", std::to_string(height * game_aspect) + "dp");
-            picture->SetProperty("height", std::to_string(height) + "dp");
-            picture->SetProperty("margin-top", std::to_string((138.0f - height) / 2) + "dp");
-            picture->SetProperty("margin-bottom", std::to_string((138.0f - height) / 2) + "dp");
-         }
-         if (slots[index].occupied && !slots[index].thumbnail_path.empty())
-            image->SetProperty("decorator", "image(\"" +
-                  quoted_css_path(slots[index].thumbnail_path) + "\" fill)");
-         else
-            image->RemoveProperty("decorator");
-      }
-   }
-
-   for (const char *id : {"save", "load"})
-      if (Rml::Element *button = view.root()->GetElementById(id))
-      {
-         const bool disabled = !slots_guard.empty() ||
-               (std::string(id) == "load" && !slots[selected_slot - 1].occupied);
-         button->SetClass("disabled", disabled);
-         if (disabled)
-            button->SetAttribute("disabled", "disabled");
-         else
-            button->RemoveAttribute("disabled");
-      }
-
-   if (Rml::Element *status = view.root()->GetElementById("status"))
-   {
-      /* Why the slots are unusable is a lasting state, not a message, so we keep
-       * it while they are locked. Messages go in front of it and expire. */
-      const std::string &shown =
-         main_status.text.empty() ? slots_guard_reason : main_status.text;
-      status->SetInnerRML(Rml::StringUtilities::EncodeRml(shown));
-   }
-}
+void update_document_state() { slot_view->paint(); }
 
 /* Attach listeners to the control elements.
  *
@@ -293,9 +154,9 @@ extern "C" void rib_rmlui_wire_device_picker(void)
       current->AddEventListener(Rml::EventId::Click,
             new ActionListener(RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE));
 
-   for (int index = 0; index < rib_rmlui_device_count(); ++index)
+   for (int index = 0; index < control_declarations->device_count; ++index)
    {
-      const char *id = rib_rmlui_device_id(index);
+      const char *id = control_declarations->devices[index].id;
       if (!id || !*id)
          continue;
       if (Rml::Element *option =
@@ -317,9 +178,9 @@ extern "C" void rib_rmlui_set_device_picker(bool open, const char *chosen)
       else
          list->SetProperty("display", "none");
    }
-   for (int index = 0; index < rib_rmlui_device_count(); ++index)
+   for (int index = 0; index < control_declarations->device_count; ++index)
    {
-      const char *id = rib_rmlui_device_id(index);
+      const char *id = control_declarations->devices[index].id;
       if (!id || !*id)
          continue;
       if (Rml::Element *option =
@@ -327,11 +188,10 @@ extern "C" void rib_rmlui_set_device_picker(bool open, const char *chosen)
          option->SetClass("selected", chosen && !std::strcmp(chosen, id));
    }
    if (Rml::Element *current = view.root()->GetElementById("controls-device-current"))
-      for (int index = 0; index < rib_rmlui_device_count(); ++index)
-         if (chosen && rib_rmlui_device_id(index)
-               && !std::strcmp(chosen, rib_rmlui_device_id(index)))
+      for (int index = 0; index < control_declarations->device_count; ++index)
+         if (chosen && !std::strcmp(chosen, control_declarations->devices[index].id))
          {
-            const char *name = rib_rmlui_device_name(index);
+            const char *name = control_declarations->devices[index].name;
             current->SetInnerRML(Rml::StringUtilities::EncodeRml(name ? name : chosen));
             break;
          }
@@ -347,9 +207,9 @@ extern "C" void rib_rmlui_wire_controls(void)
     * in the document are the declared controls, however many there are, and
     * their names are not in this code. */
    std::vector<std::string> wired_groups;
-   for (int index = 0; index < rib_rmlui_control_capacity(); ++index)
+   for (int index = 0; index < control_declarations->count; ++index)
    {
-      const char *control_id = rib_rmlui_control_id(index);
+      const char *control_id = control_declarations->entries[index].id;
       if (!control_id || !*control_id)
          break;
       const rib::Event action{RIB_RMLUI_ACTION_CONTROL, control_id};
@@ -367,7 +227,7 @@ extern "C" void rib_rmlui_wire_controls(void)
             element->AddEventListener(Rml::EventId::Mouseout,
                   new HoverListener(action));
          }
-      const char *group = rib_rmlui_control_group(index);
+      const char *group = control_declarations->entries[index].group;
       if (!group || !*group)
          continue;
       const std::string name(group);
@@ -397,12 +257,7 @@ extern "C" void rib_rmlui_wire_controls(void)
  * tests, which load a document with no design declarations next to it. */
 static void rib_rmlui_built_in_screens(void)
 {
-   /* The same path as for the declaration in a design, so we attach the
-    * listeners to the buttons in the same way and only once. */
-   rib_rmlui_declare_screen("pause", "pause-panel", "GAME PAUSED",
-         "ESC  CONTINUE", "controls-back");
-   rib_rmlui_declare_screen("controls", "controls-panel", "CONTROLS",
-         "ESC  BACK", "controls");
+   screen_view.built_in_screens();
 }
 
 void wire_document()
@@ -447,7 +302,7 @@ void wire_document()
 
    rib_rmlui_wire_controls();
    rib_rmlui_wire_toggles();
-   wire_arrows(view.root());
+   parts.wire_arrows();
    rib_rmlui_wire_lists();
    /* When a design declares screens, we replace these before the first frame,
     * and when it declares none we keep them. In both cases we attach the
@@ -459,9 +314,21 @@ void wire_document()
 }
 }
 
-extern "C" bool rib_rmlui_init(
-      const char *asset_directory, int width, int height, bool core_context)
+rib::Screens& rib_rmlui_screens() { return screen_view; }
+
+rib::Slots& rib_rmlui_bind_state(rib::Focus& state, const rib_controls_catalog& controls)
 {
+   focus = &state;
+   control_declarations = &controls;
+   if (!slot_view) slot_view = std::make_unique<rib::Slots>(view, state, status_view);
+   else slot_view->bind_focus(state);
+   return *slot_view;
+}
+
+bool rib_rmlui_init(
+      const char *asset_directory, int width, int height, bool core_context, rib::Focus& state, const rib_controls_catalog& controls)
+{
+   rib_rmlui_bind_state(state, controls);
    if (view.get_context())
       return true;
    if (!view.initialize(asset_directory, width, height, core_context))
@@ -471,7 +338,6 @@ extern "C" bool rib_rmlui_init(
    return true;
 }
 
-static Rml::Element *slider_drag = nullptr;
 
 extern "C" void rib_rmlui_shutdown(void)
 {
@@ -479,7 +345,7 @@ extern "C" void rib_rmlui_shutdown(void)
    ActionListener::clear();
    HoverListener::hovered_action = RIB_RMLUI_ACTION_NONE;
    pointer_down = false;
-   slider_drag = nullptr;
+   parts.clear_drag();
 }
 
 extern "C" void rib_rmlui_capture_next(const char *path)
@@ -491,101 +357,48 @@ extern "C" void rib_rmlui_render(int width, int height)
 {
    if (!view.get_context())
       return;
-   expire_status(main_status, "status");
-   expire_status(controls_status, "controls-status");
+   status_view.expire();
    view.render(width, height);
 }
 
 extern "C" void rib_rmlui_set_selected_slot(int slot)
 {
-   if (!rib::valid_slot(slot))
-      return;
-   selected_slot = slot;
-   update_document_state();
+   return slot_view->set_selected_slot(slot);
 }
 
 void rib_rmlui_set_focused(const rib::Event& focused)
 {
-   focused_item = focused;
-   /* A slot has the focus, so no button on the row does. */
-   focused_element.clear();
+   focus->pause_action(focused);
    update_document_state();
 }
 
 /* Focus one button of the pause row, by its id in the document. */
 extern "C" void rib_rmlui_focus_element(const char *id)
 {
-   focused_element = id ? id : "";
-   /* No slot is focused either. The slot ids start after the row actions, so
-    * any value outside that range means "none of them". */
-   focused_item = RIB_RMLUI_ACTION_RESUME;
+   focus->pause_element(id);
    update_document_state();
 }
 
 extern "C" const char *rib_rmlui_focused_element(void)
 {
-   return focused_element.c_str();
+   return focus->pause_element().c_str();
 }
 
 extern "C" void rib_rmlui_set_slot_state(int slot, bool occupied,
       const char *thumbnail_path)
 {
-   if (!rib::valid_slot(slot))
-      return;
-   SlotState& state = slots[slot - 1];
-   const std::string next_path = thumbnail_path ? thumbnail_path : "";
-   const std::string version = thumbnail_version(next_path);
-   if (state.occupied == occupied && state.thumbnail_path == next_path &&
-         state.thumbnail_version == version)
-      return;
-   state.occupied = occupied;
-   if (!next_path.empty() && !thumbnail_ready(next_path))
-   {
-      update_document_state();
-      return;
-   }
-   if (!state.thumbnail_path.empty())
-      view.release_texture(state.thumbnail_path);
-   state.thumbnail_path = next_path;
-   state.thumbnail_version = version;
-   update_document_state();
+   return slot_view->set_slot_state(slot, occupied, thumbnail_path);
 }
 
 extern "C" void rib_rmlui_set_game_aspect(float aspect)
 {
-   if (!(aspect > 0.0f && aspect < 100.0f) || aspect == game_aspect)
-      return;
-   game_aspect = aspect;
-   update_document_state();
+   return slot_view->set_game_aspect(aspect);
 }
 
 extern "C" void rib_rmlui_set_status(const char *status)
 {
-   show_status(main_status, "status", status);
+   status_view.set_main(status);
 }
-
-/* The screens declared in a design, in the order of declaration. */
-struct Screen { std::string id, panel, heading, footer, button; };
-std::vector<Screen> screens;
-
-/* Buttons that already have a listener. We replace the built-in screens with
- * the declaration in a design, and without this we would attach two listeners
- * to the same button, and every press would send two intents. */
-std::set<std::string> wired_screen_buttons;
-
-/* For a declared screen button, we send the screen id with its intent. */
-class ScreenListener : public Rml::EventListener
-{
-public:
-   explicit ScreenListener(std::string id) : id(std::move(id)) {}
-   void ProcessEvent(Rml::Event&) override
-   {
-      ActionListener::queue_action({RIB_RMLUI_ACTION_SHOW_SCREEN, id});
-   }
-   void OnDetach(Rml::Element*) override { delete this; }
-private:
-   std::string id;
-};
 
 /* The sound for an intent.
  *
@@ -641,198 +454,49 @@ using rib::display_none;
 using rib::hidden;
 using rib::collect;
 
-static bool rib_under_class_hidden(Rml::Element *element, const char *class_name)
-{
-   for (Rml::Element *cursor = element; cursor; cursor = cursor->GetParentNode())
-      if (cursor->IsClassSet(class_name) && display_none(cursor))
-         return true;
-   return false;
-}
 
-static Rml::Element *rib_visible_list(void)
-{
-   if (!view.root())
-      return nullptr;
-   std::vector<Rml::Element*> lists;
-   collect(view.root(), "list", lists);
-   for (Rml::Element *list : lists)
-      if (!hidden(list))
-         return list;
-   return nullptr;
-}
 
-static void rib_visible_rows(std::vector<Rml::Element*> &rows)
-{
-   rows.clear();
-   Rml::Element *list = rib_visible_list();
-   if (!list)
-      return;
-   std::vector<Rml::Element*> all;
-   collect(list, "list-row", all);
-   for (Rml::Element *row : all)
-      if (!rib_under_class_hidden(row, "list-page") && !display_none(row))
-         rows.push_back(row);
-}
-
-class ListListener : public Rml::EventListener
-{
-public:
-   enum Kind { Choose, Page };
-   ListListener(Kind kind, std::string page) : kind(kind), page(std::move(page)) {}
-   void ProcessEvent(Rml::Event& event) override
-   {
-      Rml::Element *element = event.GetCurrentElement();
-      if (!element)
-         return;
-      if (element->HasAttribute("disabled") || element->IsClassSet("disabled"))
-         return;
-      ActionListener::queue_action({kind == Choose
-            ? RIB_RMLUI_ACTION_LIST_CHOOSE : RIB_RMLUI_ACTION_LIST_PAGE,
-            kind == Choose ? std::string(element->GetId()) : page});
-   }
-   void OnDetach(Rml::Element*) override { delete this; }
-private:
-   Kind kind;
-   std::string page;
-};
-
-/* For each list switch, we send its declared id. */
-class ToggleListener : public Rml::EventListener
-{
-public:
-   void ProcessEvent(Rml::Event& event) override
-   {
-      Rml::Element *element = event.GetCurrentElement();
-      if (!element)
-         return;
-      if (element->HasAttribute("disabled") || element->IsClassSet("disabled"))
-         return;
-      ActionListener::queue_action({RIB_RMLUI_ACTION_TOGGLE, element->GetId()});
-   }
-   void OnDetach(Rml::Element*) override { delete this; }
-};
-
-static void wire_part_toggles(Rml::Element *node);
 
 extern "C" void rib_rmlui_wire_toggles(void)
 {
-   if (!view.root())
-      return;
-   std::vector<Rml::Element*> toggles;
-   collect(view.root(), "list-toggle", toggles);
-   for (Rml::Element *toggle : toggles)
-      toggle->AddEventListener(Rml::EventId::Click, new ToggleListener());
-   wire_part_toggles(view.root());
+   if (!view.root()) return;
+   lists.wire_toggles();
+   parts.wire_part_toggles();
 }
 
 extern "C" void rib_rmlui_set_toggle(const char *id, const char *state, bool on)
 {
-   if (!view.root() || !id || !*id)
-      return;
-   if (Rml::Element *toggle = view.root()->GetElementById(id))
-      toggle->SetClass("on", on);
-   if (Rml::Element *word = view.root()->GetElementById(std::string(id) + "-state"))
-      word->SetInnerRML(Rml::StringUtilities::EncodeRml(state ? state : ""));
+   return lists.set_toggle(id, state, on);
 }
 
 extern "C" void rib_rmlui_guard_slots(const char *label, const char *reason)
 {
-   const std::string next = label ? label : "";
-   const std::string why = reason ? reason : "";
-   if (next == slots_guard && why == slots_guard_reason)
-      return;
-   slots_guard = next;
-   slots_guard_reason = why;
-   update_document_state();
+   return slot_view->guard_slots(label, reason);
 }
 
 extern "C" bool rib_rmlui_slots_guarded(void)
 {
-   return !slots_guard.empty();
+   return slot_view->slots_guarded();
 }
 
 extern "C" void rib_rmlui_wire_lists(void)
 {
-   if (!view.root())
-      return;
-   std::vector<Rml::Element*> rows;
-   collect(view.root(), "list-row", rows);
-   for (Rml::Element *row : rows)
-      row->AddEventListener(Rml::EventId::Click,
-            new ListListener(ListListener::Choose, ""));
-   std::vector<Rml::Element*> previous;
-   collect(view.root(), "list-pager-prev", previous);
-   for (Rml::Element *button : previous)
-      button->AddEventListener(Rml::EventId::Click,
-            new ListListener(ListListener::Page, "prev"));
-   std::vector<Rml::Element*> next;
-   collect(view.root(), "list-pager-next", next);
-   for (Rml::Element *button : next)
-      button->AddEventListener(Rml::EventId::Click,
-            new ListListener(ListListener::Page, "next"));
+   return lists.wire_lists();
 }
 
 extern "C" int rib_rmlui_visible_row_count(void)
 {
-   std::vector<Rml::Element*> rows;
-   rib_visible_rows(rows);
-   return (int)rows.size();
+   return lists.visible_row_count();
 }
 
 extern "C" void rib_rmlui_focus_list_row(int index)
 {
-   if (!view.root())
-      return;
-   std::vector<Rml::Element*> all;
-   collect(view.root(), "list-row", all);
-   for (Rml::Element *row : all)
-      row->SetClass("focused", false);
-   std::vector<Rml::Element*> rows;
-   rib_visible_rows(rows);
-   if (index >= 0 && index < (int)rows.size())
-      rows[index]->SetClass("focused", true);
+   return lists.focus_list_row(index);
 }
 
-static Rml::Element *rib_visible_panel(void)
-{
-   if (!view.root())
-      return nullptr;
-   std::vector<Rml::Element*> panels;
-   collect(view.root(), "screen-panel", panels);
-   for (Rml::Element *panel : panels)
-      if (!display_none(panel))
-         return panel;
-   return nullptr;
-}
-
-/* The controls on the screen shown that the player can reach with the keyboard,
- * after its rows and in the order we draw them. We walk Options as a list,
- * because its entries are buttons on a panel, and a player with a pad could not
- * use a control that only a pointer can reach. */
-static void rib_visible_controls(std::vector<Rml::Element*> &out)
-{
-   out.clear();
-   Rml::Element *panel = rib_visible_panel();
-   if (!panel)
-      return;
-   for (const char *name : {"option-entry", "list-toggle", "list-back", "options-back"})
-      collect(panel, name, out);
-}
-
-/* Press the way back from the screen shown, through the listener of the
- * element. The screen it returns to is in the declaration of the design, and
- * we do not work it out in the player. */
 extern "C" bool rib_rmlui_click_screen_back(void)
 {
-   Rml::Element *panel = rib_visible_panel();
-   if (!panel)
-      return false;
-   std::vector<Rml::Element*> back;
-   collect(panel, "list-back", back);
-   collect(panel, "options-back", back);
-   if (back.empty())
-      return false;
-   return rib_rmlui_click_element(back.front()->GetId().c_str());
+   return lists.click_screen_back();
 }
 
 /* The button on the pause row that opens a screen.
@@ -843,209 +507,48 @@ extern "C" bool rib_rmlui_click_screen_back(void)
  */
 extern "C" const char *rib_rmlui_pause_screen_button(void)
 {
-   static std::string id;
-   id.clear();
-   if (!view.root() || screens.empty())
-      return id.c_str();
-   Rml::Element *pause = view.root()->GetElementById(screens.front().panel);
-   if (!pause)
-      return id.c_str();
-   for (const Screen& screen : screens)
-   {
-      const char *cursor = screen.button.c_str();
-      while (*cursor)
-      {
-         while (*cursor == ' ')
-            ++cursor;
-         const char *end = cursor;
-         while (*end && *end != ' ')
-            ++end;
-         if (end > cursor)
-         {
-            const std::string one(cursor, end);
-            for (Rml::Element *e = view.root()->GetElementById(one); e;
-                  e = e->GetParentNode())
-               if (e == pause)
-               {
-                  id = one;
-                  return id.c_str();
-               }
-         }
-         cursor = end;
-      }
-   }
-   return id.c_str();
+   return screen_view.pause_screen_button();
 }
 
 extern "C" int rib_rmlui_list_control_count(void)
 {
-   std::vector<Rml::Element*> controls;
-   rib_visible_controls(controls);
-   return (int)controls.size();
+   return lists.list_control_count();
 }
 
-extern "C" const char *rib_rmlui_list_control_id(int index)
+extern "C" const char * rib_rmlui_list_control_id(int index)
 {
-   static std::string id;
-   std::vector<Rml::Element*> controls;
-   rib_visible_controls(controls);
-   id.clear();
-   if (index >= 0 && index < (int)controls.size())
-      id = controls[index]->GetId();
-   return id.c_str();
+   return lists.list_control_id(index);
 }
 
 extern "C" void rib_rmlui_focus_list_control(int index)
 {
-   std::vector<Rml::Element*> controls;
-   rib_visible_controls(controls);
-   for (size_t at = 0; at < controls.size(); ++at)
-      controls[at]->SetClass("focused", (int)at == index);
+   return lists.focus_list_control(index);
 }
 
-extern "C" const char *rib_rmlui_list_row_id(int index)
+extern "C" const char * rib_rmlui_list_row_id(int index)
 {
-   static std::string id;
-   std::vector<Rml::Element*> rows;
-   rib_visible_rows(rows);
-   id.clear();
-   if (index >= 0 && index < (int)rows.size())
-      id = rows[index]->GetId();
-   return id.c_str();
-}
-
-static bool rib_page_has_row(Rml::Element *page)
-{
-   std::vector<Rml::Element*> rows;
-   collect(page, "list-row", rows);
-   for (Rml::Element *row : rows)
-   {
-      /* The page itself may be hidden. The computed display would then be none
-       * for every row on it, so a later page with a binding would look empty.
-       * We would never show the pager, and the player could not reach that
-       * binding. Only a display set on the row itself counts. */
-      const Rml::Property *property = row->GetLocalProperty("display");
-      if (!property || property->ToString() != "none")
-         return true;
-   }
-   return false;
-}
-
-/* We draw an arrow with no page behind it as inactive, and it has no effect.
- * With wrapping, both arrows would look active on every page. */
-static void rib_mark_pager(Rml::Element *list, int page, int pages)
-{
-   struct Arrow { const char *name; bool dead; };
-   const Arrow arrows[] = {
-      {"list-pager-prev", page <= 0},
-      {"list-pager-next", page >= pages - 1}
-   };
-   for (const Arrow& arrow : arrows)
-   {
-      std::vector<Rml::Element*> found;
-      collect(list, arrow.name, found);
-      for (Rml::Element *element : found)
-         element->SetClass("disabled", arrow.dead);
-   }
+   return lists.list_row_id(index);
 }
 
 extern "C" int rib_rmlui_turn_list_page(int delta)
 {
-   Rml::Element *list = rib_visible_list();
-   if (!list)
-      return -1;
-   std::vector<Rml::Element*> pages;
-   collect(list, "list-page", pages);
-   std::vector<Rml::Element*> usable;
-   for (Rml::Element *page : pages)
-      if (rib_page_has_row(page))
-         usable.push_back(page);
-   if (usable.size() < 2)
-      return -1;
-   int current = 0;
-   for (size_t index = 0; index < usable.size(); ++index)
-      if (!display_none(usable[index]))
-         current = (int)index;
-   int next = current + (delta < 0 ? -1 : 1);
-   if (next < 0 || next >= (int)usable.size())
-      return -1;
-   for (size_t index = 0; index < usable.size(); ++index)
-   {
-      if ((int)index == next)
-         usable[index]->RemoveProperty("display");
-      else
-         usable[index]->SetProperty("display", "none");
-   }
-   std::vector<Rml::Element*> counts;
-   collect(list, "list-pager-count", counts);
-   if (!counts.empty())
-   {
-      char label[32];
-      snprintf(label, sizeof(label), "%d/%d", next + 1, (int)usable.size());
-      counts[0]->SetInnerRML(label);
-   }
-   rib_mark_pager(list, next, (int)usable.size());
-   return next;
+   return lists.turn_list_page(delta);
 }
 
 extern "C" void rib_rmlui_mark_row(const char *id, const char *on, const char *off)
 {
-   Rml::Element *list = rib_visible_list();
-   if (!view.root() || !list)
-      return;
-   std::vector<Rml::Element*> rows;
-   collect(list, "list-row", rows);
-   for (Rml::Element *row : rows)
-   {
-      const bool selected = id && row->GetId() == id;
-      row->SetClass("selected", selected);
-      if (Rml::Element *state = view.root()->GetElementById(row->GetId() + "-state"))
-         state->SetInnerRML(Rml::StringUtilities::EncodeRml(
-               selected ? (on ? on : "") : (off ? off : "")));
-   }
+   return lists.mark_row(id, on, off);
 }
 
-/* What we use for a design that declares nothing: the two built-in screens,
- * with the default wording of the player. They match
- * `built_in_screens()` in themes.rs, and we use them in the headless
- * interaction tests, which load a document with no design declarations. */
 extern "C" void rib_rmlui_clear_screens(void)
 {
-   screens.clear();
+   return screen_view.clear_screens();
 }
 
 extern "C" void rib_rmlui_declare_screen(const char *id, const char *panel,
       const char *heading, const char *footer, const char *button)
 {
-   if (!id || !*id || !panel || !*panel)
-      return;
-   screens.push_back(Screen{id, panel, heading ? heading : "",
-         footer ? footer : "", button ? button : ""});
-   /* We load the document before we read a design, so we attach the listener
-    * to the button here and not during the load. A screen may list several
-    * buttons, separated by spaces. The BACK button of a list opens the screen
-    * it returns to, so we add that button to the declaration from the host. */
-   if (view.root() && button && *button)
-   {
-      const char *cursor = button;
-      while (*cursor)
-      {
-         while (*cursor == ' ')
-            ++cursor;
-         const char *end = cursor;
-         while (*end && *end != ' ')
-            ++end;
-         if (end > cursor)
-         {
-            std::string one(cursor, end);
-            if (wired_screen_buttons.insert(one).second)
-               if (Rml::Element *element = view.root()->GetElementById(one))
-                  element->AddEventListener(Rml::EventId::Click,
-                        new ScreenListener(id));
-         }
-         cursor = end;
-      }
-   }
+   return screen_view.declare_screen(id, panel, heading, footer, button);
 }
 
 /* Show one screen and hide the rest.
@@ -1058,33 +561,7 @@ extern "C" void rib_rmlui_declare_screen(const char *id, const char *panel,
  */
 extern "C" bool rib_rmlui_show_screen(const char *id)
 {
-   if (!view.root() || !id || !*id)
-      return false;
-   const Screen *wanted = nullptr;
-   for (const Screen& screen : screens)
-      if (screen.id == id)
-      {
-         wanted = &screen;
-         break;
-      }
-   if (!wanted)
-      return false;
-
-   rib_rmlui_clear_intents();
-   for (const Screen& screen : screens)
-      if (Rml::Element *panel = view.root()->GetElementById(screen.panel))
-      {
-         if (&screen == wanted)
-            panel->RemoveProperty("display");
-         else
-            panel->SetProperty("display", "none");
-      }
-   if (Rml::Element *heading = view.root()->GetElementById("heading"))
-      heading->SetInnerRML(Rml::StringUtilities::EncodeRml(wanted->heading));
-   if (!wanted->footer.empty())
-      if (Rml::Element *footer = view.root()->GetElementById("footer-hint"))
-         footer->SetInnerRML(Rml::StringUtilities::EncodeRml(wanted->footer));
-   return true;
+   return screen_view.show_screen(id);
 }
 
 /* An alias: both names have the same behaviour. */
@@ -1121,7 +598,7 @@ extern "C" void rib_rmlui_set_control_state(const char *id,
 
 extern "C" void rib_rmlui_set_controls_status(const char *status)
 {
-   show_status(controls_status, "controls-status", status);
+   status_view.set_controls(status);
 }
 
 extern "C" void rib_rmlui_set_controls_action_focus(
@@ -1145,11 +622,7 @@ extern "C" void rib_rmlui_set_controls_action_focus(
 
 extern "C" void rib_rmlui_set_footer_hint(const char *hint)
 {
-   if (!view.root())
-      return;
-   if (Rml::Element *element = view.root()->GetElementById("footer-hint"))
-      element->SetInnerRML(Rml::StringUtilities::EncodeRml(
-            hint ? hint : ""));
+   return screen_view.set_footer_hint(hint);
 }
 
 extern "C" void rib_rmlui_set_overlay_mode(bool only_overlays)
@@ -1178,275 +651,42 @@ extern "C" void rib_rmlui_set_overlay(const char *element,
  * the markup in the control, and only ask for the part. */
 using rib::find_class;
 
-static Rml::Element *slider_ancestor(Rml::Element *node)
-{
-   for (; node; node = node->GetParentNode())
-      if (node->IsClassSet("slider"))
-         return node;
-   return nullptr;
-}
-
-static std::map<std::string, float> slider_fraction;
-static std::map<std::string, float> slider_step;
-static std::string slider_drag_id;
-static float slider_drag_fraction = 0.0f;
-static float slider_drag_origin = 0.0f;
-
 static int pointer_x = 0;
 static int pointer_y = 0;
 
-static float clamp_fraction(float fraction)
-{
-   if (fraction < 0.0f)
-      return 0.0f;
-   if (fraction > 1.0f)
-      return 1.0f;
-   return fraction;
-}
-
-static float fraction_at(Rml::Element *slider, int x)
-{
-   Rml::Element *track = find_class(slider, "slider-track");
-   if (!track)
-      return 0.0f;
-   if (view.get_context())
-      view.get_context()->Update();
-   const float left = track->GetAbsoluteOffset(Rml::BoxArea::Border).x;
-   const float width = track->GetBox().GetSize(Rml::BoxArea::Border).x;
-   if (width <= 1.0f)
-      return 0.0f;
-   return clamp_fraction((static_cast<float>(x) - left) / width);
-}
-
-static void paint_slider(Rml::Element *slider, float fraction, const char *readout)
-{
-   if (!slider)
-      return;
-   fraction = clamp_fraction(fraction);
-   slider_fraction[slider->GetId()] = fraction;
-   if (view.get_context())
-      view.get_context()->Update();
-   Rml::Element *track = find_class(slider, "slider-track");
-   Rml::Element *fill = find_class(slider, "slider-fill");
-   Rml::Element *thumb = find_class(slider, "slider-thumb");
-   const float width = track
-         ? track->GetBox().GetSize(Rml::BoxArea::Content).x : 0.0f;
-   const float thumb_width = thumb
-         ? thumb->GetBox().GetSize(Rml::BoxArea::Border).x : 0.0f;
-   if (fill && width > 0.0f)
-      fill->SetProperty("width", std::to_string(width * fraction) + "px");
-   if (thumb && width > 0.0f)
-   {
-      const float travel = std::max(0.0f, width - thumb_width);
-      thumb->SetProperty("left", std::to_string(travel * fraction) + "px");
-   }
-   if (readout)
-      if (Rml::Element *text = find_class(slider, "slider-readout"))
-         text->SetInnerRML(Rml::StringUtilities::EncodeRml(readout));
-}
-
-static void remember_slider(const std::string &id, float fraction)
-{
-   ActionListener::queue_action({RIB_RMLUI_ACTION_SLIDER, id, clamp_fraction(fraction)});
-}
-
-/* One move cue when the level changes, and none when it does not. At an
- * end, we clamp a further step to the same fraction, which is not a move, so
- * we play the cue only when the volume changes. */
-static void note_slider_move(float before, float after)
-{
-   const float delta = after - before;
-   if (delta > 0.0001f || delta < -0.0001f)
-      rib_rmlui_play_move_sound(delta > 0.0f ? 1 : -1);
-}
-
-class PartToggleListener : public Rml::EventListener
-{
-public:
-   explicit PartToggleListener(std::string id) : id(std::move(id)) {}
-   void ProcessEvent(Rml::Event &event) override
-   {
-      Rml::Element *element = event.GetCurrentElement();
-      if (!element || element->HasAttribute("disabled")
-            || element->IsClassSet("disabled"))
-         return;
-      const bool on = !element->IsClassSet("on");
-      element->SetClass("on", on);
-      ActionListener::queue_action({RIB_RMLUI_ACTION_PART_TOGGLE, id, 0.0f, on});
-   }
-   void OnDetach(Rml::Element *) override { delete this; }
-private:
-   std::string id;
-};
-
-static void wire_part_toggles(Rml::Element *node)
-{
-   rib::walk(node, [](Rml::Element *element) {
-      if (element->IsClassSet("toggle") && !element->GetId().empty())
-         element->AddEventListener(Rml::EventId::Click, new PartToggleListener(element->GetId()));
-      return rib::Walk::Continue;
-   });
-}
-
-/* An arrow next to a slider. A click on it moves the slider by the step of
- * that slider, the same change as with a key. Direction is a class because it
- * is one of two, not a number written into the markup. */
-class ArrowListener : public Rml::EventListener
-{
-public:
-   ArrowListener(std::string slider, int direction)
-      : slider(std::move(slider)), direction(direction) {}
-   void ProcessEvent(Rml::Event &event) override
-   {
-      Rml::Element *element = event.GetCurrentElement();
-      if (!element || element->HasAttribute("disabled")
-            || element->IsClassSet("disabled") || direction == 0)
-         return;
-      rib_rmlui_nudge_slider(slider.c_str(), direction);
-   }
-   void OnDetach(Rml::Element *) override { delete this; }
-private:
-   std::string slider;
-   int direction;
-};
-
-static void wire_arrows(Rml::Element *node)
-{
-   rib::walk(node, [](Rml::Element *element) {
-      if (element->IsClassSet("volume-arrow"))
-      {
-         const int direction = element->IsClassSet("arrow-down") ? -1
-               : element->IsClassSet("arrow-up") ? 1 : 0;
-         Rml::Element *slider = find_class(element->GetParentNode(), "slider", true);
-         if (slider && direction != 0)
-            element->AddEventListener(Rml::EventId::Click,
-                  new ArrowListener(slider->GetId(), direction));
-      }
-      return rib::Walk::Continue;
-   });
-}
-
 extern "C" const char *rib_rmlui_screen_panel(const char *id)
 {
-   if (!id)
-      return "";
-   for (const Screen &screen : screens)
-      if (screen.id == id)
-         return screen.panel.c_str();
-   return "";
+   return screen_view.screen_panel(id);
 }
 
 extern "C" void rib_rmlui_set_slider(const char *id, float fraction, const char *readout)
 {
-   if (!view.root() || !id)
-      return;
-   if (Rml::Element *slider = view.root()->GetElementById(id))
-      if (slider->IsClassSet("slider"))
-         paint_slider(slider, fraction, readout);
+   return parts.set_slider(id, fraction, readout);
 }
-
-extern "C" bool rib_rmlui_commit_slider(const char *id, float fraction);
 
 extern "C" void rib_rmlui_set_slider_step(const char *id, float step)
 {
-   if (id && *id && step > 0.0f)
-      slider_step[id] = step;
+   return parts.set_slider_step(id, step);
 }
 
 extern "C" bool rib_rmlui_nudge_slider(const char *id, int direction)
 {
-   if (!id || direction == 0)
-      return false;
-   const auto step = slider_step.find(id);
-   if (step == slider_step.end())
-      return false;
-   float current = 0.0f;
-   const auto found = slider_fraction.find(id);
-   if (found != slider_fraction.end())
-      current = found->second;
-   return rib_rmlui_commit_slider(id, current + (float)direction * step->second);
+   return parts.nudge_slider(id, direction);
 }
 
 extern "C" bool rib_rmlui_commit_slider(const char *id, float fraction)
 {
-   if (!view.root() || !id)
-      return false;
-   Rml::Element *slider = view.root()->GetElementById(id);
-   if (!slider || !slider->IsClassSet("slider"))
-      return false;
-   float before = 0.0f;
-   const auto found = slider_fraction.find(slider->GetId());
-   if (found != slider_fraction.end())
-      before = found->second;
-   const float after = clamp_fraction(fraction);
-   paint_slider(slider, fraction, nullptr);
-   remember_slider(slider->GetId(), fraction);
-   note_slider_move(before, after);
-   return true;
+   return parts.commit_slider(id, fraction);
 }
 
 extern "C" bool rib_rmlui_slider_drag(const char **id, float *fraction)
 {
-   if (!slider_drag)
-      return false;
-   if (id)
-      *id = slider_drag_id.c_str();
-   if (fraction)
-      *fraction = slider_drag_fraction;
-   return true;
-}
-
-static void drag_to(int x)
-{
-   if (!slider_drag)
-      return;
-   slider_drag_fraction = fraction_at(slider_drag, x);
-   paint_slider(slider_drag, slider_drag_fraction, nullptr);
-}
-
-static void end_drag(void)
-{
-   if (!slider_drag)
-      return;
-   slider_drag->SetClass("dragging", false);
-   const float after = clamp_fraction(slider_drag_fraction);
-   remember_slider(slider_drag_id, slider_drag_fraction);
-   note_slider_move(slider_drag_origin, after);
-   slider_drag = nullptr;
-}
-
-static void collect_focusable(Rml::Element *node, std::vector<std::string> &out)
-{
-   rib::walk(node, [&](Rml::Element *element) {
-      if (display_none(element) || element->HasAttribute("disabled")
-            || element->IsClassSet("disabled"))
-         return rib::Walk::SkipChildren;
-      // The pointer arrows are still not keyboard stops.
-      const bool part = !element->IsClassSet("volume-arrow")
-            && (element->IsClassSet("slider") || element->IsClassSet("toggle")
-               || element->IsClassSet("menu-action"));
-      if (part && !element->GetId().empty())
-         out.push_back(element->GetId());
-      return rib::Walk::Continue;
-   });
+   return parts.slider_drag(id, fraction);
 }
 
 extern "C" int rib_rmlui_focusables(const char *panel, char ids[][64], int capacity)
 {
-   if (!view.root() || !panel || !ids || capacity <= 0)
-      return 0;
-   Rml::Element *root = view.root()->GetElementById(panel);
-   std::vector<std::string> found;
-   collect_focusable(root, found);
-   int count = 0;
-   for (const std::string &id : found)
-   {
-      if (count >= capacity)
-         break;
-      std::snprintf(ids[count], 64, "%s", id.c_str());
-      ++count;
-   }
-   return count;
+   return rib::focusable_ids(view.root(), panel, ids, capacity);
 }
 
 extern "C" void rib_rmlui_mark_focused(const char *panel, const char *id)
@@ -1460,10 +700,7 @@ extern "C" void rib_rmlui_mark_focused(const char *panel, const char *id)
 
 extern "C" bool rib_rmlui_part_is_slider(const char *id)
 {
-   if (!view.root() || !id)
-      return false;
-   Rml::Element *element = view.root()->GetElementById(id);
-   return element && element->IsClassSet("slider");
+   return parts.part_is_slider(id);
 }
 
 extern "C" void rib_rmlui_pointer_move(int x, int y)
@@ -1472,8 +709,7 @@ extern "C" void rib_rmlui_pointer_move(int x, int y)
    pointer_y = y;
    if (view.get_context())
       view.get_context()->ProcessMouseMove(x, y, 0);
-   if (slider_drag)
-      drag_to(x);
+   parts.drag_to(x);
 }
 
 extern "C" void rib_rmlui_pointer_button(bool down)
@@ -1486,24 +722,13 @@ extern "C" void rib_rmlui_pointer_button(bool down)
    if (down)
    {
       view.get_context()->ProcessMouseButtonDown(0, 0);
-      if (Rml::Element *slider = slider_ancestor(view.get_context()->GetHoverElement()))
-      {
-         slider_drag = slider;
-         slider_drag_id = slider->GetId();
-         slider_drag_origin = 0.0f;
-         const auto painted = slider_fraction.find(slider->GetId());
-         if (painted != slider_fraction.end())
-            slider_drag_origin = painted->second;
-         slider->SetClass("dragging", true);
-         drag_to(pointer_x);
-      }
+      parts.begin_drag(view.get_context()->GetHoverElement(), pointer_x);
    }
    else
    {
-      if (slider_drag)
-         drag_to(pointer_x);
+      parts.drag_to(pointer_x);
       view.get_context()->ProcessMouseButtonUp(0, 0);
-      end_drag();
+      parts.end_drag();
    }
 }
 
@@ -1529,8 +754,7 @@ extern "C" void rib_rmlui_pointer_leave(void)
       return;
    view.get_context()->ProcessMouseLeave();
    HoverListener::hovered_action = RIB_RMLUI_ACTION_NONE;
-   if (slider_drag)
-      end_drag();
+   parts.end_drag();
    if (pointer_down)
    {
       pointer_down = false;
@@ -1572,26 +796,7 @@ extern "C" bool rib_rmlui_element_box(const char *id, int *x, int *y, int *w, in
 
 extern "C" int rib_rmlui_hovered_list_row(void)
 {
-   if (!view.get_context() || !view.root())
-      return -1;
-   Rml::Element *cursor = view.get_context()->GetHoverElement();
-   Rml::Element *row = nullptr;
-   for (; cursor; cursor = cursor->GetParentNode())
-   {
-      if (cursor->IsClassSet("list-row"))
-      {
-         row = cursor;
-         break;
-      }
-   }
-   if (!row)
-      return -1;
-   std::vector<Rml::Element*> rows;
-   rib_visible_rows(rows);
-   for (int index = 0; index < (int)rows.size(); ++index)
-      if (rows[index] == row)
-         return index;
-   return -1;
+   return lists.hovered_list_row();
 }
 
 extern "C" bool rib_rmlui_element_disabled(const char *id)
@@ -1625,15 +830,9 @@ extern "C" void rib_rmlui_set_element_text(const char *id, const char *text)
    rib_set_text(id, text);
 }
 
-extern "C" void rib_rmlui_set_row_text(const char *id, const char *title,
-      const char *detail, const char *state)
+extern "C" void rib_rmlui_set_row_text(const char *id, const char *title, const char *detail, const char *state)
 {
-   if (!id || !*id)
-      return;
-   const std::string row(id);
-   rib_set_text(row + "-title", title);
-   rib_set_text(row + "-detail", detail);
-   rib_set_text(row + "-state", state);
+   return lists.set_row_text(id, title, detail, state);
 }
 
 extern "C" void rib_rmlui_set_shown(const char *id, bool shown)
@@ -1663,223 +862,34 @@ extern "C" void rib_rmlui_set_disabled(const char *id, bool disabled)
       element->RemoveAttribute("disabled");
 }
 
-static Rml::Element *rib_list_element(const char *list_id);
-
-static float rib_specified_dp(Rml::Element *element, const char *name);
-
-static int rib_utf8_len(unsigned char lead)
-{
-   if ((lead & 0x80) == 0)
-      return 1;
-   if ((lead & 0xe0) == 0xc0)
-      return 2;
-   if ((lead & 0xf0) == 0xe0)
-      return 3;
-   if ((lead & 0xf8) == 0xf0)
-      return 4;
-   return 1;
-}
-
-static int rib_chars(const std::string &text)
-{
-   int count = 0;
-   for (size_t index = 0; index < text.size(); )
-   {
-      int len = rib_utf8_len((unsigned char)text[index]);
-      if (index + (size_t)len > text.size())
-         len = 1;
-      index += (size_t)len;
-      ++count;
-   }
-   return count;
-}
-
-static std::string rib_slice(const std::string &text, int from, int count)
-{
-   std::string out;
-   int seen = 0;
-   for (size_t index = 0; index < text.size() && seen < from + count; )
-   {
-      int len = rib_utf8_len((unsigned char)text[index]);
-      if (index + (size_t)len > text.size())
-         len = 1;
-      if (seen >= from)
-         out.append(text, index, (size_t)len);
-      index += (size_t)len;
-      ++seen;
-   }
-   return out;
-}
-
-/* The first ancestor with a width in dp. A row is often 100%, which is not a
- * length, so we measure the title against the width of the list. From it we
- * get the column. With a copied pixel width, the preview and the game could
- * differ. */
-static float rib_block_dp(Rml::Element *element)
-{
-   for (Rml::Element *cursor = element; cursor; cursor = cursor->GetParentNode())
-   {
-      const float width = rib_specified_dp(cursor, "width");
-      if (width > 0.f)
-         return width;
-   }
-   return 0.f;
-}
-
 extern "C" void rib_rmlui_fit_row_title(const char *id, const char *text)
 {
-   if (!id || !*id)
-      return;
-   const std::string title_id = std::string(id) + "-title";
-   const std::string source = text ? text : "";
-   Rml::Element *element = view.root() ? view.root()->GetElementById(title_id) : nullptr;
-   if (!element || !view.get_context())
-   {
-      rib_set_text(title_id, source.c_str());
-      return;
-   }
-   view.get_context()->Update();
-   const float density = std::max(view.get_context()->GetDensityIndependentPixelRatio(), 0.1f);
-   const float block = rib_block_dp(element);
-   const float limit_dp = block
-         - rib_specified_dp(element, "left")
-         - rib_specified_dp(element, "right");
-   const float limit_px = limit_dp * density;
-   auto width_of = [&](const std::string &value) {
-      return (float)Rml::ElementUtilities::GetStringWidth(
-            element, Rml::String(value));
-   };
-   if (limit_px <= 1.f || width_of(source) <= limit_px)
-   {
-      rib_set_text(title_id, source.c_str());
-      return;
-   }
-   /* text-overflow in RmlUi removes characters at the end, where the disc
-    * number is. We put the mark in the middle instead, and measure the width
-    * with the font of this element, not by counting characters, because the
-    * Silkscreen advances are not all equal. */
-   const std::string mark = "\u2026";
-   const int total = rib_chars(source);
-   int best = 0;
-   int low = 0;
-   int high = total;
-   while (low <= high)
-   {
-      const int mid = (low + high) / 2;
-      const int head = mid / 2;
-      const int tail = mid - head;
-      const std::string candidate = rib_slice(source, 0, head) + mark
-            + rib_slice(source, total - tail, tail);
-      if (width_of(candidate) <= limit_px)
-      {
-         best = mid;
-         low = mid + 1;
-      }
-      else
-         high = mid - 1;
-   }
-   const int head = best / 2;
-   const int tail = best - head;
-   rib_set_text(title_id, (rib_slice(source, 0, head) + mark
-         + rib_slice(source, total - tail, tail)).c_str());
+   return lists.fit_row_title(id, text);
 }
 
-extern "C" void rib_rmlui_select_row(const char *list_id, const char *row_id,
-      const char *on, const char *off)
+extern "C" void rib_rmlui_select_row(const char *list_id, const char *row_id, const char *on, const char *off)
 {
-   if (!view.root() || !list_id)
-      return;
-   std::vector<Rml::Element*> rows;
-   collect(rib_list_element(list_id), "list-row", rows);
-   for (Rml::Element *row : rows)
-   {
-      const bool selected = row_id && row->GetId() == row_id;
-      row->SetClass("selected", selected);
-      if (Rml::Element *state = view.root()->GetElementById(row->GetId() + "-state"))
-         state->SetInnerRML(Rml::StringUtilities::EncodeRml(
-               selected ? (on ? on : "") : (off ? off : "")));
-   }
-}
-
-static Rml::Element *rib_list_element(const char *list_id)
-{
-   if (!view.root() || !list_id || !*list_id)
-      return nullptr;
-   return view.root()->GetElementById(list_id);
+   return lists.select_row(list_id, row_id, on, off);
 }
 
 extern "C" int rib_rmlui_rows_in(const char *list_id)
 {
-   std::vector<Rml::Element*> rows;
-   collect(rib_list_element(list_id), "list-row", rows);
-   return (int)rows.size();
+   return lists.rows_in(list_id);
 }
 
-extern "C" const char *rib_rmlui_row_in(const char *list_id, int index)
+extern "C" const char * rib_rmlui_row_in(const char *list_id, int index)
 {
-   static std::string id;
-   std::vector<Rml::Element*> rows;
-   collect(rib_list_element(list_id), "list-row", rows);
-   id.clear();
-   if (index >= 0 && index < (int)rows.size())
-      id = rows[index]->GetId();
-   return id.c_str();
+   return lists.row_in(list_id, index);
 }
 
 extern "C" void rib_rmlui_retarget_pages(const char *list_id)
 {
-   Rml::Element *list = rib_list_element(list_id);
-   if (!list)
-      return;
-   std::vector<Rml::Element*> pages;
-   collect(list, "list-page", pages);
-   std::vector<Rml::Element*> usable;
-   for (Rml::Element *page : pages)
-   {
-      if (rib_page_has_row(page))
-         usable.push_back(page);
-      else
-         page->SetProperty("display", "none");
-   }
-   for (size_t index = 0; index < usable.size(); ++index)
-   {
-      if (index == 0)
-         usable[index]->RemoveProperty("display");
-      else
-         usable[index]->SetProperty("display", "none");
-   }
-   std::vector<Rml::Element*> pagers;
-   collect(list, "list-pager", pagers);
-   if (pagers.empty())
-      return;
-   if (usable.size() < 2)
-   {
-      pagers[0]->SetProperty("display", "none");
-      return;
-   }
-   pagers[0]->RemoveProperty("display");
-   std::vector<Rml::Element*> counts;
-   collect(list, "list-pager-count", counts);
-   if (!counts.empty())
-   {
-      char label[32];
-      snprintf(label, sizeof(label), "1/%d", (int)usable.size());
-      counts[0]->SetInnerRML(label);
-   }
-   rib_mark_pager(list, 0, (int)usable.size());
+   return lists.retarget_pages(list_id);
 }
 
-/* A length in dp or px from the stylesheet, as dp. Keywords (auto) are 0,
- * because they are not a gap to leave free for the text. */
-static float rib_specified_dp(Rml::Element *element, const char *name)
+extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id, int width_dp)
 {
-   return rib::specified_dp(element, name, view.get_context());
-}
-
-extern "C" void rib_rmlui_place_list(const char *list_id, const char *anchor_id,
-      int width_dp)
-{
-   rib::place_binds_popup(view.root(), view.get_context(), list_id, anchor_id, width_dp);
+   return lists.place_list(list_id, anchor_id, width_dp);
 }
 
 extern "C" int rib_rmlui_controls_covered(const char *anchor_id,
@@ -2106,12 +1116,12 @@ extern "C" const char *rib_rmlui_script_report(const char *screen, bool menu_ope
    for (int index = 0; index < rib::kSlotCount; ++index)
    {
       if (index) report += ',';
-      report += std::string("{\"occupied\":") + boolean(slots[index].occupied)
-         + ",\"thumbnail\":" + boolean(!slots[index].thumbnail_path.empty()) + '}';
+      report += std::string("{\"occupied\":") + boolean(slot_view->occupied(index + 1))
+         + ",\"thumbnail\":" + boolean(slot_view->has_thumbnail(index + 1)) + '}';
    }
    report += "],\"sliders\":{";
    comma = false;
-   for (const auto& slider : slider_fraction)
+   for (const auto& slider : parts.fractions())
    {
       if (comma) report += ',';
       report += quote(slider.first) + ':' + std::to_string(slider.second);

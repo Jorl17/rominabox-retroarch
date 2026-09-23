@@ -38,22 +38,15 @@ typedef struct rib_rmlui_menu
    rib::Discs discs;
    rib::Toggles toggles;
    rib::Volume volume;
-   rib::Controls controls;
+   rib::Focus focus;
+   rib::Screens& screens = rib_rmlui_screens();
+   rib::Controls controls{focus, screens};
    bool pointer_pressed;
    bool transfer_pending;
    bool transfer_is_save;
-   int selected_slot;
+   rib::Slots *slots;
    int transfer_slot;
-   rib::Event focused;
-   int panel_focus;
-   /* Which button of the pause row is focused, as an index into that row,
-    * or -1 while a save slot is focused instead. */
-   int row_focus;
    char transfer_path[PATH_MAX_LENGTH];
-   /* The screen shown now. "pause" is the main menu screen. Escape resumes
-    * the game only on pause, and on any other screen it stays in the menu. */
-   char screen[32];
-   int list_focus;
 } rib_rmlui_menu_t;
 
 /* The public runloop callback can come before we allocate the menu. Keep only
@@ -111,46 +104,6 @@ static void rib_rmlui_load_design(rib_rmlui_menu_t *menu, const char *assets)
    rib_design_free(loaded);
 }
 
-int rib_rmlui_device_count(void)
-{
-   return rib_rmlui_active_menu ? rib_rmlui_active_menu->controls.device_count : 0;
-}
-
-const char *rib_rmlui_device_id(int index)
-{
-   auto *menu = rib_rmlui_active_menu;
-   return menu && index >= 0 && index < menu->controls.device_count
-         ? menu->controls.device_ids[index] : nullptr;
-}
-
-const char *rib_rmlui_device_name(int index)
-{
-   auto *menu = rib_rmlui_active_menu;
-   return menu && index >= 0 && index < menu->controls.device_count
-         ? menu->controls.device_names[index] : nullptr;
-}
-
-/* We keep no control names in the bridge and read them from here. */
-int rib_rmlui_control_capacity(void)
-{
-   return RIB_CONTROL_MAX;
-}
-
-const char *rib_rmlui_control_id(int index)
-{
-   auto *menu = rib_rmlui_active_menu;
-   return menu && index >= 0 && index < menu->controls.count
-         ? menu->controls.entries[index].id : nullptr;
-}
-
-const char *rib_rmlui_control_group(int index)
-{
-   auto *menu = rib_rmlui_active_menu;
-   if (!menu || index < 0 || index >= menu->controls.count
-         || !menu->controls.entries[index].group[0]) return nullptr;
-   return menu->controls.entries[index].group;
-}
-
 /* The buttons of the pause row, in document order, without the disabled
  * ones.
  *
@@ -202,7 +155,7 @@ static void rib_pause_focus_row(rib_rmlui_menu_t *menu, int index,
    if (count <= 0)
       return;
    index = ((index % count) + count) % count;
-   menu->row_focus = index;
+   menu->focus.pause_row(index);
    rib_rmlui_focus_element(ids[index]);
 #ifdef HAVE_AUDIOMIXER
    rib_host_scroll_sound(direction_up);
@@ -223,7 +176,6 @@ static void rib_rmlui_select_slot(rib_rmlui_menu_t *menu, int slot)
 {
    if (!menu || !rib::valid_slot(slot))
       return;
-   menu->selected_slot = slot;
    rib_rmlui_set_selected_slot(slot);
 }
 
@@ -240,11 +192,11 @@ static void rib_rmlui_focus(rib_rmlui_menu_t *menu, rib::Event focused,
        !rib_rmlui_load_is_available(menu))
       focused = direction_up ? RIB_RMLUI_ACTION_SAVE :
             RIB_RMLUI_ACTION_CONTROLS;
-   changed = !menu->focused.same_target(focused);
-   menu->focused = focused;
+   changed = !menu->focus.pause_action().same_target(focused);
+   menu->focus.pause_action(focused);
    /* Focusing an action or a slot here moves the focus off the row. We track
     * the row by id, not by this enum. */
-   menu->row_focus = -1;
+   menu->focus.pause_row(-1);
    rib_rmlui_set_focused(focused);
    if (rib_rmlui_focus_is_slot(focused))
       rib_rmlui_select_slot(menu, rib_rmlui_focus_slot(focused));
@@ -256,7 +208,7 @@ static void rib_rmlui_focus(rib_rmlui_menu_t *menu, rib::Event focused,
 
 static bool rib_rmlui_load_is_available(const rib_rmlui_menu_t *menu)
 {
-   return menu && rib_host_slot_occupied(menu->selected_slot);
+   return menu && rib_host_slot_occupied(menu->slots->selected());
 }
 
 static void rib_rmlui_refresh_slots(void)
@@ -278,11 +230,11 @@ static bool rib_rmlui_begin_transfer(rib_rmlui_menu_t *menu, bool is_save)
       return false;
 
    menu->transfer_path[0] = '\0';
-   if (!rib_host_state_path(menu->selected_slot, menu->transfer_path,
+   if (!rib_host_state_path(menu->slots->selected(), menu->transfer_path,
          sizeof(menu->transfer_path)))
       menu->transfer_path[0] = '\0';
    menu->transfer_is_save = is_save;
-   menu->transfer_slot = menu->selected_slot;
+   menu->transfer_slot = menu->slots->selected();
    menu->transfer_pending = true;
    return true;
 }
@@ -318,20 +270,19 @@ static void rib_rmlui_reset_interaction(rib_rmlui_menu_t *menu, bool opening)
       return;
    if (menu->controls.capture_active)
       menu->controls.cancel_capture(NULL);
-   menu->controls.visible = false;
-   strlcpy(menu->screen, "pause", sizeof(menu->screen));
+   menu->screens.remember("pause");
    rib_focus_list(menu, 0);
    menu->pointer_pressed = false;
    menu->controls.capture_ignore_pointer = false;
-   menu->focused = RIB_RMLUI_ACTION_RESUME;
+   menu->focus.pause_action(RIB_RMLUI_ACTION_RESUME);
    /* When the menu opens, we focus the first button of the row, not a slot. */
-   menu->row_focus = 0;
+   menu->focus.pause_row(0);
    rib_rmlui_clear_intents();
    rib_rmlui_pointer_leave();
    if (opening)
    {
       rib_rmlui_show_controls(false);
-      rib_rmlui_set_focused(menu->focused);
+      rib_rmlui_set_focused(menu->focus.pause_action());
       rib_rmlui_set_footer_hint("ESC  CONTINUE");
    }
 }
@@ -345,7 +296,7 @@ bool rib_menu_consume_toggle(void *userdata)
 {
    rib_rmlui_menu_t *menu = (rib_rmlui_menu_t*)userdata;
    return menu && rib_rmlui_toggle_stays_in_menu(
-         menu->controls.visible || !string_is_equal(menu->screen, "pause"),
+         menu->screens.controls_visible() || !string_is_equal(menu->screens.current(), "pause"),
          menu->controls.capture_active);
 }
 
@@ -388,14 +339,14 @@ static void rib_rmlui_focus_list(rib_rmlui_menu_t *menu)
 
    if (!menu)
       return;
-   if (menu->list_focus < rows)
+   if (menu->focus.position(rib::FocusRegion::List) < rows)
    {
-      rib_rmlui_focus_list_row(menu->list_focus);
+      rib_rmlui_focus_list_row(menu->focus.position(rib::FocusRegion::List));
       rib_rmlui_focus_list_control(-1);
       return;
    }
    rib_rmlui_focus_list_row(-1);
-   rib_rmlui_focus_list_control(menu->list_focus - rows);
+   rib_rmlui_focus_list_control(menu->focus.position(rib::FocusRegion::List) - rows);
 }
 
 /* The only place where we write list_focus. We call it for the keys and for
@@ -404,7 +355,7 @@ static void rib_focus_list(rib_rmlui_menu_t *menu, int index)
 {
    if (!menu || index < 0)
       return;
-   menu->list_focus = index;
+   menu->focus.position(rib::FocusRegion::List, index);
    rib_rmlui_focus_list(menu);
 }
 
@@ -440,7 +391,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
       const char *id = event.id.c_str();
       int row;
 
-      if (menu->discs.choose(menu->screen, id))
+      if (menu->discs.choose(menu->screens.current(), id))
       {
          rib_rmlui_play_action_sound(action);
          menu->discs.sync();
@@ -497,10 +448,9 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
           * Here we keep only the case of the controls screen, where capture
           * and navigation work differently. For any other screen there is
           * nothing to add here. */
-         strlcpy(menu->screen, screen_id, sizeof(menu->screen));
-         menu->controls.visible = string_is_equal(screen_id, "controls");
+         menu->screens.remember(screen_id);
          rib_focus_list(menu, 0);
-         if (menu->controls.visible)
+         if (menu->screens.controls_visible())
          {
             menu->controls.focus(menu->controls.first());
             rib_rmlui_set_controls_status("SELECT A CONTROL TO REBIND");
@@ -511,7 +461,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
          else if (!string_is_equal(screen_id, "pause"))
          {
             char ids[16][64];
-            const char *panel = rib_rmlui_screen_panel(menu->screen);
+            const char *panel = rib_rmlui_screen_panel(menu->screens.current());
             int count = rib_rmlui_focusables(panel, ids, 16);
             bool slider = false;
             int index;
@@ -524,7 +474,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
              * then the screen's own controls past that. */
             if (slider)
             {
-               menu->panel_focus = 0;
+               menu->focus.position(rib::FocusRegion::Parts, 0);
                rib_rmlui_mark_focused(panel, ids[0]);
             }
             else
@@ -553,7 +503,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
       if (menu->controls.active(control_index))
       {
          rib_rmlui_play_action_sound(action);
-         menu->controls.focus(control_index);
+         menu->controls.focus(rib::FocusTarget::item(control_index));
          menu->controls.start_capture(control_index);
       }
       return;
@@ -575,9 +525,9 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
       case RIB_RMLUI_ACTION_SAVE:
          if (!rib_rmlui_begin_transfer(menu, true))
             return;
-         rib_host_select_state_slot(menu->selected_slot);
+         rib_host_select_state_slot(menu->slots->selected());
          snprintf(status, sizeof(status), "SAVING SLOT %d...",
-               menu->selected_slot);
+               menu->slots->selected());
          rib_rmlui_set_status(status);
          if (!rib_host_save_state() &&
                menu->transfer_pending)
@@ -589,9 +539,9 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
             return;
          if (!rib_rmlui_begin_transfer(menu, false))
             return;
-         rib_host_select_state_slot(menu->selected_slot);
+         rib_host_select_state_slot(menu->slots->selected());
          snprintf(status, sizeof(status), "LOADING SLOT %d...",
-               menu->selected_slot);
+               menu->slots->selected());
          rib_rmlui_set_status(status);
          if (!rib_host_load_state() &&
                menu->transfer_pending)
@@ -610,9 +560,7 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
             return;
          }
       }
-         strlcpy(menu->screen, "controls", sizeof(menu->screen));
-         menu->controls.visible = true;
-         strlcpy(menu->screen, "controls", sizeof(menu->screen));
+         menu->screens.remember("controls");
          menu->controls.focus(menu->controls.first());
          /* The heading and the footer are in the design, with the
           * screen. */
@@ -623,12 +571,10 @@ static void rib_rmlui_perform_action(rib_rmlui_menu_t *menu, const rib::Event& e
       case RIB_RMLUI_ACTION_CONTROLS_BACK:
          if (menu->controls.capture_active)
             menu->controls.cancel_capture("BINDING UNCHANGED");
-         strlcpy(menu->screen, "pause", sizeof(menu->screen));
-         menu->controls.visible = false;
-         menu->focused = RIB_RMLUI_ACTION_CONTROLS;
-         strlcpy(menu->screen, "pause", sizeof(menu->screen));
+         menu->screens.remember("pause");
+         menu->focus.pause_action(RIB_RMLUI_ACTION_CONTROLS);
          rib_rmlui_show_screen("pause");
-         rib_rmlui_set_focused(menu->focused);
+         rib_rmlui_set_focused(menu->focus.pause_action());
          break;
       case RIB_RMLUI_ACTION_CONTROLS_CANCEL:
          menu->controls.cancel_capture("BINDING UNCHANGED");
@@ -655,10 +601,11 @@ void *rib_menu_create(void)
    rib_rmlui_menu_t *menu = new (std::nothrow) rib_rmlui_menu_t{};
    if (!menu)
       return nullptr;
-   menu->selected_slot = 1;
-   menu->focused = RIB_RMLUI_ACTION_RESUME;
-   menu->row_focus = 0;
-   strlcpy(menu->screen, "pause", sizeof(menu->screen));
+   menu->slots = &rib_rmlui_bind_state(menu->focus, menu->controls.catalog);
+   menu->slots->set_selected_slot(1);
+   menu->focus.pause_action(RIB_RMLUI_ACTION_RESUME);
+   menu->focus.pause_row(0);
+   menu->screens.remember("pause");
    rib_rmlui_active_menu = menu;
    if (pending_overlay_start)
    {
@@ -719,7 +666,7 @@ void rib_menu_frame(void *data, int width, int height)
          asset_directory = RIB_RMLUI_DEFAULT_ASSETS;
       menu->initialized = rib_rmlui_init(asset_directory,
             width, height,
-            rib_host_core_gl_context());
+            rib_host_core_gl_context(), menu->focus, menu->controls.catalog);
       if (!menu->initialized)
       {
          RARCH_ERR("[RmlUi] Failed to initialize menu from %s.\n",
@@ -731,8 +678,8 @@ void rib_menu_frame(void *data, int width, int height)
       /* Read the screens and overlays in the design before we show any. */
       rib_rmlui_load_design(menu, asset_directory);
       menu->shaders.load(asset_directory);
-      rib_rmlui_set_selected_slot(menu->selected_slot);
-      rib_rmlui_set_focused(menu->focused);
+      rib_rmlui_set_selected_slot(menu->slots->selected());
+      rib_rmlui_set_focused(menu->focus.pause_action());
       rib_rmlui_refresh_slots();
       rib_rmlui_show_controls(false);
       rib_rmlui_set_footer_hint("ESC  CONTINUE");
@@ -784,7 +731,7 @@ void rib_menu_frame(void *data, int width, int height)
           * We run the script first, because from it we learn whether we still
           * want frames after the overlays are done, and we can learn that only
           * after asking it. */
-         menu->script.run(menu, {menu->screen, menu->transfer_pending,
+         menu->script.run(menu, {menu->screens.current(), menu->transfer_pending,
                menu->controls.capture_active, menu->controls.profile_id});
          menu->overlays.update(menu->script.wants_frames());
          rib_rmlui_render(width, height);
@@ -832,7 +779,7 @@ void rib_menu_frame(void *data, int width, int height)
     * Fill it before the click from the script, or the click goes to a button
     * that is still display:none in the document. */
    menu->discs.sync();
-   menu->script.run(menu, {menu->screen, menu->transfer_pending,
+   menu->script.run(menu, {menu->screens.current(), menu->transfer_pending,
                menu->controls.capture_active, menu->controls.profile_id});
    menu->script.restore_hover();
    /* After we put the pointer back for the script, so a hovered row is the
@@ -866,45 +813,45 @@ void rib_menu_frame(void *data, int width, int height)
 static int rib_part_navigate(rib_rmlui_menu_t *menu, enum rib_key action)
 {
    char ids[16][64];
-   const char *panel = rib_rmlui_screen_panel(menu->screen);
+   const char *panel = rib_rmlui_screen_panel(menu->screens.current());
    int count = rib_rmlui_focusables(panel, ids, 16);
 
    if (count <= 0)
       return 0;
-   if (menu->panel_focus < 0 || menu->panel_focus >= count)
-      menu->panel_focus = 0;
+   if (menu->focus.position(rib::FocusRegion::Parts) < 0 || menu->focus.position(rib::FocusRegion::Parts) >= count)
+      menu->focus.position(rib::FocusRegion::Parts, 0);
 
    switch (action)
    {
       case RIB_KEY_UP:
-         menu->panel_focus = (menu->panel_focus + count - 1) % count;
-         rib_rmlui_mark_focused(panel, ids[menu->panel_focus]);
+         menu->focus.position(rib::FocusRegion::Parts, rib::Focus::ring(menu->focus.position(rib::FocusRegion::Parts), count, -1));
+         rib_rmlui_mark_focused(panel, ids[menu->focus.position(rib::FocusRegion::Parts)]);
 #ifdef HAVE_AUDIOMIXER
          rib_host_scroll_sound(true);
 #endif
          return 0;
       case RIB_KEY_DOWN:
-         menu->panel_focus = (menu->panel_focus + 1) % count;
-         rib_rmlui_mark_focused(panel, ids[menu->panel_focus]);
+         menu->focus.position(rib::FocusRegion::Parts, rib::Focus::ring(menu->focus.position(rib::FocusRegion::Parts), count, 1));
+         rib_rmlui_mark_focused(panel, ids[menu->focus.position(rib::FocusRegion::Parts)]);
 #ifdef HAVE_AUDIOMIXER
          rib_host_scroll_sound(false);
 #endif
          return 0;
       case RIB_KEY_LEFT:
       case RIB_KEY_RIGHT:
-         if (rib_rmlui_part_is_slider(ids[menu->panel_focus]))
-            rib_rmlui_nudge_slider(ids[menu->panel_focus],
+         if (rib_rmlui_part_is_slider(ids[menu->focus.position(rib::FocusRegion::Parts)]))
+            rib_rmlui_nudge_slider(ids[menu->focus.position(rib::FocusRegion::Parts)],
                   action == RIB_KEY_RIGHT ? 1 : -1);
          return 0;
       case RIB_KEY_OK:
       case RIB_KEY_SELECT:
-         rib_rmlui_click_element(ids[menu->panel_focus]);
+         rib_rmlui_click_element(ids[menu->focus.position(rib::FocusRegion::Parts)]);
          return 0;
       case RIB_KEY_CANCEL:
       case RIB_KEY_RESUME:
       case RIB_KEY_TOGGLE:
          rib_rmlui_play_action_sound(RIB_RMLUI_ACTION_CONTROLS_BACK);
-         strlcpy(menu->screen, "pause", sizeof(menu->screen));
+         menu->screens.remember("pause");
          rib_rmlui_show_screen("pause");
          rib_rmlui_mark_focused(panel, NULL);
          return 0;
@@ -920,10 +867,10 @@ int rib_menu_key(void *data, enum rib_key action)
    if (!menu)
       return 0;
 
-   if (!string_is_equal(menu->screen, "pause") && !menu->controls.visible)
+   if (!string_is_equal(menu->screens.current(), "pause") && !menu->screens.controls_visible())
    {
       char ids[16][64];
-      const char *panel = rib_rmlui_screen_panel(menu->screen);
+      const char *panel = rib_rmlui_screen_panel(menu->screens.current());
       int parts = rib_rmlui_focusables(panel, ids, 16);
       int rows = rib_rmlui_visible_row_count();
       bool slider = false;
@@ -946,7 +893,7 @@ int rib_menu_key(void *data, enum rib_key action)
          case RIB_KEY_UP:
             if (stops > 0)
             {
-               rib_focus_list(menu, (menu->list_focus + stops - 1) % stops);
+               rib_focus_list(menu, rib::Focus::ring(menu->focus.position(rib::FocusRegion::List), stops, -1));
 #ifdef HAVE_AUDIOMIXER
                rib_host_scroll_sound(true);
 #endif
@@ -955,7 +902,7 @@ int rib_menu_key(void *data, enum rib_key action)
          case RIB_KEY_DOWN:
             if (stops > 0)
             {
-               rib_focus_list(menu, (menu->list_focus + 1) % stops);
+               rib_focus_list(menu, rib::Focus::ring(menu->focus.position(rib::FocusRegion::List), stops, 1));
 #ifdef HAVE_AUDIOMIXER
                rib_host_scroll_sound(false);
 #endif
@@ -977,17 +924,17 @@ int rib_menu_key(void *data, enum rib_key action)
             return 0;
          case RIB_KEY_OK:
          case RIB_KEY_SELECT:
-            if (menu->list_focus >= rows)
+            if (menu->focus.position(rib::FocusRegion::List) >= rows)
             {
                /* Through the listener on the element, the same path as for a
                 * pointer, which already has the code for the switch and BACK. */
                rib_rmlui_click_element(
-                     rib_rmlui_list_control_id(menu->list_focus - rows));
+                     rib_rmlui_list_control_id(menu->focus.position(rib::FocusRegion::List) - rows));
             }
             else if (rows > 0)
             {
                rib_rmlui_perform_action(menu, {RIB_RMLUI_ACTION_LIST_CHOOSE,
-                     rib_rmlui_list_row_id(menu->list_focus)});
+                     rib_rmlui_list_row_id(menu->focus.position(rib::FocusRegion::List))});
             }
             return 0;
          case RIB_KEY_CANCEL:
@@ -1005,7 +952,7 @@ int rib_menu_key(void *data, enum rib_key action)
       }
    }
 
-   if (menu->controls.visible)
+   if (menu->screens.controls_visible())
    {
       if (menu->controls.capture_active)
       {
@@ -1022,20 +969,20 @@ int rib_menu_key(void *data, enum rib_key action)
 #ifdef HAVE_AUDIOMIXER
             rib_host_scroll_sound(true);
 #endif
-            menu->controls.focus(menu->controls.step(menu->controls.focused, -1));
+            menu->controls.focus(menu->controls.step(-1));
             return 0;
          case RIB_KEY_DOWN:
          case RIB_KEY_RIGHT:
 #ifdef HAVE_AUDIOMIXER
             rib_host_scroll_sound(false);
 #endif
-            menu->controls.focus(menu->controls.step(menu->controls.focused, 1));
+            menu->controls.focus(menu->controls.step(1));
             return 0;
          case RIB_KEY_OK:
          case RIB_KEY_SELECT:
-            if (menu->controls.focused < RIB_CONTROL_MAX)
-               menu->controls.start_capture(menu->controls.focused);
-            else if (menu->controls.focused == RIB_CONTROL_MAX)
+            if (menu->focus.target(rib::FocusRegion::Controls).kind == rib::FocusTarget::Kind::Item)
+               menu->controls.start_capture(menu->focus.position(rib::FocusRegion::Controls));
+            else if (menu->focus.target(rib::FocusRegion::Controls).kind == rib::FocusTarget::Kind::Reset)
                rib_rmlui_perform_action(menu, RIB_RMLUI_ACTION_CONTROLS_RESET);
             else
                rib_rmlui_perform_action(menu, RIB_RMLUI_ACTION_CONTROLS_BACK);
@@ -1058,15 +1005,15 @@ int rib_menu_key(void *data, enum rib_key action)
       }
    }
 
-   if (menu->screen[0] && !string_is_equal(menu->screen, "pause"))
+   if (menu->screens.current()[0] && !string_is_equal(menu->screens.current(), "pause"))
       return rib_part_navigate(menu, action);
 
    switch (action)
    {
       case RIB_KEY_UP:
-         if (menu->row_focus < 0)
+         if (menu->focus.pause_row() < 0)
          {
-            int slot = rib_rmlui_focus_slot(menu->focused);
+            int slot = rib_rmlui_focus_slot(menu->focus.pause_action());
             if (slot > 3)
                rib_rmlui_focus(menu, rib::Event::select_slot(slot - 3), true);
             else
@@ -1082,16 +1029,16 @@ int rib_menu_key(void *data, enum rib_key action)
          }
          else
          {
-            const int column = menu->row_focus > 2 ? 2 : menu->row_focus;
-            menu->row_focus = -1;
+            const int column = menu->focus.pause_row() > 2 ? 2 : menu->focus.pause_row();
+            menu->focus.pause_row(-1);
             rib_rmlui_focus(menu,
                   rib::Event::select_slot(4 + column), true);
          }
          return 0;
       case RIB_KEY_DOWN:
-         if (menu->row_focus < 0)
+         if (menu->focus.pause_row() < 0)
          {
-            int slot = rib_rmlui_focus_slot(menu->focused);
+            int slot = rib_rmlui_focus_slot(menu->focus.pause_action());
             if (slot <= 3)
                rib_rmlui_focus(menu, rib::Event::select_slot(slot + 3), false);
             else
@@ -1104,16 +1051,16 @@ int rib_menu_key(void *data, enum rib_key action)
          }
          else
          {
-            const int column = menu->row_focus > 2 ? 2 : menu->row_focus;
-            menu->row_focus = -1;
+            const int column = menu->focus.pause_row() > 2 ? 2 : menu->focus.pause_row();
+            menu->focus.pause_row(-1);
             rib_rmlui_focus(menu,
                   rib::Event::select_slot(1 + column), false);
          }
          return 0;
       case RIB_KEY_LEFT:
-         if (menu->row_focus < 0)
+         if (menu->focus.pause_row() < 0)
          {
-            int slot = rib_rmlui_focus_slot(menu->focused);
+            int slot = rib_rmlui_focus_slot(menu->focus.pause_action());
             int row_start = slot <= 3 ? 1 : 4;
             slot = slot == row_start ? row_start + 2 : slot - 1;
             rib_rmlui_focus(menu,
@@ -1128,9 +1075,9 @@ int rib_menu_key(void *data, enum rib_key action)
          }
          return 0;
       case RIB_KEY_RIGHT:
-         if (menu->row_focus < 0)
+         if (menu->focus.pause_row() < 0)
          {
-            int slot = rib_rmlui_focus_slot(menu->focused);
+            int slot = rib_rmlui_focus_slot(menu->focus.pause_action());
             int row_end = slot <= 3 ? 3 : rib::kSlotCount;
             slot = slot == row_end ? row_end - 2 : slot + 1;
             rib_rmlui_focus(menu,
@@ -1146,8 +1093,8 @@ int rib_menu_key(void *data, enum rib_key action)
          return 0;
       case RIB_KEY_OK:
       case RIB_KEY_SELECT:
-         if (menu->row_focus < 0)
-            rib_rmlui_perform_action(menu, menu->focused);
+         if (menu->focus.pause_row() < 0)
+            rib_rmlui_perform_action(menu, menu->focus.pause_action());
          else
          {
             /* Press the element itself, so a button from the design opens what
