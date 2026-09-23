@@ -9,17 +9,11 @@ enum rib_rmlui_action
    RIB_RMLUI_ACTION_LOAD,
    RIB_RMLUI_ACTION_CONTROLS,
    RIB_RMLUI_ACTION_QUIT,
-   RIB_RMLUI_ACTION_SELECT_SLOT_1,
-   RIB_RMLUI_ACTION_SELECT_SLOT_2,
-   RIB_RMLUI_ACTION_SELECT_SLOT_3,
-   RIB_RMLUI_ACTION_SELECT_SLOT_4,
-   RIB_RMLUI_ACTION_SELECT_SLOT_5,
-   RIB_RMLUI_ACTION_SELECT_SLOT_6,
+   RIB_RMLUI_ACTION_SELECT_SLOT,
    RIB_RMLUI_ACTION_CONTROLS_BACK,
    RIB_RMLUI_ACTION_CONTROLS_RESET,
    RIB_RMLUI_ACTION_CONTROLS_CANCEL,
-   RIB_RMLUI_ACTION_CONTROL_FIRST,
-   RIB_RMLUI_ACTION_CONTROL_LAST = RIB_RMLUI_ACTION_CONTROL_FIRST + 47,
+   RIB_RMLUI_ACTION_CONTROL,
 
    RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE,
    RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE,
@@ -45,9 +39,20 @@ struct Event
    std::string id;
    float fraction;
    bool on;
+   int slot = 0;
    Event(rib_rmlui_action kind = RIB_RMLUI_ACTION_NONE, std::string id = {},
          float fraction = 0.0f, bool on = false)
       : kind(kind), id(std::move(id)), fraction(fraction), on(on) {}
+   static Event select_slot(int number)
+   {
+      Event event(RIB_RMLUI_ACTION_SELECT_SLOT);
+      event.slot = number;
+      return event;
+   }
+   bool same_target(const Event& other) const
+   {
+      return kind == other.kind && id == other.id && slot == other.slot;
+   }
 };
 
 class EventQueue

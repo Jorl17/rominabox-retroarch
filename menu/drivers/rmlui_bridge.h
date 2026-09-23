@@ -81,7 +81,6 @@ bool rib_rmlui_init(const char *asset_directory, int width, int height,
 void rib_rmlui_shutdown(void);
 void rib_rmlui_render(int width, int height);
 void rib_rmlui_set_selected_slot(int slot);
-void rib_rmlui_set_focused(int focused);
 void rib_rmlui_set_slot_state(int slot, bool occupied,
       const char *thumbnail_path);
 void rib_rmlui_set_game_aspect(float aspect);
@@ -270,7 +269,6 @@ void rib_rmlui_focus_group(const char *group);
  * export. Call wire_controls afterwards, because the elements with its
  * listeners are gone. */
 bool rib_rmlui_set_scene(const char *markup);
-int rib_rmlui_hovered_action(void);
 void rib_rmlui_clear_intents(void);
 bool rib_rmlui_element_center(const char *id, int *x, int *y);
 bool rib_rmlui_element_box(const char *id, int *x, int *y, int *w, int *h);
@@ -296,6 +294,8 @@ void rib_rmlui_notify_state_task(const char *path, int slot,
 
 #ifdef __cplusplus
 }
+void rib_rmlui_set_focused(const rib::Event& focused);
+rib::Event rib_rmlui_hovered_event();
 #endif
 
 #endif

@@ -2,6 +2,7 @@
 #include "rmlui/elements.hpp"
 #include "rmlui/document.hpp"
 #include "rmlui/binds_popup.hpp"
+#include "rmlui/slots.hpp"
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/ElementUtilities.h>
@@ -34,7 +35,7 @@ rib::EventQueue intents;
 class ActionListener : public Rml::EventListener
 {
 public:
-   explicit ActionListener(int action) : action(static_cast<rib_rmlui_action>(action)) {}
+   explicit ActionListener(rib::Event action) : action(std::move(action)) {}
 
    void ProcessEvent(Rml::Event& event) override
    {
@@ -59,13 +60,13 @@ private:
 class HoverListener : public Rml::EventListener
 {
 public:
-   explicit HoverListener(int action) : action(action) {}
+   explicit HoverListener(rib::Event action) : action(std::move(action)) {}
 
    void ProcessEvent(Rml::Event& event) override
    {
       if (event.GetId() == Rml::EventId::Mouseout)
       {
-         if (hovered_action == action)
+         if (hovered_action.same_target(action))
             hovered_action = RIB_RMLUI_ACTION_NONE;
          return;
       }
@@ -73,13 +74,13 @@ public:
    }
    void OnDetach(Rml::Element*) override { delete this; }
 
-   static int hovered_action;
+   static rib::Event hovered_action;
 
 private:
-   int action;
+   rib::Event action;
 };
 
-int HoverListener::hovered_action = RIB_RMLUI_ACTION_NONE;
+rib::Event HoverListener::hovered_action = RIB_RMLUI_ACTION_NONE;
 
 class DeviceOptionListener : public Rml::EventListener
 {
@@ -135,7 +136,7 @@ void expire_status(StatusMessage& message, const char *id)
 }
 float game_aspect = 4.0f / 3.0f;
 int selected_slot = 1;
-int focused_item = RIB_RMLUI_ACTION_RESUME;
+rib::Event focused_item = RIB_RMLUI_ACTION_RESUME;
 /* Which button on the pause row is focused, by id.
  *
  * The pause row contains what the design and the export put in it. With
@@ -148,7 +149,7 @@ struct SlotState
    std::string thumbnail_path;
    std::string thumbnail_version;
 };
-SlotState slots[6];
+SlotState slots[rib::kSlotCount];
 bool pointer_down = false;
 
 std::string thumbnail_version(const std::string& path)
@@ -207,7 +208,7 @@ void update_document_state()
       if (Rml::Element *element = view.root()->GetElementById(row[index]))
          element->SetClass("focused", focused_element == row[index]);
 
-   for (int index = 0; index < 6; ++index)
+   for (int index = 0; index < rib::kSlotCount; ++index)
    {
       const int slot = index + 1;
       const std::string suffix = std::to_string(slot);
@@ -215,7 +216,7 @@ void update_document_state()
       {
          element->SetClass("selected", slot == selected_slot);
          element->SetClass("focused",
-               focused_item == RIB_RMLUI_ACTION_SELECT_SLOT_1 + index);
+               focused_item.kind == RIB_RMLUI_ACTION_SELECT_SLOT && focused_item.slot == slot);
          element->SetClass("occupied", slots[index].occupied);
          element->SetClass("empty", !slots[index].occupied);
          element->SetClass("disabled", !slots_guard.empty());
@@ -351,7 +352,7 @@ extern "C" void rib_rmlui_wire_controls(void)
       const char *control_id = rib_rmlui_control_id(index);
       if (!control_id || !*control_id)
          break;
-      const int action = RIB_RMLUI_ACTION_CONTROL_FIRST + index;
+      const rib::Event action{RIB_RMLUI_ACTION_CONTROL, control_id};
       const std::string ids[] = {
          "control-" + std::string(control_id),
          "control-hit-" + std::string(control_id)
@@ -411,19 +412,13 @@ void wire_document()
     * because we track keyboard focus by action, and the player can also reach
     * the two buttons that change screen with the arrow keys. There is nothing
     * to add here for a screen that a design declares later. */
-   struct Binding { const char *id; int action; bool opens_screen; };
+   struct Binding { const char *id; rib_rmlui_action action; bool opens_screen; };
    const Binding bindings[] = {
       {"resume", RIB_RMLUI_ACTION_RESUME, false},
       {"save", RIB_RMLUI_ACTION_SAVE, false},
       {"load", RIB_RMLUI_ACTION_LOAD, false},
       {"controls", RIB_RMLUI_ACTION_CONTROLS, true},
       {"quit", RIB_RMLUI_ACTION_QUIT, false},
-      {"slot-1", RIB_RMLUI_ACTION_SELECT_SLOT_1, false},
-      {"slot-2", RIB_RMLUI_ACTION_SELECT_SLOT_2, false},
-      {"slot-3", RIB_RMLUI_ACTION_SELECT_SLOT_3, false},
-      {"slot-4", RIB_RMLUI_ACTION_SELECT_SLOT_4, false},
-      {"slot-5", RIB_RMLUI_ACTION_SELECT_SLOT_5, false},
-      {"slot-6", RIB_RMLUI_ACTION_SELECT_SLOT_6, false},
       {"controls-back", RIB_RMLUI_ACTION_CONTROLS_BACK, true},
       {"controls-reset", RIB_RMLUI_ACTION_CONTROLS_RESET, false},
       {"controls-cancel", RIB_RMLUI_ACTION_CONTROLS_CANCEL, false}
@@ -439,6 +434,15 @@ void wire_document()
                new HoverListener(binding.action));
          element->AddEventListener(Rml::EventId::Mouseout,
                new HoverListener(binding.action));
+      }
+
+   for (int slot = 1; slot <= rib::kSlotCount; ++slot)
+      if (Rml::Element *element = view.root()->GetElementById("slot-" + std::to_string(slot)))
+      {
+         const auto event = rib::Event::select_slot(slot);
+         element->AddEventListener(Rml::EventId::Click, new ActionListener(event));
+         element->AddEventListener(Rml::EventId::Mouseover, new HoverListener(event));
+         element->AddEventListener(Rml::EventId::Mouseout, new HoverListener(event));
       }
 
    rib_rmlui_wire_controls();
@@ -494,13 +498,13 @@ extern "C" void rib_rmlui_render(int width, int height)
 
 extern "C" void rib_rmlui_set_selected_slot(int slot)
 {
-   if (slot < 1 || slot > 6)
+   if (!rib::valid_slot(slot))
       return;
    selected_slot = slot;
    update_document_state();
 }
 
-extern "C" void rib_rmlui_set_focused(int focused)
+void rib_rmlui_set_focused(const rib::Event& focused)
 {
    focused_item = focused;
    /* A slot has the focus, so no button on the row does. */
@@ -526,7 +530,7 @@ extern "C" const char *rib_rmlui_focused_element(void)
 extern "C" void rib_rmlui_set_slot_state(int slot, bool occupied,
       const char *thumbnail_path)
 {
-   if (slot < 1 || slot > 6)
+   if (!rib::valid_slot(slot))
       return;
    SlotState& state = slots[slot - 1];
    const std::string next_path = thumbnail_path ? thumbnail_path : "";
@@ -606,12 +610,7 @@ extern "C" enum rib_menu_sound rib_rmlui_action_sound(int action)
       case RIB_RMLUI_ACTION_SLIDER:
       /* Moving the highlight between save slots is navigation, and we already
        * play the movement cue for it, so a second sound would be one too many. */
-      case RIB_RMLUI_ACTION_SELECT_SLOT_1:
-      case RIB_RMLUI_ACTION_SELECT_SLOT_2:
-      case RIB_RMLUI_ACTION_SELECT_SLOT_3:
-      case RIB_RMLUI_ACTION_SELECT_SLOT_4:
-      case RIB_RMLUI_ACTION_SELECT_SLOT_5:
-      case RIB_RMLUI_ACTION_SELECT_SLOT_6:
+      case RIB_RMLUI_ACTION_SELECT_SLOT:
          return RIB_MENU_SOUND_NONE;
       default:
          return RIB_MENU_SOUND_OK;
@@ -1513,7 +1512,7 @@ rib::Event rib_rmlui_take_event()
    return ActionListener::take_event();
 }
 
-extern "C" int rib_rmlui_hovered_action(void)
+rib::Event rib_rmlui_hovered_event()
 {
    return HoverListener::hovered_action;
 }
@@ -2104,7 +2103,7 @@ extern "C" const char *rib_rmlui_script_report(const char *screen, bool menu_ope
       comma = true;
    }
    report += "},\"slots\":[";
-   for (int index = 0; index < 6; ++index)
+   for (int index = 0; index < rib::kSlotCount; ++index)
    {
       if (index) report += ',';
       report += std::string("{\"occupied\":") + boolean(slots[index].occupied)
