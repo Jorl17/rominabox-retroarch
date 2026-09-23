@@ -2021,6 +2021,19 @@ bool audio_driver_start(bool is_shutdown)
 {
    audio_driver_state_t *audio_st = &audio_driver_st;
    const audio_driver_t *audio    = audio_st->current_audio;
+   /* No device was opened. We call start at boot and at shutdown, and the
+    * null driver has no start function, so we log nothing here. At quit, a
+    * log line with failed_to_start_audio_driver means that a second
+    * command_event ran after we tore down an audio driver, so we do not log
+    * it for a driver that never had a context. */
+   if (!audio_st->context_audio_data && (!audio || !audio->start))
+   {
+      settings_t *settings = config_get_ptr();
+      if (settings && !settings->bools.audio_enable)
+         return true;
+      if (audio && audio->ident && string_is_equal(audio->ident, "null"))
+         return true;
+   }
    if (
             !audio
          || !audio->start

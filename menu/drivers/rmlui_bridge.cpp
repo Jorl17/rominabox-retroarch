@@ -8,10 +8,8 @@
 #include <filesystem>
 
 #ifndef RIB_RMLUI_HEADLESS
-#include <RmlUi_Renderer_GL2.h>
-#include <RmlUi_Renderer_GL2.cpp>
+#include "rmlui_gl.h"
 #include <OpenGL/gl.h>
-#include <OpenGL/glext.h>
 #include "third_party/lodepng.h"
 #endif
 
@@ -69,73 +67,6 @@ private:
    Rml::CompiledGeometryHandle geometry = 0;
 };
 
-#else
-class RominaboxRenderer : public RenderInterface_GL2
-{
-public:
-   void BeginFrame()
-   {
-      glGetIntegerv(GL_CURRENT_PROGRAM, &previous_program);
-      glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previous_array_buffer);
-      glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &previous_element_buffer);
-      glGetIntegerv(GL_MATRIX_MODE, &previous_matrix_mode);
-      glPushAttrib(GL_ALL_ATTRIB_BITS);
-      glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
-      glMatrixMode(GL_PROJECTION);
-      glPushMatrix();
-      glMatrixMode(GL_MODELVIEW);
-      glPushMatrix();
-      glMatrixMode(GL_TEXTURE);
-      glPushMatrix();
-      glUseProgram(0);
-      glBindBuffer(GL_ARRAY_BUFFER, 0);
-      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-      RenderInterface_GL2::BeginFrame();
-   }
-
-   void EndFrame()
-   {
-      RenderInterface_GL2::EndFrame();
-      glMatrixMode(GL_TEXTURE);
-      glPopMatrix();
-      glMatrixMode(GL_MODELVIEW);
-      glPopMatrix();
-      glMatrixMode(GL_PROJECTION);
-      glPopMatrix();
-      glMatrixMode(previous_matrix_mode);
-      glBindBuffer(GL_ARRAY_BUFFER, previous_array_buffer);
-      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, previous_element_buffer);
-      glUseProgram(previous_program);
-      glPopClientAttrib();
-      glPopAttrib();
-   }
-
-   Rml::TextureHandle LoadTexture(Rml::Vector2i& dimensions,
-         const Rml::String& source) override
-   {
-      std::vector<unsigned char> rgba;
-      unsigned width = 0;
-      unsigned height = 0;
-      const unsigned error = lodepng::decode(rgba, width, height, source);
-      if (error)
-      {
-         Rml::Log::Message(Rml::Log::LT_ERROR,
-               "Could not decode PNG texture %s: %s",
-               source.c_str(), lodepng_error_text(error));
-         return {};
-      }
-
-      dimensions = {static_cast<int>(width), static_cast<int>(height)};
-      return GenerateTexture(
-            Rml::Span<const Rml::byte>(rgba.data(), rgba.size()), dimensions);
-   }
-
-private:
-   GLint previous_program = 0;
-   GLint previous_array_buffer = 0;
-   GLint previous_element_buffer = 0;
-   GLint previous_matrix_mode = GL_MODELVIEW;
-};
 #endif
 
 #ifdef RIB_RMLUI_HEADLESS
@@ -650,7 +581,7 @@ bool load_document()
 }
 
 extern "C" bool rib_rmlui_init(
-      const char *asset_directory, int width, int height)
+      const char *asset_directory, int width, int height, bool core_context)
 {
    if (context)
       return true;
@@ -658,7 +589,12 @@ extern "C" bool rib_rmlui_init(
       return false;
 
    asset_dir = asset_directory;
+#ifdef RIB_RMLUI_HEADLESS
+   (void)core_context;
    renderer = std::make_unique<RominaboxRenderer>();
+#else
+   renderer = rib_menu_renderer(core_context);
+#endif
    renderer->SetViewport(width, height);
    Rml::SetSystemInterface(&system_interface);
    Rml::SetRenderInterface(renderer.get());
