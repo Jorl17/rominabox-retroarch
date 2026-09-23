@@ -127,7 +127,10 @@ static inline bool rib_rmlui_state_task_matches(
    return true;
 }
 
-bool rib_rmlui_init(const char *asset_directory, int width, int height);
+/* core_context is a flag in the gl driver, set from the hw render type when
+ * the context was created. We read it once, here, not per frame or per core. */
+bool rib_rmlui_init(const char *asset_directory, int width, int height,
+      bool core_context);
 void rib_rmlui_shutdown(void);
 void rib_rmlui_render(int width, int height);
 void rib_rmlui_set_selected_slot(int slot);

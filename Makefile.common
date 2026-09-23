@@ -1057,12 +1057,14 @@ ifeq ($(HAVE_MENU), 1)
 
    ifeq ($(HAVE_RMLUI), 1)
       OBJ += menu/drivers/rmlui.o menu/drivers/rmlui_bridge.o \
+             menu/drivers/rmlui_gl.o menu/drivers/rmlui_gl3.o \
              menu/drivers/third_party/lodepng.o
       DEFINES += -DHAVE_RMLUI
       RMLUI_SOURCE_DIR ?= ../vendor/RmlUi
       RMLUI_BUILD_DIR ?= ../build-rmlui
       INCLUDE_DIRS += -I$(RMLUI_SOURCE_DIR)/Include -I$(RMLUI_SOURCE_DIR)/Backends
       INCLUDE_DIRS += -I$(RMLUI_SOURCE_DIR)/Dependencies/include $(shell pkg-config --cflags freetype2)
+      INCLUDE_DIRS += -Imenu/drivers
       LIBS += $(RMLUI_BUILD_DIR)/librmlui.a $(shell pkg-config --libs freetype2) -framework OpenGL
       CXXFLAGS += -std=c++17
       NEED_CXX_LINKER = 1
