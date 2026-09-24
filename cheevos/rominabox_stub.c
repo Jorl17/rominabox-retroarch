@@ -18,6 +18,7 @@ bool rib_achievements_get_row(size_t index, rib_achievement_row_t *out)
    return false;
 }
 
+void rib_achievements_list_shown(bool shown) { (void)shown; }
 bool rib_achievements_has_unlocks(void) { return false; }
 bool rib_achievements_take_unlock(rib_achievement_unlock_t *out)
 {

@@ -130,6 +130,11 @@ void rib_achievements_badge_downloaded(void)
    rib_catalog_badge_downloaded();
 }
 
+void rib_achievements_badge_failed(const char *badge_name)
+{
+   rib_catalog_badge_failed(badge_name);
+}
+
 unsigned rib_achievements_award_request_started(void)
 {
    unsigned generation = 0;
@@ -548,6 +553,11 @@ bool rib_achievements_get_row(size_t index, rib_achievement_row_t *out)
       return false;
    rib_achievements_pump();
    return rib_catalog_get_row(get_rcheevos_locals()->client, index, out);
+}
+
+void rib_achievements_list_shown(bool shown)
+{
+   rib_catalog_list_shown(shown, &rib.snapshot);
 }
 
 bool rib_achievements_take_unlock(rib_achievement_unlock_t *out)

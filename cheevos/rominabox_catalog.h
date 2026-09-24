@@ -10,6 +10,8 @@ bool rib_catalog_initialize(void);
 void rib_catalog_clear(rib_achievements_snapshot_t *snapshot);
 void rib_catalog_mark_rows_dirty(void);
 void rib_catalog_badge_downloaded(void);
+void rib_catalog_badge_failed(const char *badge_name);
+void rib_catalog_list_shown(bool shown, rib_achievements_snapshot_t *snapshot);
 void rib_catalog_triggered(const rc_client_achievement_t *achievement);
 void rib_catalog_pump(rc_client_t *client, rib_achievements_snapshot_t *snapshot);
 bool rib_catalog_get_row(rc_client_t *client, size_t index,

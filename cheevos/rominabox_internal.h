@@ -18,6 +18,8 @@ void rib_achievements_finish_startup_gate(void);
 void rib_achievements_event(const rc_client_event_t *event);
 bool rib_achievements_badge_directory(char *path, size_t capacity);
 void rib_achievements_badge_downloaded(void);
+/* A badge download that ended without a picture, by the name we requested. */
+void rib_achievements_badge_failed(const char *badge_name);
 unsigned rib_achievements_award_request_started(void);
 void rib_achievements_award_request_finished(unsigned generation);
 

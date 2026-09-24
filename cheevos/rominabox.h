@@ -34,6 +34,15 @@ typedef enum rib_achievement_state {
    RIB_ACHIEVEMENT_PENDING_UPLOAD
 } rib_achievement_state_t;
 
+/* The state of the badge picture of a row. We request a failed download
+ * again the next time we show the list (rib_achievements_list_shown). */
+typedef enum rib_achievement_badge {
+   RIB_ACHIEVEMENT_BADGE_NONE,
+   RIB_ACHIEVEMENT_BADGE_LOADING,
+   RIB_ACHIEVEMENT_BADGE_READY,
+   RIB_ACHIEVEMENT_BADGE_FAILED
+} rib_achievement_badge_t;
+
 typedef struct rib_achievements_snapshot {
    rib_achievements_status_t status;
    uint32_t revision;
@@ -52,6 +61,7 @@ typedef struct rib_achievement_row {
    uint32_t id;
    uint32_t points;
    rib_achievement_state_t state;
+   rib_achievement_badge_t badge; /* READY exactly when badge_path is set */
    char title[RIB_ACHIEVEMENTS_TITLE_SIZE];
    char description[RIB_ACHIEVEMENTS_DESCRIPTION_SIZE];
    char badge_path[RIB_ACHIEVEMENTS_BADGE_PATH_SIZE];
@@ -69,6 +79,10 @@ typedef struct rib_achievement_unlock {
  * copies of its strings, never rc_client pointers or borrowed data. */
 void rib_achievements_get_snapshot(rib_achievements_snapshot_t *out);
 bool rib_achievements_get_row(size_t index, rib_achievement_row_t *out);
+/* Whether the achievement list is on screen. We set it from the menu in
+ * each frame we draw, and request the badges with failed downloads again
+ * when the list comes back into view. */
+void rib_achievements_list_shown(bool shown);
 bool rib_achievements_has_unlocks(void);
 bool rib_achievements_take_unlock(rib_achievement_unlock_t *out);
 bool rib_achievements_has_pending_uploads(void);
