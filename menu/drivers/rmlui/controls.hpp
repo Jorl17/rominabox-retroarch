@@ -71,7 +71,7 @@ private:
    struct Binds
    {
       char list[64]{};
-      int after_ms = 0, width = 0;
+      int after_ms = 0, hover_after_ms = 0, width = 0;
       int control = -1;
       int64_t since = 0;
       bool open = false;

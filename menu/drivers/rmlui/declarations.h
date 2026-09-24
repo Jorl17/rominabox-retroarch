@@ -55,7 +55,8 @@ typedef struct rib_design_data
    rib_toggle_t toggles[RIB_TOGGLE_MAX];
    int toggle_count;
    char binds_list[64];
-   int binds_after_ms;
+   int binds_after_ms;       /* after a key reaches a control */
+   int binds_hover_after_ms; /* after the pointer comes to rest on one */
    int binds_width;
 } rib_design_data;
 

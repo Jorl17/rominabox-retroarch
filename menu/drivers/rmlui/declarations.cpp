@@ -280,6 +280,9 @@ rib_design_declarations *rib_load_design(const char *asset_directory)
          sizeof(design->data.binds_list)))
       design->data.binds_list[0] = '\0';
    config_get_int(config.get(), "binds_after", &design->data.binds_after_ms);
+   /* When the export does not contain it, the pointer rest is 300 ms. */
+   design->data.binds_hover_after_ms = 300;
+   config_get_int(config.get(), "binds_hover_after", &design->data.binds_hover_after_ms);
    config_get_int(config.get(), "binds_width", &design->data.binds_width);
    return design.release();
 }

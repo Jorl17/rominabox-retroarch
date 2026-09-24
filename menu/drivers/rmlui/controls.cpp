@@ -450,8 +450,13 @@ void Controls::update_binds(int x, int y, bool pointer_active, bool hover_active
    }
    if (current < 0 || binds.open)
       return;
+   /* We open the list sooner for a pointer resting on the control than for a
+    * key press that only passed through it on the way elsewhere. */
+   const int after_ms = this->hovered.kind == RIB_RMLUI_ACTION_CONTROL
+         && index_of(this->hovered.id.c_str()) == current
+         ? binds.hover_after_ms : binds.after_ms;
    now = rib_host_time_us();
-   if (now - binds.since >= (int64_t)binds.after_ms * 1000)
+   if (now - binds.since >= (int64_t)after_ms * 1000)
       show_binds(current);
 }
 
@@ -592,6 +597,7 @@ void Controls::configure_binds(const rib_design_data& design)
 {
    strlcpy(binds.list, design.binds_list, sizeof(binds.list));
    binds.after_ms = design.binds_after_ms;
+   binds.hover_after_ms = design.binds_hover_after_ms;
    binds.width = design.binds_width;
 }
 
