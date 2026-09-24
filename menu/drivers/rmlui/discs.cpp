@@ -17,6 +17,7 @@ void Discs::configure(const rib_design_data& design)
    mark[0] = '\0';
    redirect_from[0] = '\0';
    redirect_to[0] = '\0';
+   synced = false;
    for (size_t index = 0; index < design.screen_count; ++index)
    {
       const rib_screen_declaration *screen = &design.screens[index];
@@ -36,7 +37,7 @@ void Discs::configure(const rib_design_data& design)
 
 /* The entry exists in the document but only becomes a focus stop for a game
  * with more than one image. The list's document order is the image index. */
-void Discs::sync() const
+void Discs::sync()
 {
    char rows_id[48];
    unsigned count;
@@ -47,6 +48,12 @@ void Discs::sync() const
    if (!list_id[0])
       return;
    count = rib_host_disc_count();
+   current = rib_host_disc_index();
+   if (synced && count == synced_count && current == synced_current)
+      return;
+   synced = true;
+   synced_count = count;
+   synced_current = current;
    if (list_button[0])
    {
       document.set_shown(list_button, count > 1);
@@ -54,7 +61,6 @@ void Discs::sync() const
    }
    snprintf(rows_id, sizeof(rows_id), "%s-list", list_id);
    rows = lists.rows_in(rows_id);
-   current = rib_host_disc_index();
    for (index = 0; index < rows; index++)
    {
       const char *row = lists.row_in(rows_id, index);
