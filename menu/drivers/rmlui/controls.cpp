@@ -267,10 +267,7 @@ void Controls::refresh()
          document.set_element_text(group_id, binding);
       }
    }
-   control_view.set_controls_action_focus(
-         screens.controls_visible() && target.kind == FocusTarget::Kind::Reset,
-         screens.controls_visible() && target.kind == FocusTarget::Kind::Back,
-         capture_active);
+   control_view.set_capturing(capture_active);
    if (screens.controls_visible() && focused >= 0
          && focused < catalog.count
          && catalog.entries[focused].group[0])

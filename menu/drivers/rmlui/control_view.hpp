@@ -21,9 +21,12 @@ public:
     * this way, empty while the document still has the exported scene. */
    bool set_scene(const char *profile, const char *markup);
    const char *scene_profile() const { return scene.c_str(); }
+   /* With `echo_focus` we mark the picture button of the control while its
+    * callout is focused. We paint the callout in Focus, like any other stop. */
    void set_control_state(const char *id, const char *label, const char *binding,
-         bool focused, bool capturing);
-   void set_controls_action_focus(bool reset, bool back, bool cancel);
+         bool echo_focus, bool capturing);
+   /* We show CANCEL, marked capturing, only while we capture a binding. */
+   void set_capturing(bool capturing);
    void focus_group(const char *group);
 private:
    Document& document;

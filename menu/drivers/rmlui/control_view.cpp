@@ -145,19 +145,16 @@ bool ControlView::set_scene(const char *profile, const char *markup)
 }
 
 void ControlView::set_control_state(const char *id,
-      const char *label, const char *binding, bool focused, bool capturing)
+      const char *label, const char *binding, bool echo_focus, bool capturing)
 {
    if (!document.root() || !id)
       return;
    const std::string suffix(id);
    if (Rml::Element *control = document.root()->GetElementById(document_contract::ControlPrefix + suffix))
-   {
-      control->SetClass(document_contract::Focused, focused);
       control->SetClass(document_contract::Capturing, capturing);
-   }
    if (Rml::Element *hit = document.root()->GetElementById(document_contract::ControlHitPrefix + suffix))
    {
-      hit->SetClass(document_contract::Focused, focused);
+      hit->SetClass(document_contract::Focused, echo_focus);
       hit->SetClass(document_contract::Capturing, capturing);
    }
    if (Rml::Element *label_element =
@@ -170,19 +167,14 @@ void ControlView::set_control_state(const char *id,
             binding ? binding : ""));
 }
 
-void ControlView::set_controls_action_focus(
-      bool reset, bool back, bool cancel)
+void ControlView::set_capturing(bool capturing)
 {
    if (!document.root())
       return;
-   if (Rml::Element *element = document.root()->GetElementById(document_contract::ControlsReset))
-      element->SetClass(document_contract::Focused, reset);
-   if (Rml::Element *element = document.root()->GetElementById(document_contract::ControlsBack))
-      element->SetClass(document_contract::Focused, back);
    if (Rml::Element *element = document.root()->GetElementById(document_contract::ControlsCancel))
    {
-      element->SetClass(document_contract::Focused, cancel);
-      if (cancel)
+      element->SetClass(document_contract::Capturing, capturing);
+      if (capturing)
          element->RemoveProperty("display");
       else
          element->SetProperty("display", "none");
