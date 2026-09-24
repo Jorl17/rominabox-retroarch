@@ -251,33 +251,43 @@ void Lists::mark_pager(Rml::Element *list, int page, int pages)
    }
 }
 
+std::vector<Rml::Element*> Lists::usable_pages(Rml::Element *list)
+{
+   std::vector<Rml::Element*> pages, usable;
+   collect(list, document_contract::ListPage, pages);
+   for (auto *page : pages)
+      if (page_has_row(page)) usable.push_back(page);
+   return usable;
+}
+
+void Lists::show_page(Rml::Element *list, const std::vector<Rml::Element*>& pages, int shown)
+{
+   for (size_t index = 0; index < pages.size(); ++index)
+      if ((int)index == shown) pages[index]->RemoveProperty("display");
+      else pages[index]->SetProperty("display", "none");
+   std::vector<Rml::Element*> counts;
+   collect(list, document_contract::ListPagerCount, counts);
+   if (!counts.empty())
+   {
+      char label[32];
+      std::snprintf(label, sizeof(label), "%d/%d", shown + 1, (int)pages.size());
+      counts[0]->SetInnerRML(label);
+   }
+   mark_pager(list, shown, (int)pages.size());
+}
+
 int Lists::turn_list_page(int delta, Rml::Element *list) const
 {
    if (!list) list = visible_list();
    if (!list) return -1;
-   std::vector<Rml::Element*> pages;
-   collect(list, document_contract::ListPage, pages);
-   std::vector<Rml::Element*> usable;
-   for (auto *page : pages)
-      if (page_has_row(page)) usable.push_back(page);
+   const auto usable = usable_pages(list);
    if (usable.size() < 2) return -1;
    int current = 0;
    for (size_t index = 0; index < usable.size(); ++index)
       if (!display_none(usable[index])) current = (int)index;
    const int next = current + (delta < 0 ? -1 : 1);
    if (next < 0 || next >= (int)usable.size()) return -1;
-   for (size_t index = 0; index < usable.size(); ++index)
-      if ((int)index == next) usable[index]->RemoveProperty("display");
-      else usable[index]->SetProperty("display", "none");
-   std::vector<Rml::Element*> counts;
-   collect(list, document_contract::ListPagerCount, counts);
-   if (!counts.empty())
-   {
-      char label[32];
-      std::snprintf(label, sizeof(label), "%d/%d", next + 1, (int)usable.size());
-      counts[0]->SetInnerRML(label);
-   }
-   mark_pager(list, next, (int)usable.size());
+   show_page(list, usable, next);
    return next;
 }
 
@@ -422,37 +432,25 @@ const char *Lists::row_in(const char *list_id, int index)
    return row_in_buffer.c_str();
 }
 
-void Lists::retarget_pages(const char *list_id) const
+void Lists::retarget_pages(const char *list_id, const char *keep_row) const
 {
    auto *list = list_element(list_id);
    if (!list) return;
    std::vector<Rml::Element*> pages;
    collect(list, document_contract::ListPage, pages);
-   std::vector<Rml::Element*> usable;
    for (auto *page : pages)
-      if (page_has_row(page)) usable.push_back(page);
-      else page->SetProperty("display", "none");
-   for (size_t index = 0; index < usable.size(); ++index)
-      if (index == 0) usable[index]->RemoveProperty("display");
-      else usable[index]->SetProperty("display", "none");
+      if (!page_has_row(page)) page->SetProperty("display", "none");
+   const auto usable = usable_pages(list);
+   auto *kept = keep_row ? list->GetElementById(keep_row) : nullptr;
+   int shown = 0;
+   for (size_t index = 0; kept && index < usable.size(); ++index)
+      if (usable[index]->Contains(kept)) shown = (int)index;
+   if (!usable.empty()) show_page(list, usable, shown);
    std::vector<Rml::Element*> pagers;
    collect(list, document_contract::ListPager, pagers);
    if (pagers.empty()) return;
-   if (usable.size() < 2)
-   {
-      pagers[0]->SetProperty("display", "none");
-      return;
-   }
-   pagers[0]->RemoveProperty("display");
-   std::vector<Rml::Element*> counts;
-   collect(list, document_contract::ListPagerCount, counts);
-   if (!counts.empty())
-   {
-      char label[32];
-      std::snprintf(label, sizeof(label), "1/%d", (int)usable.size());
-      counts[0]->SetInnerRML(label);
-   }
-   mark_pager(list, 0, (int)usable.size());
+   if (usable.size() < 2) pagers[0]->SetProperty("display", "none");
+   else pagers[0]->RemoveProperty("display");
 }
 
 void Lists::place_list(const char *list_id, const char *anchor_id, int width_dp) const

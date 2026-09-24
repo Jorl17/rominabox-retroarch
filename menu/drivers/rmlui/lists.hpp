@@ -55,7 +55,9 @@ public:
    void fit_row_title(const char *id, const char *text) const;
    int rows_in(const char *list_id) const;
    const char *row_in(const char *list_id, int index);
-   void retarget_pages(const char *list_id) const;
+   /* Hide the pages without rows and show the one with `keep_row`, or the
+    * first. */
+   void retarget_pages(const char *list_id, const char *keep_row = nullptr) const;
    void place_list(const char *list_id, const char *anchor_id, int width_dp) const;
 
 private:
@@ -65,6 +67,8 @@ private:
          const char *on, const char *off) const;
    static bool page_has_row(Rml::Element *page);
    static void mark_pager(Rml::Element *list, int page, int pages);
+   static std::vector<Rml::Element*> usable_pages(Rml::Element *list);
+   static void show_page(Rml::Element *list, const std::vector<Rml::Element*>& pages, int shown);
    float block_dp(Rml::Element *element) const;
 
    Document& document;
