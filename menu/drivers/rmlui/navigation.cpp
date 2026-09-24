@@ -25,6 +25,9 @@ Rml::Element *Navigation::panel() const
 
 void Navigation::enter()
 {
+   /* We start in an open dialog, because the panel behind it is inactive. */
+   if (dialog_held && focus.set(focus.first(focus.trapped())))
+      return;
    const char *screen = screens.current();
    if (focus.set(focus.recall(screen)))
       return;

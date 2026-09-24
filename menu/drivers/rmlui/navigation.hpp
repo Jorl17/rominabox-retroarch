@@ -65,7 +65,8 @@ public:
    bool show(const char *id);
    /* The screen the player opened the current one from, or Pause. */
    void back_to_opener();
-   /* Focus the first stop of the current screen, or the remembered element. */
+   /* Focus the first stop of the open dialog, or else the first stop of the
+    * current screen, or the remembered element. */
    void enter();
    void select_slot(int slot);
    /* Turn the list with `from` (or the visible one) and focus its first row. */
