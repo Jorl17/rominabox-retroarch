@@ -143,8 +143,7 @@ void Achievements::update()
    if (!overlays.notification_active()) {
       rib_achievement_unlock_t unlocked{};
       if (rib_achievements_take_unlock(&unlocked))
-         overlays.notify({unlocked.title, std::to_string(unlocked.points) +
-               (unlocked.pending_upload ? " points - waiting to sync" : " points"), unlocked.badge_path});
+         overlays.notify({unlocked.title, std::to_string(unlocked.points) + " points", unlocked.badge_path});
    }
 }
 void Achievements::sign_in()
