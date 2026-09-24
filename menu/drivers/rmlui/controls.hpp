@@ -6,6 +6,7 @@
 #include <retro_miscellaneous.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string>
 
 struct config_file;
 /* Export limits. They are sizes of buffers, not a list of controls. */
@@ -49,6 +50,7 @@ public:
    bool device_picker_open = false;
    rib_controls_catalog catalog{};
    char path[PATH_MAX_LENGTH]{};
+   char defaults_path[PATH_MAX_LENGTH]{};
 
 private:
    Focus& focus_state;
@@ -58,7 +60,12 @@ private:
    Lists& lists;
    Status& status;
    const Event& hovered;
-   void reload();
+   char exported_profile[32]{};
+   bool apply(const char *wanted, bool player_file);
+   bool read_defaults(const char *wanted);
+   bool read_player_file();
+   std::string player_profile();
+   void show_pad();
    bool save();
    const char *console_name(int index) const;
    int find_conflict(int changed_index) const;

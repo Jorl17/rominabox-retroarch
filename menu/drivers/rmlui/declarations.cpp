@@ -360,6 +360,19 @@ config_file_t *rib_open_controls(const char *path, bool defaults,
    return config;
 }
 
+bool rib_controls_discover(config_file_t *defaults, const char *profile,
+      rib_controls_catalog *catalog, bool (*bind_index)(const char *, unsigned *))
+{
+   if (!defaults || !profile || !catalog || !bind_index)
+      return false;
+   bool offered = false;
+   for (int index = 0; index < catalog->device_count; ++index)
+      offered = offered || string_is_equal(catalog->devices[index].id, profile);
+   if (offered)
+      discover_controls(defaults, profile, catalog, bind_index);
+   return offered;
+}
+
 void rib_controls_read_enabled(config_file_t *config,
       rib_controls_catalog *catalog)
 {

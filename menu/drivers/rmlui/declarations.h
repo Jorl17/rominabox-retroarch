@@ -111,8 +111,12 @@ struct config_file;
 struct config_file *rib_open_controls(const char *path, bool defaults,
       char profile_id[32], rib_controls_catalog *catalog,
       bool *profile_present, bool (*bind_index)(const char *, unsigned *));
-/* Read the active-bind flags in the defaults after attaching the listeners,
- * then each active label between host clear and host load. */
+/* Read the open defaults again, for another pad in them. Returns false, with
+ * the catalog unchanged, when there is no `profile` in them. */
+bool rib_controls_discover(struct config_file *defaults, const char *profile,
+      rib_controls_catalog *catalog, bool (*bind_index)(const char *, unsigned *));
+/* Read the active-bind flags in the defaults, then each active label at its
+ * point between host clear and host load. */
 void rib_controls_read_enabled(struct config_file *config,
       rib_controls_catalog *catalog);
 void rib_controls_read_label(struct config_file *config,

@@ -93,7 +93,7 @@ void View::wire_document()
          element->AddEventListener(Rml::EventId::Mouseout, new HoverListener(hovered, event));
       }
 
-   controls.wire_controls(*catalog);
+   controls.wire(*catalog);
    wire_toggles();
    parts.wire_arrows();
    lists.wire_lists();

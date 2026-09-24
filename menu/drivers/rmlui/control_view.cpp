@@ -7,78 +7,99 @@
 #include <cstring>
 #include <vector>
 namespace rib {
-void ControlView::wire_controls(const rib_controls_catalog& catalog)
+namespace {
+/* The control an element in the scene stands for: its callout, its picture
+ * button, or the group it belongs to. */
+Event control_at(Rml::Element *element, Rml::Element *scene, const rib_controls_catalog& catalog)
 {
-   if (!document.root())
-      return;
-   /* Walk the elements in the document, not a list of ids.
-    *
-    * We generate the scene markup from the console package, so the elements
-    * in the document are the declared controls, however many there are, and
-    * their names are not in this code. */
-   std::vector<std::string> wired_groups;
-   for (int index = 0; index < catalog.count; ++index)
+   for (; element && element != scene; element = element->GetParentNode())
    {
-      const char *control_id = catalog.entries[index].id;
-      if (!control_id || !*control_id)
-         break;
-      const rib::Event action{RIB_RMLUI_ACTION_CONTROL, control_id};
-      const std::string ids[] = {
-         document_contract::ControlPrefix + std::string(control_id),
-         document_contract::ControlHitPrefix + std::string(control_id)
-      };
-      for (const std::string& id : ids)
-         if (Rml::Element *element = document.root()->GetElementById(id))
-         {
-            element->AddEventListener(Rml::EventId::Click,
-                  new ActionListener(events, action));
-            element->AddEventListener(Rml::EventId::Mouseover,
-                  new HoverListener(hovered, action));
-            element->AddEventListener(Rml::EventId::Mouseout,
-                  new HoverListener(hovered, action));
-         }
-      const char *group = catalog.entries[index].group;
-      if (!group || !*group)
+      const std::string& id = element->GetId();
+      if (id.empty())
          continue;
-      const std::string name(group);
-      bool seen = false;
-      for (const std::string& wired : wired_groups)
-         if (wired == name)
-            seen = true;
-      if (seen)
-         continue;
-      wired_groups.push_back(name);
-      if (Rml::Element *element = document.root()->GetElementById(document_contract::ControlGroupPrefix + name))
+      for (int index = 0; index < catalog.count; ++index)
       {
-         element->AddEventListener(Rml::EventId::Click,
-               new ActionListener(events, action));
-         element->AddEventListener(Rml::EventId::Mouseover,
-               new HoverListener(hovered, action));
-         element->AddEventListener(Rml::EventId::Mouseout,
-               new HoverListener(hovered, action));
+         const rib_control_declaration& control = catalog.entries[index];
+         if (id == document_contract::ControlPrefix + std::string(control.id)
+               || id == document_contract::ControlHitPrefix + std::string(control.id)
+               || (control.group[0] && id == document_contract::ControlGroupPrefix + std::string(control.group)))
+         {
+            if (element->HasAttribute("disabled") || element->IsClassSet(document_contract::Disabled))
+               return {};
+            return {RIB_RMLUI_ACTION_CONTROL, control.id};
+         }
       }
    }
-
+   return {};
 }
 
-void ControlView::wire_device_picker(const rib_controls_catalog& catalog)
+class SceneListener : public Rml::EventListener
 {
+public:
+   SceneListener(EventQueue& events, Event& hovered, const rib_controls_catalog& catalog)
+      : events(events), hovered(hovered), catalog(catalog) {}
+   void ProcessEvent(Rml::Event& event) override
+   {
+      const Event action = control_at(event.GetTargetElement(), event.GetCurrentElement(), catalog);
+      if (action.kind == RIB_RMLUI_ACTION_NONE)
+         return;
+      if (event.GetId() == Rml::EventId::Click)
+         events.push(action);
+      else if (event.GetId() == Rml::EventId::Mouseover)
+         hovered = action;
+      else if (hovered.same_target(action))
+         hovered = RIB_RMLUI_ACTION_NONE;
+   }
+   void OnDetach(Rml::Element*) override { delete this; }
+private:
+   EventQueue& events;
+   Event& hovered;
+   const rib_controls_catalog& catalog;
+};
+
+class PickerListener : public Rml::EventListener
+{
+public:
+   explicit PickerListener(EventQueue& events) : events(events) {}
+   void ProcessEvent(Rml::Event& event) override
+   {
+      const std::string option_prefix = document_contract::ControlsDeviceOptionPrefix;
+      for (Rml::Element *element = event.GetTargetElement();
+            element && element != event.GetCurrentElement(); element = element->GetParentNode())
+      {
+         const std::string& id = element->GetId();
+         if (id == document_contract::ControlsDeviceCurrent)
+         {
+            if (!element->HasAttribute("disabled") && !element->IsClassSet(document_contract::Disabled))
+               events.push(RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE);
+            return;
+         }
+         if (id.compare(0, option_prefix.size(), option_prefix) == 0)
+         {
+            events.push({RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE, id.substr(option_prefix.size())});
+            return;
+         }
+      }
+   }
+   void OnDetach(Rml::Element*) override { delete this; }
+private:
+   EventQueue& events;
+};
+}
+
+void ControlView::wire(const rib_controls_catalog& catalog)
+{
+   scene.clear();
    if (!document.root())
       return;
-   if (Rml::Element *current = document.root()->GetElementById(document_contract::ControlsDeviceCurrent))
-      current->AddEventListener(Rml::EventId::Click,
-            new ActionListener(events, RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE));
-
-   for (int index = 0; index < catalog.device_count; ++index)
+   if (Rml::Element *element = document.root()->GetElementById(document_contract::ControllerScene))
    {
-      const char *id = catalog.devices[index].id;
-      if (!id || !*id)
-         continue;
-      if (Rml::Element *option =
-            document.root()->GetElementById(document_contract::ControlsDeviceOptionPrefix + std::string(id)))
-         option->AddEventListener(Rml::EventId::Click,
-               new ActionListener(events, {RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE, id}, false));
+      // One listener per event. We delete each one when it is detached.
+      for (const Rml::EventId id : {Rml::EventId::Click, Rml::EventId::Mouseover, Rml::EventId::Mouseout})
+         element->AddEventListener(id, new SceneListener(events, hovered, catalog));
    }
+   if (Rml::Element *picker = document.root()->GetElementById(document_contract::ControlsDevice))
+      picker->AddEventListener(Rml::EventId::Click, new PickerListener(events));
 }
 
 void ControlView::set_device_picker(const rib_controls_catalog& catalog, bool open, const char *chosen)
@@ -111,14 +132,15 @@ void ControlView::set_device_picker(const rib_controls_catalog& catalog, bool op
          }
 }
 
-bool ControlView::set_scene(const char *markup)
+bool ControlView::set_scene(const char *profile, const char *markup)
 {
    if (!document.root() || !markup)
       return false;
-   Rml::Element *scene = document.root()->GetElementById(document_contract::ControllerScene);
-   if (!scene)
+   Rml::Element *element = document.root()->GetElementById(document_contract::ControllerScene);
+   if (!element)
       return false;
-   scene->SetInnerRML(markup);
+   element->SetInnerRML(markup);
+   scene = profile ? profile : "";
    return true;
 }
 

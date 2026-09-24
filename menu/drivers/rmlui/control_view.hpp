@@ -1,19 +1,26 @@
 #pragma once
 #include "declarations.h"
 #include "events.h"
+#include <string>
 namespace rib {
 class Document;
 /* Controller scene, callouts and picker elements. The configuration is in
- * Controls, and we read its catalog here without a callback into Controls. */
+ * Controls, and in the view we read its catalog without a callback into it. */
 class ControlView
 {
 public:
    ControlView(Document& document, EventQueue& events, Event& hovered)
       : document(document), events(events), hovered(hovered) {}
-   void wire_controls(const rib_controls_catalog& catalog);
-   void wire_device_picker(const rib_controls_catalog& catalog);
+   /* Once per document. We put one listener on the scene and one on the
+    * picker, and find the control or pad under the pointer when the event
+    * arrives, so there is nothing to attach for a new scene, a new pad or
+    * Reset. We borrow the catalog for as long as the document exists. */
+   void wire(const rib_controls_catalog& catalog);
    void set_device_picker(const rib_controls_catalog& catalog, bool open, const char *chosen);
-   bool set_scene(const char *markup);
+   /* Draw the scene for `profile`. scene_profile() is the pad we drew last
+    * this way, empty while the document still has the exported scene. */
+   bool set_scene(const char *profile, const char *markup);
+   const char *scene_profile() const { return scene.c_str(); }
    void set_control_state(const char *id, const char *label, const char *binding,
          bool focused, bool capturing);
    void set_controls_action_focus(bool reset, bool back, bool cancel);
@@ -22,5 +29,6 @@ private:
    Document& document;
    EventQueue& events;
    Event& hovered;
+   std::string scene;
 };
 }
