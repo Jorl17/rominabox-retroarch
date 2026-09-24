@@ -136,3 +136,8 @@ RIB_CLASS(Capturing, "capturing", State, Optional)
 RIB_CLASS(Showing, "showing", State, Optional)
 RIB_CLASS(Leaving, "leaving", State, Optional)
 RIB_CLASS(Overlay, "overlay", State, Optional)
+
+/* State attributes the player sets on the document. data-focus is the id of
+ * the element with focus, so a design can style anything by what has focus:
+ * [data-focus=save] .slot.selected is the slot SAVE is about to use. */
+RIB_ATTRIBUTE(FocusAttribute, "data-focus", State, Optional)

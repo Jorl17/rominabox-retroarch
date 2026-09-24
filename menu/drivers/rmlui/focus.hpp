@@ -141,17 +141,20 @@ public:
       return marked ? marked : earliest;
    }
 
-   /* Paint RmlUi's focused leaf, and only it, as `focused`. */
+   /* Paint the focused leaf in RmlUi, and only it, as `focused`, and put its
+    * name on the document as `data-focus`. */
    void paint()
    {
       Rml::Element *focused = current();
-      if (focused == painted.get())
-         return;
-      if (painted)
-         painted->SetClass(document_contract::Focused, false);
-      if (focused)
-         focused->SetClass(document_contract::Focused, true);
-      painted = focused ? focused->GetObserverPtr() : Rml::ObserverPtr<Rml::Element>();
+      if (focused != painted.get())
+      {
+         if (painted)
+            painted->SetClass(document_contract::Focused, false);
+         if (focused)
+            focused->SetClass(document_contract::Focused, true);
+         painted = focused ? focused->GetObserverPtr() : Rml::ObserverPtr<Rml::Element>();
+      }
+      name(focused);
    }
    /* Whether the focus has moved since the last call. */
    bool moved()
@@ -202,6 +205,20 @@ public:
    void forget() { memory.clear(); }
 
 private:
+   /* We check on every paint, not on a change of leaf, because when a leaf is
+    * removed with its screen nothing is focused, and we remove the name too. */
+   void name(Rml::Element *focused)
+   {
+      if (!document)
+         return;
+      const Rml::String id = focused ? focused->GetId() : Rml::String();
+      if (id == document->GetAttribute<Rml::String>(document_contract::FocusAttribute, ""))
+         return;
+      if (id.empty())
+         document->RemoveAttribute(document_contract::FocusAttribute);
+      else
+         document->SetAttribute(document_contract::FocusAttribute, id);
+   }
    /* Bring the styles up to date, because we may not have applied them yet
     * for a panel shown or a class set a moment ago. */
    void refresh() const
