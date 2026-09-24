@@ -15,14 +15,6 @@
 
 namespace rib {
 namespace {
-bool under_hidden_page(Rml::Element *element)
-{
-   for (auto *cursor = element; cursor; cursor = cursor->GetParentNode())
-      if (cursor->IsClassSet(document_contract::ListPage) && display_none(cursor))
-         return true;
-   return false;
-}
-
 class ListListener : public Rml::EventListener
 {
 public:
@@ -101,21 +93,22 @@ std::string slice(const std::string& text, int from, int count)
 }
 }
 
-void Lists::wire_lists()
+void Lists::wire_lists(Rml::Element *scope)
 {
    if (!document.root()) return;
+   if (!scope) scope = document.root();
    std::vector<Rml::Element*> rows;
-   collect(document.root(), document_contract::ListRow, rows);
+   collect(scope, document_contract::ListRow, rows);
    for (auto *row : rows)
-      row->AddEventListener(Rml::EventId::Click,
+      if (!row->GetParentNode()->IsClassSet("list-prototype")) row->AddEventListener(Rml::EventId::Click,
             new ListListener(events, ListListener::Choose, ""));
    std::vector<Rml::Element*> previous;
-   collect(document.root(), document_contract::ListPagerPrev, previous);
+   collect(scope, document_contract::ListPagerPrev, previous);
    for (auto *button : previous)
       button->AddEventListener(Rml::EventId::Click,
             new ListListener(events, ListListener::Page, "prev"));
    std::vector<Rml::Element*> next;
-   collect(document.root(), document_contract::ListPagerNext, next);
+   collect(scope, document_contract::ListPagerNext, next);
    for (auto *button : next)
       button->AddEventListener(Rml::EventId::Click,
             new ListListener(events, ListListener::Page, "next"));
@@ -156,7 +149,7 @@ void Lists::visible_rows(std::vector<Rml::Element*> &rows) const
    std::vector<Rml::Element*> all;
    collect(list, document_contract::ListRow, all);
    for (auto *row : all)
-      if (!under_hidden_page(row) && !display_none(row)) rows.push_back(row);
+      if (!hidden(row)) rows.push_back(row);
 }
 
 Rml::Element *Lists::visible_panel() const
@@ -174,7 +167,7 @@ void Lists::visible_controls(std::vector<Rml::Element*> &out) const
    out.clear();
    auto *panel = visible_panel();
    if (!panel) return;
-   for (const char *name : {document_contract::OptionEntry, document_contract::ListToggle, document_contract::ListBack, document_contract::OptionsBack})
+   for (const char *name : {document_contract::OptionEntry, document_contract::ListToggle, document_contract::ListControl, document_contract::ListBack, document_contract::OptionsBack})
       collect(panel, name, out);
 }
 

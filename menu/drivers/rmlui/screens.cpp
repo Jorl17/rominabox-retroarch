@@ -9,22 +9,20 @@
 #include <cstring>
 
 namespace rib {
-std::set<std::string> Screens::wired_screen_buttons;
 
 namespace {
 class ScreenListener : public Rml::EventListener
 {
 public:
-   ScreenListener(EventQueue& events, std::string id)
-      : events(events), id(std::move(id)) {}
-   void ProcessEvent(Rml::Event&) override
+   explicit ScreenListener(EventQueue& events) : events(events) {}
+   void ProcessEvent(Rml::Event& event) override
    {
-      events.push({RIB_RMLUI_ACTION_SHOW_SCREEN, id});
+      events.push({RIB_RMLUI_ACTION_SHOW_SCREEN,
+            event.GetCurrentElement()->GetAttribute<std::string>("data-screen-target", "")});
    }
    void OnDetach(Rml::Element*) override { delete this; }
 private:
    EventQueue& events;
-   std::string id;
 };
 }
 
@@ -59,9 +57,9 @@ void Screens::declare_screen(const char *id, const char *panel,
       return;
    screens.push_back(Screen{id, panel, heading ? heading : "",
          footer ? footer : "", button ? button : ""});
-   /* We load the document before we read a design. We keep the set of
-    * elements with listeners for the whole process, across declarations and
-    * new documents. */
+   /* We keep the listener and its target on the element. A new document has
+    * new elements, and for a repeated declaration we update the target without
+    * adding a listener. We keep no registry for longer than its document. */
    if (document.root() && button && *button)
    {
       const char *cursor = button;
@@ -75,10 +73,12 @@ void Screens::declare_screen(const char *id, const char *panel,
          if (end > cursor)
          {
             const std::string one(cursor, end);
-            if (wired_screen_buttons.insert(one).second)
-               if (auto *element = document.root()->GetElementById(one))
-                  element->AddEventListener(Rml::EventId::Click,
-                        new ScreenListener(events, id));
+            if (auto *element = document.root()->GetElementById(one))
+            {
+               if (!element->HasAttribute("data-screen-target"))
+                  element->AddEventListener(Rml::EventId::Click, new ScreenListener(events));
+               element->SetAttribute("data-screen-target", std::string(id));
+            }
          }
          cursor = end;
       }

@@ -1055,16 +1055,27 @@ ifeq ($(HAVE_MENU), 1)
    DEFINES += -DHAVE_MENU
    HAVE_MENU_COMMON = 1
 
+   ifeq ($(RIB_ACHIEVEMENTS_TEST), 1)
+      DEFINES += -DRIB_ACHIEVEMENTS_TEST
+   endif
+
    ifeq ($(HAVE_RMLUI), 1)
       OBJ += menu/drivers/rmlui/driver.o menu/drivers/rmlui/menu.o menu/drivers/rmlui/navigation.o menu/drivers/rmlui/slot_tasks.o menu/drivers/rmlui/sounds.o menu/drivers/rmlui/view.o menu/drivers/rmlui/control_view.o \
              menu/drivers/rmlui/host.o menu/drivers/rmlui/files.o menu/drivers/rmlui/declarations.o \
              menu/drivers/rmlui/slots.o menu/drivers/rmlui/status.o \
-             menu/drivers/rmlui/screens.o menu/drivers/rmlui/lists.o menu/drivers/rmlui/parts.o \
+             menu/drivers/rmlui/screens.o menu/drivers/rmlui/lists.o menu/drivers/rmlui/live_lists.o menu/drivers/rmlui/parts.o \
              menu/drivers/rmlui/binds_popup.o menu/drivers/rmlui/document.o \
+             menu/drivers/rmlui/achievements.o menu/drivers/rmlui/text_entry.o menu/drivers/rmlui/text_host.o \
              menu/drivers/rmlui/overlays.o menu/drivers/rmlui/script.o menu/drivers/rmlui/script_report.o \
              menu/drivers/rmlui/shaders.o menu/drivers/rmlui/discs.o menu/drivers/rmlui/settings.o menu/drivers/rmlui/controls.o \
              menu/drivers/rmlui/render/rmlui_gl.o menu/drivers/rmlui/render/rmlui_gl3.o \
              menu/drivers/third_party/lodepng.o
+      ifeq ($(HAVE_COCOA), 1)
+         OBJ += menu/drivers/rmlui/text_input_macos.o
+      endif
+      ifneq ($(HAVE_CHEEVOS), 1)
+         OBJ += cheevos/rominabox_stub.o
+      endif
       DEFINES += -DHAVE_RMLUI
       RMLUI_SOURCE_DIR ?= ../vendor/RmlUi
       RMLUI_BUILD_DIR ?= ../build-rmlui
@@ -2464,7 +2475,7 @@ ifeq ($(HAVE_NETWORKING), 1)
          DEFINES += -DRC_NO_THREADS
       endif
 
-      OBJ += cheevos/cheevos.o \
+      OBJ += cheevos/cheevos.o cheevos/rominabox.o cheevos/rominabox_storage.o cheevos/rominabox_catalog.o \
              cheevos/cheevos_client.o \
              cheevos/cheevos_menu.o \
              $(LIBRETRO_COMM_DIR)/formats/cdfs/cdfs.o \

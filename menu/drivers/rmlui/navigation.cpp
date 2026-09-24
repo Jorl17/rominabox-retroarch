@@ -128,11 +128,7 @@ Event Navigation::part_key(rib_key action)
       case RIB_KEY_CANCEL:
       case RIB_KEY_RESUME:
       case RIB_KEY_TOGGLE:
-         play_action_sound(RIB_RMLUI_ACTION_CONTROLS_BACK);
-         screens.remember("pause");
-         screens.show_screen("pause");
-         document.mark_focused(panel, NULL);
-         return {};
+         return back();
       default:
          return {};
    }

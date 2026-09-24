@@ -15,7 +15,11 @@ class Lists
 public:
    Lists(Document& document, EventQueue& events) : document(document), events(events) {}
 
-   void wire_lists();
+   void wire_lists(Rml::Element *scope = nullptr);
+   struct Row { std::string id, title, detail, state, icon; bool selected = false; };
+   // Replace generated data through the staged prototype from the design, and
+   // keep the current page where possible. We leave static lists unchanged.
+   void replace_rows(const char *list_id, const std::vector<Row>& rows);
    void wire_toggles();
    void set_toggle(const char *id, const char *state, bool on);
    Rml::Element *visible_list() const;

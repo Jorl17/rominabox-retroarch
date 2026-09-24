@@ -7781,9 +7781,10 @@ int runloop_iterate(void)
             netplay_allow_timeskip))
    {
       case RUNLOOP_STATE_QUIT:
+         if (!command_event(CMD_EVENT_QUIT, NULL))
+            return 0;
          runloop_st->frame_limit_last_time = 0.0;
          runloop_st->flags                &= ~RUNLOOP_FLAG_CORE_RUNNING;
-         command_event(CMD_EVENT_QUIT, NULL);
          return -1;
       case RUNLOOP_STATE_POLLED_AND_SLEEP:
          if (runloop_st->flags & RUNLOOP_FLAG_SHUTDOWN_INITIATED)

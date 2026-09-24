@@ -121,7 +121,11 @@ bool Document::initialize(
       return false;
    }
 
-   context = Rml::CreateContext("rominabox-menu", Rml::Vector2i(width, height));
+#ifdef HAVE_COCOA
+   text_input = make_text_input_platform(*this);
+   system.text_input = text_input.get();
+#endif
+   context = Rml::CreateContext("rominabox-menu", Rml::Vector2i(width, height), nullptr, text_input.get());
    document = context ? context->LoadDocument(asset_path("menu.rml")) : nullptr;
    if (!context || !document)
    {
@@ -129,6 +133,8 @@ bool Document::initialize(
       context = nullptr;
       document = nullptr;
       renderer.reset();
+      system.text_input = nullptr;
+      text_input.reset();
       return false;
    }
    return true;
@@ -143,6 +149,8 @@ void Document::shutdown()
    if (renderer)
       Rml::Shutdown();
    renderer.reset();
+   system.text_input = nullptr;
+   text_input.reset();
 }
 
 void Document::show()
@@ -371,5 +379,30 @@ void Document::set_class(const char *id, const char *name, bool enabled)
 {
    if (!root() || !id || !*id) return;
    if (auto *element = root()->GetElementById(id)) element->SetClass(name, enabled);
+}
+}
+
+namespace rib {
+void Document::System::ActivateKeyboard(Rml::Vector2f position, float line_height)
+{
+   if (text_input) text_input->caret(position, line_height);
+}
+void Document::System::GetClipboardText(Rml::String& text)
+{
+#ifdef RIB_RMLUI_HEADLESS
+   text = test_clipboard;
+#else
+   if (text_input) text_input->get_clipboard(text);
+   else Rml::SystemInterface::GetClipboardText(text);
+#endif
+}
+void Document::System::SetClipboardText(const Rml::String& text)
+{
+#ifdef RIB_RMLUI_HEADLESS
+   test_clipboard = text;
+#else
+   if (text_input) text_input->set_clipboard(text);
+   else Rml::SystemInterface::SetClipboardText(text);
+#endif
 }
 }

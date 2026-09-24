@@ -55,7 +55,7 @@ const char *rib::Script::report(const char *screen, bool menu_open,
    bool comma = false;
    for (const char *id : {document_contract::Heading, document_contract::FooterHint, document_contract::Status,
          document_contract::ControlsStatus, document_contract::ControlsDeviceCurrent, "volume-value", "shaders-page-count",
-         "achievements-page-count", "achievement-mode-state", "control-binds"})
+         "achievements-page-count", document_contract::AchievementsState, "control-binds"})
    {
       Rml::Element *element = view.document.root() ? view.document.root()->GetElementById(id) : nullptr;
       if (!element || hidden(element)) continue;

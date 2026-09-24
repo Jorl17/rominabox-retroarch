@@ -54,6 +54,9 @@
 #include "../../gfx/drivers_context/cocoa_quiet_window.h"
 #include "../../input/drivers/cocoa_input.h"
 #include "../../input/drivers_keyboard/keyboard_event_apple.h"
+#ifdef HAVE_RMLUI
+#include "../../menu/drivers/rmlui/text_input_macos.h"
+#endif
 #include "../../frontend/frontend.h"
 #include "../../configuration.h"
 #include "../../paths.h"
@@ -439,6 +442,15 @@ static ui_application_t ui_application_cocoa = {
 
 @implementation RAWindow
 
+- (void)performClose:(id)sender
+{
+   /* Keep the window open until quitting finishes in the managed session. */
+   if (rominabox_restricted_native_menus())
+      command_event(CMD_EVENT_QUIT, NULL);
+   else
+      [super performClose:sender];
+}
+
 /* A borderless NSWindow (no NSWindowStyleMaskTitled) cannot become
  * the key window by default - titled is an implicit prerequisite
  * unless this returns YES explicitly.  The windowed-mode RAWindow
@@ -465,6 +477,9 @@ static ui_application_t ui_application_cocoa = {
 }
 
 - (void)sendEvent:(NSEvent *)event {
+#ifdef HAVE_RMLUI
+   if (rib_cocoa_text_event(event)) return;
+#endif
    /* Bracket syntax throughout - GCC 4.0 on the pre-Obj-C-2.0 10.5
     * SDK doesn't accept dot-syntax on NSEvent's plain getter methods
     * (they aren't declared as @property there).  Modern clang emits
@@ -1036,15 +1051,15 @@ static ui_application_t ui_application_cocoa = {
       return NSTerminateNow;
    if (!handed)
    {
-      handed = true;
       /* We have already sent CMD_EVENT_QUIT from the pause menu. This
        * call is the request to terminate from main_exit, after we
        * unloaded the core. Quitting again here would fail to start the
        * audio driver. */
       if (!(runloop_state_get_ptr()->flags & RUNLOOP_FLAG_SHUTDOWN_INITIATED))
       {
-         command_event(CMD_EVENT_QUIT, NULL);
-         RARCH_LOG("[RIB] AppKit quit handed to orderly shutdown.\n");
+         handed = command_event(CMD_EVENT_QUIT, NULL);
+         if (handed)
+            RARCH_LOG("[RIB] AppKit quit handed to orderly shutdown.\n");
       }
    }
    return NSTerminateCancel;

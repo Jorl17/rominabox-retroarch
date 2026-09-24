@@ -22,7 +22,8 @@ enum rib_rmlui_action
    RIB_RMLUI_ACTION_LIST_CHOOSE,
    RIB_RMLUI_ACTION_LIST_PAGE,
    RIB_RMLUI_ACTION_PART_TOGGLE,
-   RIB_RMLUI_ACTION_SHOW_SCREEN
+   RIB_RMLUI_ACTION_SHOW_SCREEN,
+   RIB_RMLUI_ACTION_ACCOUNT
 };
 
 #ifdef __cplusplus
@@ -31,6 +32,7 @@ enum rib_rmlui_action
 #include <utility>
 
 namespace rib {
+enum class AccountAction { Open, SignIn, Cancel, RevealPassword, Enable, SignOut, Retry, KeepSession, EndSession, SkipStartup };
 /* Each queued intent has a copy of its payload, so later clicks cannot
  * overwrite the id or value of an intent we have not handled yet. */
 struct Event
@@ -40,9 +42,16 @@ struct Event
    float fraction;
    bool on;
    int slot = 0;
+   AccountAction account = AccountAction::Open;
    Event(rib_rmlui_action kind = RIB_RMLUI_ACTION_NONE, std::string id = {},
          float fraction = 0.0f, bool on = false)
       : kind(kind), id(std::move(id)), fraction(fraction), on(on) {}
+   static Event account_action(AccountAction action)
+   {
+      Event event(RIB_RMLUI_ACTION_ACCOUNT);
+      event.account = action;
+      return event;
+   }
    static Event select_slot(int number)
    {
       Event event(RIB_RMLUI_ACTION_SELECT_SLOT);
@@ -51,7 +60,7 @@ struct Event
    }
    bool same_target(const Event& other) const
    {
-      return kind == other.kind && id == other.id && slot == other.slot;
+      return kind == other.kind && id == other.id && slot == other.slot && account == other.account;
    }
 };
 

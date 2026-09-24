@@ -37,6 +37,9 @@
 
 #include "input_driver.h"
 #include "held_key_policy.h"
+#ifdef HAVE_RMLUI
+#include "../menu/drivers/rmlui_bridge.h"
+#endif
 #include "alt_enter_fullscreen.h"
 
 _Static_assert(ALT_ENTER_RETURN == RETROK_RETURN, "alt+enter return code");
@@ -8257,6 +8260,10 @@ void input_keyboard_event(bool down, unsigned code,
     * frame, so otherwise we would miss a down and an up between two
     * samples. */
    held_key_note(code, down);
+#ifdef HAVE_RMLUI
+   if (rib_rmlui_text_event(down, code, character, mod))
+      return;
+#endif
    /* Return with Alt is the fullscreen chord. Record it before any return,
     * and do not also pass that Return to the menu or the core, because Enter
     * alone is Start. */

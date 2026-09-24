@@ -51,6 +51,7 @@ float rib_host_game_aspect(void);
 void rib_host_select_state_slot(int slot);
 bool rib_host_save_state(void);
 bool rib_host_load_state(void);
+void rib_host_open_menu(void);
 void rib_host_resume(void);
 void rib_host_quit(void);
 float rib_host_volume(void);

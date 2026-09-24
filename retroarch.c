@@ -216,6 +216,9 @@
 #include "version_git.h"
 
 #include "retroarch.h"
+#ifdef HAVE_RMLUI
+#include "menu/drivers/rmlui_bridge.h"
+#endif
 
 #include "accessibility.h"
 
@@ -8990,6 +8993,11 @@ bool retroarch_main_quit(void)
    video_driver_state_t*video_st = video_state_get_ptr();
    settings_t *settings          = config_get_ptr();
    bool config_save_on_exit      = settings->bools.config_save_on_exit;
+
+#ifdef HAVE_RMLUI
+   if (!(runloop_st->flags & RUNLOOP_FLAG_SHUTDOWN_INITIATED) && !rib_rmlui_allow_quit())
+      return false;
+#endif
 
    /* Restore video driver before saving */
    video_driver_restore_cached(settings);

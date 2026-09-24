@@ -84,7 +84,8 @@ inline int focusable_ids(Rml::Element *document, const char *panel,
          return Walk::SkipChildren;
       const bool part = !element->IsClassSet(document_contract::VolumeArrow)
             && (element->IsClassSet(document_contract::Slider) || element->IsClassSet(document_contract::Toggle)
-               || element->IsClassSet(document_contract::MenuAction));
+               || element->IsClassSet(document_contract::MenuAction)
+               || element->GetTagName() == "input");
       if (part && !element->GetId().empty())
          found.push_back(element->GetId());
       return Walk::Continue;

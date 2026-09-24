@@ -261,6 +261,10 @@ $(OBJDIR)/%.o: %.cpp config.h config.mk
 	@$(if $(Q), $(shell echo echo CXX $<),)
 	$(Q)$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(DEFINES) -MMD -c -o $@ $<
 
+$(OBJDIR)/%.o: %.mm config.h config.mk
+	@mkdir -p $(dir $@)
+	$(Q)$(CXX) $(CPPFLAGS) $(OBJCFLAGS) $(CXXFLAGS) $(DEFINES) -MMD -c -o $@ $<
+
 $(OBJDIR)/%.o: %.m
 	@mkdir -p $(dir $@)
 	@$(if $(Q), $(shell echo echo OBJC $<),)

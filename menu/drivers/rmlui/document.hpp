@@ -5,6 +5,7 @@
 #include <ctime>
 #include <memory>
 #include <string>
+#include "text_input_platform.hpp"
 
 class RominaboxRenderer;
 
@@ -52,6 +53,13 @@ public:
 private:
    struct System : Rml::SystemInterface
    {
+      TextInputPlatform *text_input = nullptr;
+      void ActivateKeyboard(Rml::Vector2f position, float line_height) override;
+      void GetClipboardText(Rml::String& text) override;
+      void SetClipboardText(const Rml::String& text) override;
+#ifdef RIB_RMLUI_HEADLESS
+      std::string test_clipboard;
+#endif
       void JoinPath(Rml::String& output, const Rml::String& document_path,
             const Rml::String& path) override;
 #ifdef RIB_RMLUI_HEADLESS
@@ -61,6 +69,7 @@ private:
    } system;
    void write_capture(int width, int height);
    std::unique_ptr<RominaboxRenderer> renderer;
+   std::unique_ptr<TextInputPlatform> text_input;
    Rml::Context *context = nullptr;
    Rml::ElementDocument *document = nullptr;
    std::string asset_dir;

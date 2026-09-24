@@ -24,8 +24,12 @@ public:
    void load(const rib_design_data& design);
    void begin();
    void update(bool script_pending);
-   bool drawing() const { return running; }
-   void stop() { running = false; }
+   struct Notification { std::string title, detail, badge; };
+   void notify(const Notification& notification);
+   void clear_notification();
+   bool notification_active() const { return notification_until != 0; }
+   bool drawing() const { return running || notification_active(); }
+   void stop() { running = false; clear_notification(); }
 private:
    Document& document;
    struct Overlay
@@ -38,6 +42,9 @@ private:
    };
    int64_t begins_at(const Overlay& overlay) const;
    std::array<Overlay, RIB_OVERLAY_MAX> overlays;
+   void paint_notification();
+   Notification notification;
+   int64_t notification_until = 0;
    int count = 0;
    bool running = false;
    int64_t started_at = 0;

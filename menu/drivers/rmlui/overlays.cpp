@@ -5,6 +5,7 @@
 namespace rib {
 void Overlays::load(const rib_design_data& design)
 {
+   if (notification_active()) paint_notification();
    count = design.overlay_count;
    for (int index = 0; index < count; ++index)
    {
@@ -39,13 +40,11 @@ int64_t Overlays::begins_at(const Overlay& overlay) const
 
 void Overlays::update(bool script_pending)
 {
-   if (!running)
-      return;
    const int64_t now = rib_host_time_us();
-   if (!started_at)
+   if (running && !started_at)
       started_at = now;
    bool pending = false;
-   for (int index = 0; index < count; ++index)
+   for (int index = 0; running && index < count; ++index)
    {
       auto& overlay = overlays[index];
       const auto& declaration = overlay.declaration;
@@ -79,10 +78,38 @@ void Overlays::update(bool script_pending)
       if (!overlay.finished)
          pending = true;
    }
-   if (!pending && !script_pending)
-   {
-      running = false;
+   running = pending;
+   if (notification_until && now >= notification_until)
+      clear_notification();
+   if (!drawing() && !script_pending)
       rib_host_overlay_frames(false);
+}
+}
+
+namespace rib {
+void Overlays::paint_notification()
+{
+   document.set_element_text(document_contract::UnlockTitle, notification.title.c_str());
+   document.set_element_text(document_contract::UnlockDetail, notification.detail.c_str());
+   if (auto *badge = document.root() ? document.root()->GetElementById(document_contract::UnlockBadge) : nullptr) {
+      if (!notification.badge.empty()) badge->SetAttribute("src", notification.badge);
+      document.set_shown(document_contract::UnlockBadge, !notification.badge.empty());
    }
+   document.set_shown(document_contract::UnlockRow, true);
+}
+void Overlays::notify(const Notification& next)
+{
+   // We show one readable notification at a time, from a queue in this feature.
+   constexpr int64_t hold_us = 4500000;
+   notification = next;
+   notification_until = rib_host_time_us() + hold_us;
+   paint_notification();
+   rib_host_overlay_frames(true);
+}
+void Overlays::clear_notification()
+{
+   notification_until = 0;
+   notification = {};
+   document.set_shown(document_contract::UnlockRow, false);
 }
 }

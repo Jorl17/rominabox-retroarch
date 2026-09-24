@@ -1,7 +1,6 @@
 #pragma once
 
 #include "events.h"
-#include <set>
 #include <string>
 #include <vector>
 
@@ -39,8 +38,5 @@ private:
    std::vector<Screen> screens;
    std::string pause_button_id;
    char active[32] = "pause";
-   /* Neither clear_screens nor a document reset clears this set, so old
-    * entries stop us adding listeners to a new document. */
-   static std::set<std::string> wired_screen_buttons;
 };
 }

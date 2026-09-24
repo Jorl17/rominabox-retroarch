@@ -18,6 +18,7 @@
 #include "host.h"
 #include "declarations.h"
 #include "overlays.hpp"
+#include "achievements.hpp"
 #include "script.hpp"
 #include "shaders.hpp"
 #include "discs.hpp"
@@ -39,6 +40,7 @@ struct Menu
    bool initialized;
    bool overlay_mode;
    rib::Overlays overlays{view.document};
+   rib::Achievements achievements{view.document, view.lists, view.intents, overlays};
    rib::Script script{view};
    rib::Shaders shaders{view.lists};
    rib::Discs discs{view.document, view.lists};
@@ -75,7 +77,26 @@ void rib_rmlui_begin_overlays(void)
 bool rib_rmlui_overlays_drawing(void)
 {
    return pending_overlay_start ||
-         (active_menu && active_menu->overlays.drawing());
+         (active_menu && (active_menu->overlays.drawing() || rib_achievements_has_unlocks()));
+}
+
+bool rib_rmlui_text_event(bool down, unsigned key, uint32_t character, uint16_t modifiers)
+{
+   return active_menu && active_menu->initialized && rib_host_menu_open() &&
+         active_menu->achievements.physical(down, key, character, modifiers);
+}
+
+bool rib_rmlui_begin_native_text(void)
+{
+   return active_menu && active_menu->initialized && rib_host_menu_open() &&
+         active_menu->achievements.begin_native_input();
+}
+
+bool rib_rmlui_allow_quit(void)
+{
+   if (!active_menu || active_menu->achievements.allow_quit()) return true;
+   rib_host_open_menu();
+   return false;
 }
 
 static const char *absolute_data_directory(void)
@@ -119,6 +140,7 @@ static void reset_interaction(Menu *menu, bool opening)
 {
    if (!menu)
       return;
+   menu->achievements.leave_form();
    if (menu->controls.capture_active)
       menu->controls.cancel_capture(NULL);
    menu->screens.remember("pause");
@@ -146,9 +168,9 @@ void rib_menu_toggle(void *userdata, bool on)
 bool rib_menu_consume_toggle(void *userdata)
 {
    Menu *menu = (Menu*)userdata;
-   return menu && rib::toggle_stays_in_menu(
+   return menu && (menu->achievements.modal() || rib::toggle_stays_in_menu(
          menu->screens.controls_visible() || !string_is_equal(menu->screens.current(), "pause"),
-         menu->controls.capture_active);
+         menu->controls.capture_active));
 }
 
 static void perform_action(Menu *menu, const rib::Event& event)
@@ -158,6 +180,8 @@ static void perform_action(Menu *menu, const rib::Event& event)
 
    if (!menu)
       return;
+
+   if (menu->achievements.handle(event)) return;
 
    if (menu->controls.capture_active &&
        action != RIB_RMLUI_ACTION_CONTROLS_CANCEL &&
@@ -233,6 +257,7 @@ static void perform_action(Menu *menu, const rib::Event& event)
        * image, we make it open the list instead, because a second button would
        * move the column, and hiding the only button would leave a gap. */
       menu->discs.redirect(screen_id, sizeof(screen_id));
+      if (!string_is_equal(screen_id, "achievements")) menu->achievements.leave_form();
       if (screen_id[0] && menu->view.screens.show_screen(screen_id))
       {
          /* The footer and the heading are in the design, with the screen.
@@ -394,6 +419,7 @@ void rib_menu_destroy(void *data)
       active_menu = NULL;
    if (menu && menu->controls.capture_active)
       menu->controls.cancel_capture(NULL);
+   if (menu) menu->achievements.context_lost();
    rib::menu_view().shutdown();
    pending_overlay_start = false;
    delete menu;
@@ -405,6 +431,7 @@ void rib_menu_context_destroy(void *data)
    Menu *menu = (Menu*)data;
    if (menu && menu->controls.capture_active)
       menu->controls.cancel_capture(NULL);
+   if (menu) menu->achievements.context_lost();
    rib::menu_view().shutdown();
    if (menu)
       menu->initialized = false;
@@ -449,6 +476,7 @@ void rib_menu_frame(void *data, int width, int height)
       }
       /* Read the screens and overlays in the design before we show any. */
       load_design(menu, asset_directory);
+      menu->achievements.bind();
       menu->shaders.load(asset_directory);
       menu->slots.paint();
       menu->slots.focus_action(menu->focus.pause_action());
@@ -480,6 +508,7 @@ void rib_menu_frame(void *data, int width, int height)
       RARCH_LOG("[RmlUi] Loaded menu from %s.\n", asset_directory);
    }
 
+   menu->achievements.update();
    {
       const bool menu_alive = rib_host_menu_open();
 
@@ -570,7 +599,13 @@ void rib_menu_frame(void *data, int width, int height)
 
    menu->controls.poll_capture();
 
-   menu->view.reload_if_changed();
+   if (menu->view.reload_if_changed())
+   {
+      menu->achievements.context_lost();
+      load_design(menu, asset_directory);
+      menu->achievements.bind();
+      menu->screens.show_screen(menu->screens.current());
+   }
    menu->slots.refresh();
    menu->controls.update_binds(pointer.x, pointer.y,
          !menu->script.wants_frames(),
@@ -584,6 +619,7 @@ int rib_menu_key(void *data, enum rib_key action)
    auto *menu = static_cast<Menu*>(data);
    if (menu)
    {
+      if (menu->achievements.key(action)) return 0;
       const auto event = menu->navigation.key(action);
       if (event.kind != RIB_RMLUI_ACTION_NONE)
          perform_action(menu, event);
