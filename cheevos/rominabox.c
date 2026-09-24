@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #ifndef _WIN32
 #include <fcntl.h>
@@ -207,7 +208,7 @@ static bool rib_write_session(void)
    if (!rib_session_path(path))
       return false;
    if (!rib.token[0])
-      return remove(path) == 0;
+      return remove(path) == 0 || errno == ENOENT;
 
 #ifdef _WIN32
    /* The per-game directory has a Windows ACL for this user only. */
@@ -827,8 +828,11 @@ bool rib_achievements_set_enabled(bool enabled)
       rib.snapshot.status = rib.token[0] ? RIB_ACHIEVEMENTS_OFF :
             RIB_ACHIEVEMENTS_SIGNED_OUT;
       rib.snapshot.revision++;
-      if (rib.token[0])
-         rib_write_session();
+      if (rib.token[0] && !rib_write_session())
+      {
+         rib_error("Cannot save the achievements setting in game storage.");
+         return false;
+      }
       return true;
    }
    if (!rib.token[0])
@@ -842,7 +846,12 @@ bool rib_achievements_set_enabled(bool enabled)
    {
       rib.snapshot.status = RIB_ACHIEVEMENTS_ACTIVE;
       rib.snapshot.revision++;
-      return rib_write_session();
+      if (!rib_write_session())
+      {
+         rib_error("Cannot save the achievements setting in game storage.");
+         return false;
+      }
+      return true;
    }
    return rib_begin_login(true, NULL);
 }
@@ -888,6 +897,7 @@ void rib_achievements_sign_out(void)
    rib.snapshot.pending_upload = false;
    rib.snapshot.status = RIB_ACHIEVEMENTS_SIGNED_OUT;
    rib.snapshot.revision++;
-   if (rib_session_path(path))
-      remove(path);
+   if (!rib_session_path(path) ||
+       (remove(path) != 0 && errno != ENOENT))
+      rib_error("Cannot remove the achievements session from game storage.");
 }
