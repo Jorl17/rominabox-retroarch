@@ -1,0 +1,323 @@
+/* Copied achievement rows, badge paths and new-unlock notifications. */
+#include "rominabox_catalog.h"
+#include "rominabox_internal.h"
+#include "rominabox_storage.h"
+#include "cheevos_client.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <compat/strl.h>
+#include <file/file_path.h>
+#include <retro_miscellaneous.h>
+#ifdef HAVE_THREADS
+#include <rthreads/rthreads.h>
+#endif
+
+typedef struct rib_unlock_node {
+   rib_achievement_unlock_t value;
+   struct rib_unlock_node *next;
+} rib_unlock_node_t;
+
+typedef struct rib_catalog {
+   rib_achievement_row_t *rows;
+   bool *badge_requested;
+   size_t count;
+   bool rows_dirty;
+   bool badge_dirty;
+   bool unlock_changed;
+   rib_unlock_node_t *unlock_head;
+   rib_unlock_node_t *unlock_tail;
+#ifdef HAVE_THREADS
+   slock_t *lock;
+#endif
+} rib_catalog_t;
+
+static rib_catalog_t catalog;
+
+static void catalog_lock(void)
+{
+#ifdef HAVE_THREADS
+   if (catalog.lock)
+      slock_lock(catalog.lock);
+#endif
+}
+
+static void catalog_unlock(void)
+{
+#ifdef HAVE_THREADS
+   if (catalog.lock)
+      slock_unlock(catalog.lock);
+#endif
+}
+
+bool rib_catalog_initialize(void)
+{
+#ifdef HAVE_THREADS
+   if (!catalog.lock)
+      catalog.lock = slock_new();
+   return catalog.lock != NULL;
+#else
+   return true;
+#endif
+}
+
+void rib_catalog_clear(rib_achievements_snapshot_t *snapshot)
+{
+   rib_unlock_node_t *node;
+   catalog_lock();
+   node = catalog.unlock_head;
+   catalog.unlock_head = catalog.unlock_tail = NULL;
+   catalog.rows_dirty = false;
+   catalog.badge_dirty = false;
+   catalog.unlock_changed = false;
+   catalog_unlock();
+   while (node)
+   {
+      rib_unlock_node_t *next = node->next;
+      free(node);
+      node = next;
+   }
+   free(catalog.rows);
+   free(catalog.badge_requested);
+   catalog.rows = NULL;
+   catalog.badge_requested = NULL;
+   catalog.count = 0;
+   snapshot->count = 0;
+   snapshot->game_title[0] = '\0';
+   snapshot->revision++;
+}
+
+void rib_catalog_mark_rows_dirty(void)
+{
+   catalog_lock();
+   catalog.rows_dirty = true;
+   catalog_unlock();
+}
+
+/* An HTTP task can complete off the main thread. */
+void rib_catalog_badge_downloaded(void)
+{
+   catalog_lock();
+   catalog.badge_dirty = true;
+   catalog_unlock();
+}
+
+static void catalog_badge_path(char path[RIB_ACHIEVEMENTS_BADGE_PATH_SIZE],
+      const rc_client_achievement_t *achievement)
+{
+   char directory[PATH_MAX_LENGTH];
+   int length;
+   path[0] = '\0';
+   if (!achievement ||
+       !rib_storage_badge_name_valid(achievement->badge_name) ||
+       !rib_achievements_badge_directory(directory, sizeof(directory)))
+      return;
+   length = snprintf(path, RIB_ACHIEVEMENTS_BADGE_PATH_SIZE,
+         "%s/%s%s.png", directory, achievement->badge_name,
+         (achievement->unlocked & RC_CLIENT_ACHIEVEMENT_UNLOCKED_SOFTCORE) ?
+         "" : "_lock");
+   if (length < 0 || length >= RIB_ACHIEVEMENTS_BADGE_PATH_SIZE ||
+       !path_is_valid(path))
+      path[0] = '\0';
+}
+
+static rib_achievement_state_t catalog_row_state(
+      const rc_client_achievement_t *achievement)
+{
+   if (achievement->bucket == RC_CLIENT_ACHIEVEMENT_BUCKET_UNSYNCED)
+      return RIB_ACHIEVEMENT_PENDING_UPLOAD;
+   if (achievement->state == RC_CLIENT_ACHIEVEMENT_STATE_DISABLED)
+      return RIB_ACHIEVEMENT_UNSUPPORTED;
+   if (achievement->unlocked & RC_CLIENT_ACHIEVEMENT_UNLOCKED_SOFTCORE)
+      return RIB_ACHIEVEMENT_UNLOCKED;
+   return RIB_ACHIEVEMENT_LOCKED;
+}
+
+static void catalog_refresh_rows(rc_client_t *client,
+      rib_achievements_snapshot_t *snapshot)
+{
+   rc_client_achievement_list_t *list;
+   rib_achievement_row_t *rows;
+   bool *badge_requested;
+   size_t count = 0, index = 0;
+   uint32_t bucket, item;
+   const rc_client_game_t *game;
+
+   if (!client || !rc_client_is_game_loaded(client))
+   {
+      rib_catalog_clear(snapshot);
+      return;
+   }
+   game = rc_client_get_game_info(client);
+   strlcpy(snapshot->game_title, game && game->title ? game->title : "",
+         sizeof(snapshot->game_title));
+   list = rc_client_create_achievement_list(client,
+         RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE,
+         RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_LOCK_STATE);
+   if (!list)
+      return;
+
+   for (bucket = 0; bucket < list->num_buckets; ++bucket)
+      count += list->buckets[bucket].num_achievements;
+   rows = count ? (rib_achievement_row_t*)calloc(count, sizeof(*rows)) : NULL;
+   badge_requested = count ? (bool*)calloc(count, sizeof(*badge_requested)) : NULL;
+   if (count && (!rows || !badge_requested))
+   {
+      free(rows);
+      free(badge_requested);
+      rc_client_destroy_achievement_list(list);
+      return;
+   }
+
+   for (bucket = 0; bucket < list->num_buckets; ++bucket)
+   {
+      const rc_client_achievement_bucket_t *group = &list->buckets[bucket];
+      for (item = 0; item < group->num_achievements; ++item)
+      {
+         const rc_client_achievement_t *achievement = group->achievements[item];
+         rib_achievement_row_t *row = &rows[index++];
+         row->id = achievement->id;
+         row->points = achievement->points;
+         row->state = catalog_row_state(achievement);
+         strlcpy(row->title, achievement->title ? achievement->title : "",
+               sizeof(row->title));
+         strlcpy(row->description,
+               achievement->description ? achievement->description : "",
+               sizeof(row->description));
+         catalog_badge_path(row->badge_path, achievement);
+      }
+   }
+   rc_client_destroy_achievement_list(list);
+   free(catalog.rows);
+   free(catalog.badge_requested);
+   catalog.rows = rows;
+   catalog.badge_requested = badge_requested;
+   catalog.count = snapshot->count = count;
+   snapshot->revision++;
+}
+
+static void catalog_refresh_badge_paths(rc_client_t *client,
+      rib_achievements_snapshot_t *snapshot)
+{
+   size_t index;
+   if (!client || !rc_client_is_game_loaded(client))
+      return;
+   for (index = 0; index < catalog.count; ++index)
+   {
+      const rc_client_achievement_t *achievement;
+      char path[RIB_ACHIEVEMENTS_BADGE_PATH_SIZE];
+      if (catalog.rows[index].badge_path[0])
+         continue;
+      achievement = rc_client_get_achievement_info(client, catalog.rows[index].id);
+      catalog_badge_path(path, achievement);
+      if (path[0])
+      {
+         strlcpy(catalog.rows[index].badge_path, path,
+               sizeof(catalog.rows[index].badge_path));
+         snapshot->revision++;
+      }
+   }
+}
+
+void rib_catalog_pump(rc_client_t *client, rib_achievements_snapshot_t *snapshot)
+{
+   bool rows_dirty, badge_dirty, unlock_changed;
+   catalog_lock();
+   rows_dirty = catalog.rows_dirty;
+   badge_dirty = catalog.badge_dirty;
+   unlock_changed = catalog.unlock_changed;
+   catalog.rows_dirty = catalog.badge_dirty = catalog.unlock_changed = false;
+   catalog_unlock();
+   if (rows_dirty)
+      catalog_refresh_rows(client, snapshot);
+   if (badge_dirty)
+      catalog_refresh_badge_paths(client, snapshot);
+   if (unlock_changed)
+      snapshot->revision++;
+}
+
+void rib_catalog_triggered(const rc_client_achievement_t *achievement)
+{
+   rib_unlock_node_t *node;
+   if (!achievement)
+      return;
+   node = (rib_unlock_node_t*)calloc(1, sizeof(*node));
+   if (!node)
+      return;
+   node->value.id = achievement->id;
+   node->value.points = achievement->points;
+   strlcpy(node->value.title,
+         achievement->title ? achievement->title : "",
+         sizeof(node->value.title));
+   catalog_badge_path(node->value.badge_path, achievement);
+   catalog_lock();
+   if (catalog.unlock_tail)
+      catalog.unlock_tail->next = node;
+   else
+      catalog.unlock_head = node;
+   catalog.unlock_tail = node;
+   catalog.rows_dirty = true;
+   catalog.unlock_changed = true;
+   catalog_unlock();
+}
+
+bool rib_catalog_get_row(rc_client_t *client, size_t index,
+      rib_achievement_row_t *out)
+{
+   const rc_client_achievement_t *achievement;
+   char badge_name[32];
+   bool unlocked;
+   int length;
+   if (index >= catalog.count || !out)
+      return false;
+   *out = catalog.rows[index];
+   if (out->badge_path[0] || !client || catalog.badge_requested[index])
+      return true;
+   achievement = rc_client_get_achievement_info(client, out->id);
+   if (!achievement || !rib_storage_badge_name_valid(achievement->badge_name))
+      return true;
+   unlocked = out->state == RIB_ACHIEVEMENT_UNLOCKED ||
+         out->state == RIB_ACHIEVEMENT_PENDING_UPLOAD;
+   length = snprintf(badge_name, sizeof(badge_name), "%s%s",
+         achievement->badge_name, unlocked ? "" : "_lock");
+   if (length > 0 && length < sizeof(badge_name) &&
+       rib_storage_badge_name_valid(badge_name) &&
+       rcheevos_client_download_badge_from_url(unlocked ?
+            achievement->badge_url : achievement->badge_locked_url, badge_name))
+      catalog.badge_requested[index] = true;
+   return true;
+}
+
+bool rib_catalog_take_unlock(rib_achievement_unlock_t *out,
+      bool pending_upload)
+{
+   rib_unlock_node_t *node;
+   if (!out)
+      return false;
+   catalog_lock();
+   node = catalog.unlock_head;
+   if (node)
+   {
+      catalog.unlock_head = node->next;
+      if (!catalog.unlock_head)
+         catalog.unlock_tail = NULL;
+   }
+   catalog_unlock();
+   if (!node)
+      return false;
+   *out = node->value;
+   out->pending_upload = pending_upload;
+   free(node);
+   return true;
+}
+
+bool rib_catalog_has_unlocks(void)
+{
+   bool result;
+   catalog_lock();
+   result = catalog.unlock_head != NULL;
+   catalog_unlock();
+   return result;
+}
