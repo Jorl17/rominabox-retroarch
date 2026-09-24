@@ -16,6 +16,7 @@
 #include "cheevos_client.h"
 
 #include "cheevos.h"
+#include "rominabox_internal.h"
 
 #include <features/features_cpu.h>
 #include <file/file_path.h>
@@ -492,13 +493,21 @@ bool rcheevos_client_download_badge(rc_client_download_queue_t* queue,
    rcheevos_locals_t* rcheevos_locals = get_rcheevos_locals();
 
    /* make sure the directory exists */
-   fill_pathname_application_special(badge_fullpath, sizeof(badge_fullpath),
-      APPLICATION_SPECIAL_DIRECTORY_THUMBNAILS_CHEEVOS_BADGES);
+   if (rib_achievements_managed())
+   {
+      if (!rib_achievements_badge_directory(badge_fullpath,
+               sizeof(badge_fullpath)))
+         return false;
+   }
+   else
+      fill_pathname_application_special(badge_fullpath, sizeof(badge_fullpath),
+         APPLICATION_SPECIAL_DIRECTORY_THUMBNAILS_CHEEVOS_BADGES);
 
    if (!path_is_directory(badge_fullpath))
    {
       CHEEVOS_LOG(RCHEEVOS_TAG "Creating %s\n", badge_fullpath);
-      path_mkdir(badge_fullpath);
+      if (!path_mkdir(badge_fullpath))
+         return false;
    }
 
    fill_pathname_slash(badge_fullpath, sizeof(badge_fullpath));
@@ -537,7 +546,9 @@ bool rcheevos_client_download_badge(rc_client_download_queue_t* queue,
       }
    }
 
-   snprintf(badge_fullname, badge_fullname_size, "%s" FILE_PATH_PNG_EXTENSION, badge_name);
+   if (snprintf(badge_fullname, badge_fullname_size,
+            "%s" FILE_PATH_PNG_EXTENSION, badge_name) >= badge_fullname_size)
+      return false;
 
    if (path_is_valid(badge_fullpath))
       return false;
@@ -733,6 +744,3 @@ void rcheevos_client_download_achievement_badges(rc_client_t* client)
 }
 
 #undef RCHEEVOS_CONCURRENT_BADGE_DOWNLOADS
-
-
-

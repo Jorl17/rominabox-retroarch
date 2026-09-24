@@ -168,6 +168,7 @@
 #ifdef HAVE_CHEEVOS
 #include "cheevos/cheevos.h"
 #include "cheevos/cheevos_menu.h"
+#include "cheevos/rominabox_internal.h"
 #endif
 
 #ifdef HAVE_NETWORKING
@@ -4305,6 +4306,44 @@ static void runloop_path_init_savefile(runloop_state_t *runloop_st)
    command_event(CMD_EVENT_AUTOSAVE_INIT, NULL);
 }
 
+#ifdef HAVE_CHEEVOS
+typedef enum rib_startup_restore_kind
+{
+   RIB_STARTUP_RESTORE_NONE,
+   RIB_STARTUP_RESTORE_ENTRY,
+   RIB_STARTUP_RESTORE_AUTO
+} rib_startup_restore_kind_t;
+
+static rib_startup_restore_kind_t rib_startup_restore;
+static bool rib_startup_restore_started;
+static bool rib_startup_opened_menu;
+static bool rib_startup_menu_recorded;
+static bool rib_startup_keep_menu;
+
+/* This finder is in task_save.c, for the existing movie/state lifecycle. */
+bool content_load_state_in_progress(void *data);
+
+static bool rib_startup_entry_state_exists(int slot)
+{
+   char path[PATH_MAX_LENGTH];
+   if (runloop_get_entry_state_path(path, sizeof(path), slot) &&
+       path_is_valid(path))
+      return true;
+   return runloop_get_savestate_path(path, sizeof(path), slot) &&
+         path_is_valid(path);
+}
+
+static bool rib_startup_auto_state_exists(const runloop_state_t *runloop_st)
+{
+   char path[PATH_MAX_LENGTH];
+   size_t length = strlcpy(path, runloop_st->name.savestate, sizeof(path));
+   if (length >= sizeof(path))
+      return false;
+   length += strlcpy(path + length, ".auto", sizeof(path) - length);
+   return length < sizeof(path) && path_is_valid(path);
+}
+#endif
+
 static bool event_init_content(
       runloop_state_t *runloop_st,
       settings_t *settings,
@@ -4319,6 +4358,14 @@ static bool event_init_content(
    const enum rarch_core_type current_core_type = runloop_st->current_core_type;
    uint8_t flags                                = content_get_flags();
    bool entry_state_load                        = runloop_st->entry_state_slot > -1;
+
+#ifdef HAVE_CHEEVOS
+   rib_startup_restore = RIB_STARTUP_RESTORE_NONE;
+   rib_startup_restore_started = false;
+   rib_startup_opened_menu = false;
+   rib_startup_menu_recorded = false;
+   rib_startup_keep_menu = false;
+#endif
 
    if (current_core_type == CORE_TYPE_PLAIN)
       runloop_st->flags |=  RUNLOOP_FLAG_USE_SRAM;
@@ -4406,7 +4453,8 @@ static bool event_init_content(
     * are true.
     */
 #ifdef HAVE_CHEEVOS
-   if (     !cheevos_enable
+   if (        rib_achievements_managed()
+         || !cheevos_enable
          || !cheevos_hardcore_mode_enable)
 #endif
    {
@@ -4416,11 +4464,19 @@ static bool event_init_content(
       if (!(input_st->bsv_movie_state.flags & BSV_FLAG_MOVIE_START_PLAYBACK))
 #endif
       {
-         if (     entry_state_load
-               && !command_event_load_entry_state(settings))
+         if (entry_state_load)
          {
-            /* Loading the state failed, reset entry slot */
-            runloop_st->entry_state_slot = -1;
+#ifdef HAVE_CHEEVOS
+            if (rib_achievements_should_defer_restore() &&
+                rib_startup_entry_state_exists(runloop_st->entry_state_slot))
+            {
+               rib_startup_restore = RIB_STARTUP_RESTORE_ENTRY;
+               rib_achievements_begin_startup_gate();
+            }
+            else
+#endif
+            if (!command_event_load_entry_state(settings))
+               runloop_st->entry_state_slot = -1;
          }
       }
 
@@ -4431,7 +4487,18 @@ static bool event_init_content(
       {
          if (     runloop_st->entry_state_slot < 0
                && settings->bools.savestate_auto_load)
-            command_event_load_auto_state();
+         {
+#ifdef HAVE_CHEEVOS
+            if (rib_achievements_should_defer_restore() &&
+                rib_startup_auto_state_exists(runloop_st))
+            {
+               rib_startup_restore = RIB_STARTUP_RESTORE_AUTO;
+               rib_achievements_begin_startup_gate();
+            }
+            else
+#endif
+               command_event_load_auto_state();
+         }
       }
    }
 
@@ -5684,7 +5751,11 @@ static enum runloop_state_enum runloop_check_state(
    bool runloop_paused                 = !!(runloop_st->flags & RUNLOOP_FLAG_PAUSED);
    bool pause_nonactive                = settings->bools.pause_nonactive;
    unsigned quit_gamepad_combo         = settings->uints.input_quit_gamepad_combo;
-   bool menu_pause_libretro            = settings->bools.menu_pause_libretro;
+   bool menu_pause_libretro            = settings->bools.menu_pause_libretro
+#ifdef HAVE_CHEEVOS
+         || rib_achievements_startup_gate_active()
+#endif
+         ;
 #ifdef HAVE_MENU
    struct menu_state *menu_st          = menu_state_get_ptr();
    menu_handle_t *menu                 = menu_st->driver_data;
@@ -6154,7 +6225,11 @@ static enum runloop_state_enum runloop_check_state(
          }
       }
 
-      if (!opened_start_menu && pressed && !old_pressed)
+      if (!opened_start_menu && pressed && !old_pressed
+#ifdef HAVE_CHEEVOS
+          && !rib_achievements_startup_gate_active()
+#endif
+          )
       {
          if (menu_st->flags & MENU_ST_FLAG_ALIVE)
          {
@@ -7487,6 +7562,75 @@ end:
 
 
 
+#ifdef HAVE_CHEEVOS
+static void rib_startup_restore_poll(settings_t *settings,
+      runloop_state_t *runloop_st)
+{
+   if (rib_startup_restore == RIB_STARTUP_RESTORE_NONE)
+      return;
+   if (!rib_achievements_startup_gate_active())
+   {
+      rib_startup_restore = RIB_STARTUP_RESTORE_NONE;
+      return;
+   }
+
+#ifdef HAVE_MENU
+   {
+      struct menu_state *menu_st = menu_state_get_ptr();
+      if (!rib_startup_menu_recorded)
+      {
+         const char *start_at_menu = getenv("ROMINABOX_START_AT_MENU");
+         rib_startup_keep_menu =
+               (menu_st->flags & MENU_ST_FLAG_ALIVE) ||
+               (start_at_menu && string_is_equal(start_at_menu, "1"));
+         rib_startup_menu_recorded = true;
+      }
+      if (!(menu_st->flags & MENU_ST_FLAG_ALIVE))
+      {
+         retroarch_menu_running();
+         rib_startup_opened_menu = true;
+      }
+   }
+#endif
+
+   /* We run HTTP/task completions while the core is paused for the menu. */
+   rcheevos_idle();
+   if (!rib_achievements_startup_ready())
+      return;
+
+   if (!rib_startup_restore_started)
+   {
+      rib_startup_restore_started = true;
+      if (rib_startup_restore == RIB_STARTUP_RESTORE_ENTRY)
+      {
+         if (!command_event_load_entry_state(settings))
+         {
+            runloop_st->entry_state_slot = -1;
+            if (settings->bools.savestate_auto_load)
+               command_event_load_auto_state();
+         }
+      }
+      else
+         command_event_load_auto_state();
+      return;
+   }
+
+   if (content_load_state_in_progress(NULL))
+      return;
+
+   rib_achievements_finish_startup_gate();
+   rib_startup_restore = RIB_STARTUP_RESTORE_NONE;
+   rib_startup_restore_started = false;
+#ifdef HAVE_MENU
+   if (rib_startup_opened_menu && !rib_startup_keep_menu &&
+       (menu_state_get_ptr()->flags & MENU_ST_FLAG_ALIVE))
+      retroarch_menu_running_finished(false);
+#endif
+   rib_startup_opened_menu = false;
+   rib_startup_menu_recorded = false;
+}
+#endif
+
 /**
  * runloop_iterate:
  *
@@ -7517,12 +7661,21 @@ int runloop_iterate(void)
    bool netplay_allow_pause               = false;
 #endif
 #ifdef HAVE_MENU
-   bool menu_pause_libretro               = settings->bools.menu_pause_libretro && netplay_allow_pause;
+   bool menu_pause_libretro               =
+            (settings->bools.menu_pause_libretro && netplay_allow_pause)
+#ifdef HAVE_CHEEVOS
+            || rib_achievements_startup_gate_active()
+#endif
+            ;
    bool core_paused                       =
             !!(runloop_st->flags & RUNLOOP_FLAG_PAUSED)
          || (menu_pause_libretro && (menu_state_get_ptr()->flags & MENU_ST_FLAG_ALIVE));
 #else
-   bool menu_pause_libretro               = settings->bools.menu_pause_libretro;
+   bool menu_pause_libretro               = settings->bools.menu_pause_libretro
+#ifdef HAVE_CHEEVOS
+            || rib_achievements_startup_gate_active()
+#endif
+            ;
    bool core_paused                       = !!(runloop_st->flags & RUNLOOP_FLAG_PAUSED);
 #endif
    float slowmotion_ratio                 = settings->floats.slowmotion_ratio;
@@ -7616,6 +7769,10 @@ int runloop_iterate(void)
                audio_buf_active, audio_buf_occupancy, audio_buf_underrun);
    }
 
+#ifdef HAVE_CHEEVOS
+   rib_startup_restore_poll(settings, runloop_st);
+#endif
+
    switch ((enum runloop_state_enum)runloop_check_state(
             input_st, audio_st, video_st,
             uico_st,
@@ -7645,6 +7802,10 @@ int runloop_iterate(void)
 #endif
          return 1;
       case RUNLOOP_STATE_PAUSE:
+#ifdef HAVE_CHEEVOS
+         if (cheevos_enable)
+            rcheevos_idle();
+#endif
 #ifdef HAVE_NETWORKING
          /* FIXME: This is an ugly way to tell Netplay this... */
          netplay_driver_ctl(RARCH_NETPLAY_CTL_PAUSE, NULL);
@@ -7716,6 +7877,14 @@ int runloop_iterate(void)
 #endif
          goto end;
       case RUNLOOP_STATE_ITERATE:
+#ifdef HAVE_CHEEVOS
+         if (rib_achievements_startup_gate_active())
+         {
+            rcheevos_idle();
+            video_driver_cached_frame();
+            goto end;
+         }
+#endif
          runloop_st->flags       |= RUNLOOP_FLAG_CORE_RUNNING;
          break;
    }

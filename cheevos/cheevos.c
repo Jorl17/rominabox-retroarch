@@ -60,6 +60,7 @@
 #include "cheevos_client.h"
 #include "cheevos_menu.h"
 #include "cheevos_locals.h"
+#include "rominabox_internal.h"
 
 #include "../network/netplay/netplay.h"
 
@@ -656,6 +657,12 @@ static void rcheevos_server_reconnected(void)
 
 static void rcheevos_client_event_handler(const rc_client_event_t* event, rc_client_t* client)
 {
+   if (rib_achievements_managed())
+   {
+      rib_achievements_event(event);
+      return;
+   }
+
    switch (event->type)
    {
 #ifdef HAVE_GFX_WIDGETS
@@ -807,6 +814,9 @@ bool rcheevos_unload(void)
 {
    const bool was_loaded = rcheevos_is_game_loaded();
 
+   if (rib_achievements_managed())
+      rib_achievements_content_unload();
+
 #ifdef HAVE_THREADS
    /* Bump the load generation FIRST, before any other state
     * mutation. Any background load callback already in flight
@@ -855,7 +865,7 @@ bool rcheevos_unload(void)
          CMD_EVENT_NONE);
 #endif
 
-   if (!config_get_ptr()->arrays.cheevos_token[0])
+   if (rib_achievements_managed() || !config_get_ptr()->arrays.cheevos_token[0])
    {
       /* If the config-level token has been cleared, we need to re-login on
        * loading the next game. Easiest way to do that is to destroy the client */
@@ -1152,6 +1162,17 @@ void rcheevos_test(void)
    }
 #endif
 
+   if (rib_achievements_managed())
+   {
+      rib_achievements_pump();
+      if (rib_achievements_evaluating() && rcheevos_locals.memory.count != 0)
+         rc_client_do_frame(rcheevos_locals.client);
+      else
+         rc_client_idle(rcheevos_locals.client);
+      rib_achievements_pump();
+      return;
+   }
+
    if (rcheevos_locals.memory.count != 0)
       rc_client_do_frame(rcheevos_locals.client);
    else
@@ -1160,7 +1181,11 @@ void rcheevos_test(void)
 
 void rcheevos_idle(void)
 {
+   if (rib_achievements_managed())
+      rib_achievements_pump();
    rc_client_idle(rcheevos_locals.client);
+   if (rib_achievements_managed())
+      rib_achievements_pump();
 }
 
 size_t rcheevos_get_serialize_size(void)
@@ -1605,6 +1630,8 @@ static void rcheevos_finalize_game_load(rc_client_t* client)
 {
    settings_t* settings = config_get_ptr();
    bool want_badges     = settings->bools.cheevos_badges_enable;
+   if (rib_achievements_managed())
+      want_badges = false;
 #if !defined(HAVE_GFX_WIDGETS)
    /* Then badges are only needed for xmb, ozone, and rgui menus */
    want_badges          = want_badges &&
@@ -1651,7 +1678,8 @@ static void rcheevos_finalize_game_load(rc_client_t* client)
 
 static void rcheevos_finalize_game_load_on_ui_thread(void)
 {
-   rcheevos_show_game_placard();
+   if (!rib_achievements_managed())
+      rcheevos_show_game_placard();
 
 #if HAVE_REWIND
    if (!rcheevos_hardcore_active())
@@ -1705,6 +1733,8 @@ static void rcheevos_client_load_game_callback(int result,
    if (result != RC_OK || !game)
    {
       size_t _len;
+      if (rib_achievements_managed())
+         return;
       if (result == RC_NO_GAME_LOADED)
       {
          CHEEVOS_LOG(RCHEEVOS_TAG "Game not recognized, pausing hardcore\n");
@@ -1758,7 +1788,10 @@ static void rcheevos_client_load_game_callback(int result,
                   MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_WARNING);
          }
 
-         rcheevos_unload();
+         if (rib_achievements_managed())
+            rc_client_unload_game(client);
+         else
+            rcheevos_unload();
          rcheevos_pause_hardcore();
          return;
       }
@@ -1809,12 +1842,100 @@ static rc_clock_t rcheevos_client_get_time_millisecs(const rc_client_t* client)
    return cpu_features_get_time_usec() / 1000;
 }
 
+rc_client_t *rcheevos_rib_prepare_client(void)
+{
+   settings_t *settings = config_get_ptr();
+   const char *host;
+
+   if (rcheevos_locals.client)
+      rc_client_unload_game(rcheevos_locals.client);
+   else
+   {
+      rcheevos_locals.client = rc_client_create(
+            rcheevos_client_read_memory, rcheevos_client_server_call);
+      if (!rcheevos_locals.client)
+         return NULL;
+
+      rc_client_enable_logging(rcheevos_locals.client,
+            RC_CLIENT_LOG_LEVEL_VERBOSE, rcheevos_client_log_message);
+      rc_client_set_event_handler(rcheevos_locals.client,
+            rcheevos_client_event_handler);
+      rc_client_set_get_time_millisecs_function(rcheevos_locals.client,
+            rcheevos_client_get_time_millisecs);
+
+      host = rib_achievements_managed() ?
+            "https://retroachievements.org" :
+            settings->arrays.cheevos_custom_host;
+      if (!host[0])
+      {
+#ifdef HAVE_SSL
+         host = "https://retroachievements.org";
+#else
+         host = "http://retroachievements.org";
+#endif
+      }
+      rc_client_set_host(rcheevos_locals.client, host);
+      if (!rib_achievements_managed())
+         rcheevos_client_download_placeholder_badge();
+   }
+
+   rcheevos_get_user_agent(&rcheevos_locals,
+         rcheevos_locals.user_agent_core,
+         sizeof(rcheevos_locals.user_agent_core));
+
+   return rcheevos_locals.client;
+}
+
+void rcheevos_rib_complete_game_load(int result, const char *error,
+      rc_client_t *client, void *userdata)
+{
+   rcheevos_client_load_game_callback(result, error, client, userdata);
+}
+
+rc_client_async_handle_t *rcheevos_rib_begin_identify(
+      const struct retro_game_info *info, rc_client_callback_t callback,
+      void *userdata)
+{
+   uint32_t console_id = RC_CONSOLE_UNKNOWN;
+
+   if (!rcheevos_locals.client || !info)
+      return NULL;
+
+   rc_client_set_read_memory_function(rcheevos_locals.client,
+         rcheevos_client_read_memory_uninitialized);
+   rc_hash_reset_cdreader_hooks();
+
+#ifdef HAVE_CHEEVOS_RVZ
+   if (info->path && string_is_equal_noncase(path_get_extension(info->path), "rvz"))
+   {
+      console_id = rcheevos_rvz_get_console_id(info->path);
+      if (console_id != RC_CONSOLE_UNKNOWN)
+      {
+         struct rc_hash_filereader filereader;
+         filereader.open  = rcheevos_rvz_open;
+         filereader.seek  = rcheevos_rvz_seek;
+         filereader.tell  = rcheevos_rvz_tell;
+         filereader.read  = rcheevos_rvz_read;
+         filereader.close = rcheevos_rvz_close;
+         rc_hash_init_custom_filereader(&filereader);
+      }
+   }
+#endif
+
+   return rc_client_begin_identify_and_load_game(rcheevos_locals.client,
+         console_id, info->path, (const uint8_t*)info->data, info->size,
+         callback, userdata);
+}
+
 bool rcheevos_load(const void *data)
 {
    const struct retro_game_info *info = (const struct retro_game_info*)data;
    settings_t *settings               = config_get_ptr();
    bool cheevos_enable                = settings
       && settings->bools.cheevos_enable;
+
+   if (rib_achievements_managed())
+      return rib_achievements_content_load(info);
 
 #ifdef HAVE_THREADS
    /* Bump the load generation. Any background callback from a
@@ -1854,31 +1975,8 @@ bool rcheevos_load(const void *data)
       rcheevos_locals.user_agent_core,
       sizeof(rcheevos_locals.user_agent_core));
 
-   if (rcheevos_locals.client)
-      rc_client_unload_game(rcheevos_locals.client);
-   else
-   {
-      rcheevos_locals.client = rc_client_create(rcheevos_client_read_memory, rcheevos_client_server_call);
-      rc_client_enable_logging(rcheevos_locals.client, RC_CLIENT_LOG_LEVEL_VERBOSE, rcheevos_client_log_message);
-      rc_client_set_event_handler(rcheevos_locals.client, rcheevos_client_event_handler);
-      rc_client_set_get_time_millisecs_function(rcheevos_locals.client, rcheevos_client_get_time_millisecs);
-
-      {
-         const char* host = settings->arrays.cheevos_custom_host;
-         if (!host[0])
-         {
-#ifdef HAVE_SSL
-            host = "https://retroachievements.org";
-#else
-            host = "http://retroachievements.org";
-#endif
-         }
-
-         rc_client_set_host(rcheevos_locals.client, host);
-      }
-
-      rcheevos_client_download_placeholder_badge();
-   }
+   if (!rcheevos_rib_prepare_client())
+      return false;
 
    rc_client_set_hardcore_enabled(rcheevos_locals.client, settings->bools.cheevos_hardcore_mode_enable);
    rc_client_set_unofficial_enabled(rcheevos_locals.client, settings->bools.cheevos_test_unofficial);
@@ -1907,59 +2005,18 @@ bool rcheevos_load(const void *data)
    if (rcheevos_hardcore_active())
       rcheevos_enforce_hardcore_settings();
 
-   /* provide hooks for reading files */
-   rc_hash_reset_cdreader_hooks();
-
 #if defined(HAVE_GFX_WIDGETS)
    if (settings->bools.cheevos_verbose_enable)
       gfx_widget_set_cheevos_set_loading(true);
 #endif
 
-   /* Detect RVZ files and determine console type (GameCube or Wii) */
-   {
-      uint32_t console_id = RC_CONSOLE_UNKNOWN;
-
-#ifdef HAVE_CHEEVOS_RVZ
-      if (string_is_equal_noncase(path_get_extension(info->path), "rvz"))
-      {
-         console_id = rcheevos_rvz_get_console_id(info->path);
-
-         /* Only register custom file reader for valid RVZ files */
-         if (console_id != RC_CONSOLE_UNKNOWN)
-         {
-            struct rc_hash_filereader filereader;
-
-            filereader.open  = rcheevos_rvz_open;
-            filereader.seek  = rcheevos_rvz_seek;
-            filereader.tell  = rcheevos_rvz_tell;
-            filereader.read  = rcheevos_rvz_read;
-            filereader.close = rcheevos_rvz_close;
-            rc_hash_init_custom_filereader(&filereader);
-         }
-      }
-#endif
-
-      {
 #ifdef HAVE_THREADS
-         /* Capture the current load generation; the callback
-          * compares this against the live value to detect a
-          * stale completion (i.e. the user closed/changed
-          * content while the load was in flight). The cast
-          * loses information only if HAVE_THREADS is enabled
-          * and a generation counter overflows intptr_t, which
-          * would require ~2^31 (or ~2^63) load events. */
-         intptr_t gen = (intptr_t)retro_atomic_load_acquire_int(
-               &rcheevos_locals.load_generation);
-         rc_client_begin_identify_and_load_game(rcheevos_locals.client, console_id,
-            info->path, (const uint8_t*)info->data, info->size,
-            rcheevos_client_load_game_callback, (void*)gen);
+   rcheevos_rib_begin_identify(info, rcheevos_client_load_game_callback,
+         (void*)(intptr_t)retro_atomic_load_acquire_int(
+               &rcheevos_locals.load_generation));
 #else
-         rc_client_begin_identify_and_load_game(rcheevos_locals.client, console_id,
-            info->path, (const uint8_t*)info->data, info->size,
-            rcheevos_client_load_game_callback, NULL);
+   rcheevos_rib_begin_identify(info, rcheevos_client_load_game_callback, NULL);
 #endif
-      }
-   }
 
    return true;
 }
