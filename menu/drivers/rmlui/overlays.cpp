@@ -78,7 +78,7 @@ void Overlays::update(bool script_pending)
       if (!overlay.finished)
          pending = true;
    }
-   running = pending;
+   running = pending || script_pending;
    if (notification_until && now >= notification_until)
       clear_notification();
    if (!drawing() && !script_pending)
