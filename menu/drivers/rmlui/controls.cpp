@@ -268,12 +268,6 @@ void Controls::refresh()
       }
    }
    control_view.set_capturing(capture_active);
-   if (screens.controls_visible() && focused >= 0
-         && focused < catalog.count
-         && catalog.entries[focused].group[0])
-      control_view.focus_group(catalog.entries[focused].group);
-   else
-      control_view.focus_group(NULL);
 }
 
 void Controls::cancel_capture(const char *status)

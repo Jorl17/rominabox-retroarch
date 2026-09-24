@@ -180,16 +180,4 @@ void ControlView::set_capturing(bool capturing)
          element->SetProperty("display", "none");
    }
 }
-
-void ControlView::focus_group(const char *group)
-{
-   if (!document.root())
-      return;
-   std::vector<Rml::Element*> groups;
-   collect(document.root(), document_contract::ControlGroup, groups);
-   const std::string wanted = group && *group
-         ? std::string(document_contract::ControlGroupPrefix) + group : std::string();
-   for (Rml::Element *element : groups)
-      element->SetClass(document_contract::Focused, !wanted.empty() && element->GetId() == wanted);
-}
 }

@@ -27,7 +27,6 @@ public:
          bool echo_focus, bool capturing);
    /* We show CANCEL, marked capturing, only while we capture a binding. */
    void set_capturing(bool capturing);
-   void focus_group(const char *group);
 private:
    Document& document;
    EventQueue& events;

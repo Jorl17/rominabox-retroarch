@@ -273,15 +273,6 @@ int Document::focusables(const char *panel, char ids[][64], int capacity)
    return rib::focusable_ids(root(), panel, ids, capacity);
 }
 
-void Document::mark_focused(const char *panel, const char *id)
-{
-   char ids[16][64];
-   const int count = focusables(panel, ids, 16);
-   for (int index = 0; index < count; ++index)
-      if (Rml::Element *element = root()->GetElementById(ids[index]))
-         element->SetClass(document_contract::Focused, id && std::strcmp(ids[index], id) == 0);
-}
-
 bool Document::element_center(const char *id, int *x, int *y)
 {
    if (!get_context() || !root() || !id || !x || !y)
