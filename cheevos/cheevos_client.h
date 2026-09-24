@@ -29,6 +29,12 @@ void rcheevos_client_server_call(const rc_api_request_t* request,
 
 void rcheevos_get_user_agent(rcheevos_locals_t* locals, char* buffer, size_t len);
 
+#ifdef RIB_ACHIEVEMENTS_TEST
+/* In this test build we connect only to the loopback service in the config. */
+const char *rcheevos_test_host(void);
+bool rcheevos_test_url_allowed(const char *url);
+#endif
+
 RETRO_END_DECLS
 
 #endif /* __RARCH_CHEEVOS_MENU_H */

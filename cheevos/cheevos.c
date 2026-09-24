@@ -81,6 +81,9 @@
 #include "../deps/rcheevos/include/rc_runtime.h"
 #include "../deps/rcheevos/include/rc_runtime_types.h"
 #include "../deps/rcheevos/include/rc_hash.h"
+#ifdef RIB_ACHIEVEMENTS_TEST
+#include "../deps/rcheevos/include/rc_api_request.h"
+#endif
 #include "../deps/rcheevos/src/rc_libretro.h"
 
 /* Define this macro to prevent cheevos from being deactivated when they trigger. */
@@ -1847,8 +1850,26 @@ rc_client_t *rcheevos_rib_prepare_client(void)
    settings_t *settings = config_get_ptr();
    const char *host;
 
+#ifdef RIB_ACHIEVEMENTS_TEST
+   /* Stop here, so that we never use the public service in a test build. */
+   if (rib_achievements_managed() && !rcheevos_test_host())
+   {
+      CHEEVOS_ERR(RCHEEVOS_TAG "Test build needs ROMINABOX_RA_TEST_HOST on 127.0.0.1\n");
+      return NULL;
+   }
+#endif
+
    if (rcheevos_locals.client)
+   {
       rc_client_unload_game(rcheevos_locals.client);
+#ifdef RIB_ACHIEVEMENTS_TEST
+      if (rib_achievements_managed())
+      {
+         rc_client_set_host(rcheevos_locals.client, rcheevos_test_host());
+         rc_api_set_image_host(rcheevos_test_host());
+      }
+#endif
+   }
    else
    {
       rcheevos_locals.client = rc_client_create(
@@ -1864,7 +1885,11 @@ rc_client_t *rcheevos_rib_prepare_client(void)
             rcheevos_client_get_time_millisecs);
 
       host = rib_achievements_managed() ?
+#ifdef RIB_ACHIEVEMENTS_TEST
+            rcheevos_test_host() :
+#else
             "https://retroachievements.org" :
+#endif
             settings->arrays.cheevos_custom_host;
       if (!host[0])
       {
@@ -1875,6 +1900,10 @@ rc_client_t *rcheevos_rib_prepare_client(void)
 #endif
       }
       rc_client_set_host(rcheevos_locals.client, host);
+#ifdef RIB_ACHIEVEMENTS_TEST
+      if (rib_achievements_managed())
+         rc_api_set_image_host(host);
+#endif
       if (!rib_achievements_managed())
          rcheevos_client_download_placeholder_badge();
    }

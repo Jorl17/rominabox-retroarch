@@ -4,6 +4,9 @@
 #include "elements.hpp"
 #include <cmath>
 #include <cstdio>
+#if defined(RIB_ACHIEVEMENTS_TEST) && defined(HAVE_CHEEVOS)
+#include "../../../cheevos/rominabox.h"
+#endif
 
 const char *rib::Script::report(const char *screen, bool menu_open,
       bool transfer_pending, bool capture_active, const char *profile,
@@ -87,6 +90,32 @@ const char *rib::Script::report(const char *screen, bool menu_open,
          report += std::to_string(static_cast<int>(std::lround(value)));
       }
    }
-   report += "]}";
+   report += "]";
+#if defined(RIB_ACHIEVEMENTS_TEST) && defined(HAVE_CHEEVOS)
+   {
+      rib_achievements_snapshot_t snapshot{};
+      rib_achievements_get_snapshot(&snapshot);
+      report += ",\"achievements\":{\"status\":" + std::to_string(snapshot.status)
+         + ",\"revision\":" + std::to_string(snapshot.revision)
+         + ",\"enabled\":" + boolean(snapshot.enabled_preference)
+         + ",\"pendingUpload\":" + boolean(snapshot.pending_upload)
+         + ",\"startupWaiting\":" + boolean(snapshot.startup_waiting)
+         + ",\"startupSkipped\":" + boolean(snapshot.startup_skipped)
+         + ",\"account\":" + quote(snapshot.account)
+         + ",\"error\":" + quote(snapshot.error)
+         + ",\"rows\":[";
+      for (size_t index = 0; index < snapshot.count; ++index)
+      {
+         rib_achievement_row_t row{};
+         if (!rib_achievements_get_row(index, &row)) continue;
+         if (report.back() != '[') report += ',';
+         report += "{\"id\":" + std::to_string(row.id)
+            + ",\"state\":" + std::to_string(row.state)
+            + ",\"title\":" + quote(row.title) + '}';
+      }
+      report += "]}";
+   }
+#endif
+   report += '}';
    return report.c_str();
 }

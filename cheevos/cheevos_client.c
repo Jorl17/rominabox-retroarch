@@ -44,6 +44,37 @@
 #include "../deps/rcheevos/include/rc_api_runtime.h"
 #include "../deps/rcheevos/include/rc_api_user.h"
 
+#ifdef RIB_ACHIEVEMENTS_TEST
+const char *rcheevos_test_host(void)
+{
+   static const char prefix[] = "http://127.0.0.1:";
+   const char *host = getenv("ROMINABOX_RA_TEST_HOST");
+   const char *port;
+   unsigned value = 0;
+   unsigned digits = 0;
+
+   if (!host || strncmp(host, prefix, sizeof(prefix) - 1) != 0)
+      return NULL;
+   port = host + sizeof(prefix) - 1;
+   while (*port >= '0' && *port <= '9' && digits < 5)
+   {
+      value = value * 10 + (unsigned)(*port++ - '0');
+      ++digits;
+   }
+   return digits && !*port && value > 0 && value <= 65535 ? host : NULL;
+}
+
+bool rcheevos_test_url_allowed(const char *url)
+{
+   const char *host = rcheevos_test_host();
+   size_t length;
+   if (!host || !url)
+      return false;
+   length = strlen(host);
+   return strncmp(url, host, length) == 0 && url[length] == '/';
+}
+#endif
+
 /* Define this macro to log URLs. */
 #undef CHEEVOS_LOG_URLS
 
@@ -357,6 +388,16 @@ void rcheevos_client_http_load_response(const rc_api_request_t* request,
 void rcheevos_client_server_call(const rc_api_request_t* request,
    rc_client_server_callback_t callback, void* callback_data, rc_client_t* client)
 {
+#ifdef RIB_ACHIEVEMENTS_TEST
+   if (!request || !rcheevos_test_url_allowed(request->url))
+   {
+      rc_api_server_response_t empty_response;
+      memset(&empty_response, 0, sizeof(empty_response));
+      CHEEVOS_ERR(RCHEEVOS_TAG "Test build refused a non-loopback achievement request\n");
+      callback(&empty_response, callback_data);
+      return;
+   }
+#endif
    rcheevos_locals_t *rcheevos_locals   = (rcheevos_locals_t*)get_rcheevos_locals();
    rc_client_http_task_data_t *taskdata = (rc_client_http_task_data_t*)
       malloc(sizeof(rc_client_http_task_data_t));
@@ -506,6 +547,14 @@ bool rcheevos_client_download_badge(rc_client_download_queue_t* queue,
    rc_client_download_task_data_t* taskdata;
    char badge_fullpath[512] = "";
    rcheevos_locals_t* rcheevos_locals = get_rcheevos_locals();
+
+#ifdef RIB_ACHIEVEMENTS_TEST
+   if (!rcheevos_test_url_allowed(url))
+   {
+      CHEEVOS_ERR(RCHEEVOS_TAG "Test build refused a non-loopback badge URL\n");
+      return false;
+   }
+#endif
 
    if (!rib_storage_badge_name_valid(badge_name))
    {

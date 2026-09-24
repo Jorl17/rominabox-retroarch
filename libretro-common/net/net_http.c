@@ -51,6 +51,33 @@
  * the Content-Length header. */
 #define NET_HTTP_MAX_CONTENT_LENGTH ((size_t)256 * 1024 * 1024)
 
+#ifdef RIB_ACHIEVEMENTS_TEST
+/* When we use a local service for achievements, keep every HTTP task on
+ * that port, including the new connection for a redirect. */
+static bool net_http_test_loopback_url_allowed(const char *url)
+{
+   static const char prefix[] = "http://127.0.0.1:";
+   const char *host = getenv("ROMINABOX_RA_TEST_HOST");
+   const char *port;
+   unsigned value = 0;
+   unsigned digits = 0;
+   size_t length;
+
+   if (!host || strncmp(host, prefix, sizeof(prefix) - 1) != 0)
+      return false;
+   port = host + sizeof(prefix) - 1;
+   while (*port >= '0' && *port <= '9' && digits < 5)
+   {
+      value = value * 10 + (unsigned)(*port++ - '0');
+      ++digits;
+   }
+   if (!digits || *port || value == 0 || value > 65535)
+      return false;
+   length = strlen(host);
+   return url && strncmp(url, host, length) == 0 && url[length] == '/';
+}
+#endif
+
 enum response_part
 {
    P_HEADER_TOP = 0,
@@ -353,6 +380,10 @@ struct http_connection_t *net_http_connection_new(const char *url,
    struct http_connection_t *conn = NULL;
    if (!url)
       return NULL;
+#ifdef RIB_ACHIEVEMENTS_TEST
+   if (!net_http_test_loopback_url_allowed(url))
+      return NULL;
+#endif
    if (!(conn = (struct http_connection_t*)calloc(1, sizeof(*conn))))
       return NULL;
    if (method)
