@@ -17,13 +17,20 @@ enum class Replacement
    Volume
 };
 
+#if defined(_WIN32)
+bool rename_replaces_existing = false;
+#else
+bool rename_replaces_existing = true;
+#endif
+rib_rename_step rename_step = nullptr;
+
 bool replace_file(const char *temporary, const char *path, Replacement policy)
 {
-#if defined(_WIN32)
-   if (policy != Replacement::Controls && filestream_exists(path))
+   if (!rename_replaces_existing
+         && policy != Replacement::Controls && filestream_exists(path))
       filestream_delete(path);
-#endif
-   const int result = policy == Replacement::Remap
+   const int result = rename_step ? rename_step(temporary, path)
+         : policy == Replacement::Remap
          ? filestream_rename(temporary, path) : rename(temporary, path);
    if (result == 0)
       return true;
@@ -31,6 +38,16 @@ bool replace_file(const char *temporary, const char *path, Replacement policy)
       filestream_delete(temporary);
    return false;
 }
+}
+
+void rib_files_use_rename(rib_rename_step step, bool replaces_existing)
+{
+   rename_step = step;
+#if defined(_WIN32)
+   rename_replaces_existing = step ? replaces_existing : false;
+#else
+   rename_replaces_existing = step ? replaces_existing : true;
+#endif
 }
 
 bool rib_write_menu_config(config_file_t *config, const char *path,
