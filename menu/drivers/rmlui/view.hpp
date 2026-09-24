@@ -29,8 +29,8 @@ public:
    bool move_pointer_to(const char *id);
    /* Once a frame, after every pointer move. When the pointer moved onto a
     * stop, focus it without a sound. When it did not move, the focus stays
-    * where the keys put it. Returns whether it moved. */
-   bool follow_pointer();
+    * where the keys put it. */
+   void follow_pointer();
    Document document;
    EventQueue intents;
    Event hovered;

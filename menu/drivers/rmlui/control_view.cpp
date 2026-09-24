@@ -8,8 +8,8 @@
 #include <vector>
 namespace rib {
 namespace {
-/* The control an element in the scene stands for: its callout, its picture
- * button, or the group it belongs to. */
+/* The control an element in the scene stands for: the callout or the
+ * stick's box it is part of. */
 Event control_at(Rml::Element *element, Rml::Element *scene, const rib_controls_catalog& catalog)
 {
    for (; element && element != scene; element = element->GetParentNode())
@@ -21,7 +21,6 @@ Event control_at(Rml::Element *element, Rml::Element *scene, const rib_controls_
       {
          const rib_control_declaration& control = catalog.entries[index];
          if (id == document_contract::ControlPrefix + std::string(control.id)
-               || id == document_contract::ControlHitPrefix + std::string(control.id)
                || (control.group[0] && id == document_contract::ControlGroupPrefix + std::string(control.group)))
          {
             if (element->HasAttribute("disabled") || element->IsClassSet(document_contract::Disabled))
@@ -145,18 +144,13 @@ bool ControlView::set_scene(const char *profile, const char *markup)
 }
 
 void ControlView::set_control_state(const char *id,
-      const char *label, const char *binding, bool echo_focus, bool capturing)
+      const char *label, const char *binding, bool capturing)
 {
    if (!document.root() || !id)
       return;
    const std::string suffix(id);
    if (Rml::Element *control = document.root()->GetElementById(document_contract::ControlPrefix + suffix))
       control->SetClass(document_contract::Capturing, capturing);
-   if (Rml::Element *hit = document.root()->GetElementById(document_contract::ControlHitPrefix + suffix))
-   {
-      hit->SetClass(document_contract::Focused, echo_focus);
-      hit->SetClass(document_contract::Capturing, capturing);
-   }
    if (Rml::Element *label_element =
          document.root()->GetElementById(document_contract::ControlLabelPrefix + suffix))
       label_element->SetInnerRML(Rml::StringUtilities::EncodeRml(

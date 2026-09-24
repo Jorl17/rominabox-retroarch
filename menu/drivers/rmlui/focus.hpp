@@ -54,7 +54,6 @@ public:
    {
       document = loaded;
       painted = nullptr;
-      seen = nullptr;
       region = nullptr;
       outside.clear();
       memory.clear();
@@ -156,16 +155,6 @@ public:
       }
       name(focused);
    }
-   /* Whether the focus has moved since the last call. */
-   bool moved()
-   {
-      Rml::Element *focused = current();
-      if (focused == seen.get())
-         return false;
-      seen = focused ? focused->GetObserverPtr() : Rml::ObserverPtr<Rml::Element>();
-      return true;
-   }
-
    /* Keep the arrows inside `inside` until a call with nullptr. We mark every
     * element next to it, and next to each of its ancestors, `nav-outside`,
     * which is unfocusable in navigation.rcss. */
@@ -245,7 +234,7 @@ private:
             && stoppable(element) && can_reach(element);
    }
    Rml::ElementDocument *document = nullptr;
-   Rml::ObserverPtr<Rml::Element> painted, seen, region;
+   Rml::ObserverPtr<Rml::Element> painted, region;
    std::vector<Rml::ObserverPtr<Rml::Element>> outside;
    std::map<std::string, std::string> memory;
    std::string last_id;

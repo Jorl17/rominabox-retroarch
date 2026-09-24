@@ -115,7 +115,6 @@ RIB_CLASS(ListRowState, "list-row-state", Menu, Optional)
 /* Ids the exporter generates, by prefix. */
 RIB_ELEMENT(ControlPrefix, "control-", Generated, Optional)
 RIB_ELEMENT(ControlBindingPrefix, "control-binding-", Generated, Optional)
-RIB_ELEMENT(ControlHitPrefix, "control-hit-", Generated, Optional)
 RIB_ELEMENT(ControlLabelPrefix, "control-label-", Generated, Optional)
 RIB_ELEMENT(SlotImagePrefix, "slot-image-", Generated, Optional)
 RIB_ELEMENT(SlotLabelPrefix, "slot-label-", Generated, Optional)

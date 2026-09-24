@@ -40,7 +40,7 @@ public:
    void choose_device(const char *chosen);
    void toggle_picker();
    void configure_binds(const rib_design_data& design);
-   void update_binds(int x, int y, bool pointer_active, bool hover_active);
+   void update_binds(int x, int y, bool pointer_active);
 
    bool loaded = false;
    bool capture_active = false;

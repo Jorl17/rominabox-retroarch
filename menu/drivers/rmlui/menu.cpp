@@ -150,7 +150,7 @@ static Rml::Element *open_dialog(Menu *menu)
 }
 
 /* Call after anything that can move the focus. Keep it in an open dialog,
- * mark it, and redraw what follows it on the pad screen, such as a stick. */
+ * and mark it. */
 static void settle_focus(Menu *menu)
 {
    menu->navigation.hold(open_dialog(menu));
@@ -160,8 +160,6 @@ static void settle_focus(Menu *menu)
       if (!menu->focus.stop(focused))
          menu->navigation.enter();
    menu->focus.paint();
-   if (menu->focus.moved())
-      menu->controls.refresh();
 }
 
 static void reset_interaction(Menu *menu, bool opening)
@@ -586,7 +584,8 @@ void rib_menu_frame(void *data, int width, int height)
    /* Once we have put the pointer back after the script, we silently focus
     * the stop the pointer moved onto, before the click of this frame. We never
     * take the focus away from the keys for a pointer at rest. */
-   const bool pointer_moved = !menu->controls.capture_active && menu->view.follow_pointer();
+   if (!menu->controls.capture_active)
+      menu->view.follow_pointer();
 
    for (;;)
    {
@@ -608,7 +607,7 @@ void rib_menu_frame(void *data, int width, int height)
    }
    menu->slots.refresh();
    menu->controls.update_binds(pointer.x, pointer.y,
-         !menu->script.wants_frames(), pointer_moved);
+         !menu->script.wants_frames());
    settle_focus(menu);
    menu->view.render(width, height);
 

@@ -242,8 +242,6 @@ bool Controls::save()
 
 void Controls::refresh()
 {
-   const auto target = focused_stop(catalog, focus_state.current_id());
-   const int focused = target.kind == FocusTarget::Kind::Item ? target.index : -1;
    int index;
    for (index = 0; index < catalog.count; ++index)
    {
@@ -258,7 +256,6 @@ void Controls::refresh()
       callout_text(index, binding, sizeof(binding));
       control_view.set_control_state(catalog.entries[index].id,
             display_label, binding,
-            screens.controls_visible() && focused == index,
             capture_active && capture_control == index);
       if (catalog.entries[index].group[0])
       {
@@ -342,9 +339,6 @@ void Controls::bind_anchor(int index, char *out, size_t length) const
          return;
    }
    snprintf(out, length, "%s%s", document_contract::ControlPrefix, catalog.entries[index].id);
-   if (document.has_element(out))
-      return;
-   snprintf(out, length, "%s%s", document_contract::ControlHitPrefix, catalog.entries[index].id);
 }
 
 void Controls::callout_text(int index, char *out, size_t length) const
@@ -466,14 +460,12 @@ void Controls::hide_binds()
 void Controls::focus(FocusTarget target)
 {
    if (target.kind == FocusTarget::Kind::Item && !active(target.index)) return;
-   if (focus_state.set(stop_id(catalog, target).c_str()))
-      refresh();
+   focus_state.set(stop_id(catalog, target).c_str());
 }
 
-void Controls::update_binds(int x, int y, bool pointer_active, bool hover_active)
+void Controls::update_binds(int x, int y, bool pointer_active)
 {
    int current = -1;
-   rib::Event hovered;
    int64_t now;
 
    if (!binds.list[0] || !screens.controls_visible()
@@ -488,22 +480,6 @@ void Controls::update_binds(int x, int y, bool pointer_active, bool hover_active
          && document.pointer_inside(binds.list, x, y)
          && binds.control >= 0)
       current = binds.control;
-   else if (hover_active)
-   {
-      /* The pointer moved in this frame. A callout under it is already
-       * focused, as any stop is. The picture buttons on the pad are not
-       * stops, so for one of those we focus the control it shows. */
-      hovered = this->hovered;
-      if (hovered.kind == RIB_RMLUI_ACTION_CONTROL)
-      {
-         const int index = index_of(hovered.id.c_str());
-         if (active(index))
-         {
-            focus(FocusTarget::item(index));
-            current = index;
-         }
-      }
-   }
    const auto target = focused_stop(catalog, focus_state.current_id());
    const int focused = target.kind == FocusTarget::Kind::Item ? target.index : -1;
    if (current < 0 && focused >= 0

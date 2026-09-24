@@ -154,17 +154,16 @@ void View::pointer_leave()
    }
 }
 
-bool View::follow_pointer()
+void View::follow_pointer()
 {
    if (!document.get_context())
-      return false;
+      return;
    const bool moved = pointer_settled && (pointer_x != settled_x || pointer_y != settled_y);
    pointer_settled = true;
    settled_x = pointer_x;
    settled_y = pointer_y;
    if (moved)
       focus.set(focus.stop_at(document.get_context()->GetHoverElement()));
-   return moved;
 }
 
 bool View::move_pointer_to(const char *id)
