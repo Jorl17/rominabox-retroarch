@@ -69,20 +69,21 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
                if (element->GetInnerRML() != escaped) { element->SetInnerRML(escaped); fit = true; }
             }
          }
-         // We keep the picture box for a badge that is loading or lost, and the
-         // design has the placeholder or the mark for it.
+         // For a badge that is loading or lost, we show the placeholder in the
+         // row prototype from the design. We make an image only from a picture
+         // that has arrived, because in RmlUi an image without a picture is a
+         // white box over the design.
          const bool loading = data.badge == Row::Badge::Loading, failed = data.badge == Row::Badge::Failed;
          row->SetClass("badge-loading", loading);
          row->SetClass("badge-failed", failed);
          auto *icon = find_class(row, "list-row-icon");
-         if (!data.icon.empty() || loading || failed) {
+         if (!data.icon.empty() && !loading && !failed) {
             if (!icon) {
                auto created = document.root()->CreateElement("img");
                created->SetClass("list-row-icon", true);
                icon = row->AppendChild(std::move(created));
             }
-            if (data.icon.empty()) { if (icon->HasAttribute("src")) icon->RemoveAttribute("src"); }
-            else if (icon->GetAttribute<std::string>("src", "") != data.icon) icon->SetAttribute("src", data.icon);
+            if (icon->GetAttribute<std::string>("src", "") != data.icon) icon->SetAttribute("src", data.icon);
             icon->RemoveProperty("display");
          } else if (icon) icon->SetProperty("display", "none");
          if (fit) resized.push_back(&data);
