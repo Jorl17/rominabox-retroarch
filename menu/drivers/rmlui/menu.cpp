@@ -136,6 +136,29 @@ void rib_rmlui_notify_state_task(const char *path, int slot,
       active_menu->slots.notify_task(path, slot, is_save, success);
 }
 
+/* The open dialog, if any, that the player cannot leave with the arrows. */
+static Rml::Element *open_dialog(Menu *menu)
+{
+   if (!menu->achievements.modal() || !menu->view.document.root())
+      return nullptr;
+   for (const char *id : {rib::document_contract::AchievementsConfirmation,
+         rib::document_contract::AchievementsStartup})
+      if (auto *dialog = menu->view.document.root()->GetElementById(id))
+         if (!rib::hidden(dialog))
+            return dialog;
+   return nullptr;
+}
+
+/* Call after anything that can move the focus. Keep it in an open dialog,
+ * mark it, and redraw what follows it on the pad screen, such as a stick. */
+static void settle_focus(Menu *menu)
+{
+   menu->navigation.hold(open_dialog(menu));
+   menu->focus.paint();
+   if (menu->focus.moved())
+      menu->controls.refresh();
+}
+
 static void reset_interaction(Menu *menu, bool opening)
 {
    if (!menu)
@@ -144,19 +167,16 @@ static void reset_interaction(Menu *menu, bool opening)
    if (menu->controls.capture_active)
       menu->controls.cancel_capture(NULL);
    menu->screens.remember("pause");
-   menu->navigation.focus_list(0);
    menu->pointer_pressed = false;
    menu->controls.capture_ignore_pointer = false;
-   menu->focus.pause_action(RIB_RMLUI_ACTION_RESUME);
-   /* When the menu opens, we focus the first button of the row, not a slot. */
-   menu->focus.pause_row(0);
    menu->view.clear_intents();
    menu->view.pointer_leave();
    if (opening)
    {
-      menu->screens.show_screen("pause");
-      menu->slots.focus_action(menu->focus.pause_action());
+      /* Pause, with CONTINUE highlighted. */
+      menu->navigation.open();
       menu->view.screens.set_footer_hint(rib::words::ContinueHint);
+      settle_focus(menu);
    }
 }
 
@@ -171,6 +191,23 @@ bool rib_menu_consume_toggle(void *userdata)
    return menu && (menu->achievements.modal() || rib::toggle_stays_in_menu(
          menu->screens.controls_visible() || !string_is_equal(menu->screens.current(), "pause"),
          menu->controls.capture_active));
+}
+
+/* Prepare a screen after we show it, apart from its focus. */
+static void screen_shown(Menu *menu)
+{
+   if (menu->screens.controls_visible())
+   {
+      menu->view.status.set_controls(rib::words::ChooseControl);
+      menu->controls.refresh();
+   }
+   else if (menu->controls.capture_active)
+      menu->controls.cancel_capture(rib::words::BindingUnchanged);
+   /* We measure the slider from the box of the track. While the panel is
+    * hidden its width is zero, so painting leaves the thumb at its position in
+    * the stylesheet, at the low end. Paint again now that we show the screen. */
+   menu->volume.paint();
+   menu->shaders.show_running();
 }
 
 static void perform_action(Menu *menu, const rib::Event& event)
@@ -191,6 +228,7 @@ static void perform_action(Menu *menu, const rib::Event& event)
    if (action == RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE)
    {
       menu->controls.toggle_picker();
+      menu->navigation.picker();
       return;
    }
    if (action == RIB_RMLUI_ACTION_SLIDER)
@@ -204,7 +242,6 @@ static void perform_action(Menu *menu, const rib::Event& event)
    if (action == RIB_RMLUI_ACTION_LIST_CHOOSE)
    {
       const char *id = event.id.c_str();
-      int row;
 
       if (menu->discs.choose(menu->screens.current(), id))
       {
@@ -214,12 +251,7 @@ static void perform_action(Menu *menu, const rib::Event& event)
       else if (menu->shaders.apply(id, getenv("ROMINABOX_RML_ASSETS"),
                absolute_data_directory()))
          rib::play_action_sound(action);
-      for (row = 0; row < menu->view.lists.visible_row_count(); ++row)
-         if (string_is_equal(menu->view.lists.list_row_id(row), id))
-         {
-            menu->navigation.focus_list(row);
-            break;
-         }
+      menu->focus.set(id);
       return;
    }
    if (action == RIB_RMLUI_ACTION_LIST_PAGE)
@@ -228,8 +260,7 @@ static void perform_action(Menu *menu, const rib::Event& event)
       int delta = which && string_is_equal(which, "prev") ? -1 : 1;
 
       rib::play_action_sound(action);
-      if (menu->view.lists.turn_list_page(delta) >= 0)
-         menu->navigation.focus_list(0);
+      menu->navigation.turn_page(delta, menu->focus.current());
       return;
    }
    if (action == RIB_RMLUI_ACTION_PART_TOGGLE)
@@ -258,58 +289,29 @@ static void perform_action(Menu *menu, const rib::Event& event)
        * move the column, and hiding the only button would leave a gap. */
       menu->discs.redirect(screen_id, sizeof(screen_id));
       if (!string_is_equal(screen_id, "achievements")) menu->achievements.leave_form();
-      if (screen_id[0] && menu->view.screens.show_screen(screen_id))
-      {
-         /* The footer and the heading are in the design, with the screen.
-          * Here we keep only the case of the controls screen, where capture
-          * and navigation work differently. For any other screen there is
-          * nothing to add here. */
-         menu->screens.remember(screen_id);
-         menu->navigation.focus_list(0);
-         if (menu->screens.controls_visible())
-         {
-            menu->controls.focus(menu->controls.first());
-            menu->view.status.set_controls(rib::words::ChooseControl);
-            menu->controls.refresh();
-         }
-         else if (menu->controls.capture_active)
-            menu->controls.cancel_capture(rib::words::BindingUnchanged);
-         else if (!string_is_equal(screen_id, "pause"))
-         {
-            char ids[16][64];
-            const char *panel = menu->view.screens.screen_panel(menu->screens.current());
-            int count = menu->view.document.focusables(panel, ids, 16);
-            bool slider = false;
-            int index;
-
-            for (index = 0; index < count; ++index)
-               if (menu->view.parts.part_is_slider(ids[index]))
-                  slider = true;
-            /* A slider is the first thing a keyboard should land on: left and
-             * right move it. A list with no slider focuses its first row, and
-             * then the screen's own controls past that. */
-            if (slider)
-            {
-               menu->focus.position(rib::FocusRegion::Parts, 0);
-               menu->view.document.mark_focused(panel, ids[0]);
-            }
-            else
-               menu->navigation.paint_list();
-         }
-         /* We measure the slider from the box of its track. While the panel
-          * is hidden that width is zero, so a paint leaves the thumb where
-          * the stylesheet put it, at the quiet end. Paint it again now that
-          * the screen is shown. */
-         menu->volume.paint();
-         menu->shaders.show_running();
-      }
-      rib::play_action_sound(action);
+      /* The heading and footer of the screen come from the design, and we
+       * set the focus and the sound in Navigation. Here we keep only the
+       * fact used in Menu, which is that on the controls screen we capture
+       * differently. */
+      if (screen_id[0] && menu->navigation.show(screen_id))
+         screen_shown(menu);
       return;
    }
 
    if (action == RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE)
    {
       menu->controls.choose_device(event.id.c_str());
+      menu->navigation.picker();
+      return;
+   }
+
+   if (action == RIB_RMLUI_ACTION_CONTROLS_BACK)
+   {
+      /* Go back to the screen from which the player opened this one. */
+      if (menu->controls.capture_active)
+         menu->controls.cancel_capture(rib::words::BindingUnchanged);
+      menu->navigation.back_to_opener();
+      screen_shown(menu);
       return;
    }
 
@@ -356,21 +358,10 @@ static void perform_action(Menu *menu, const rib::Event& event)
             return;
          }
       }
-         menu->screens.remember("controls");
-         menu->controls.focus(menu->controls.first());
          /* The heading and the footer are in the design, with the
           * screen. */
-         menu->view.screens.show_screen("controls");
-         menu->view.status.set_controls(rib::words::ChooseControl);
-         menu->controls.refresh();
-         break;
-      case RIB_RMLUI_ACTION_CONTROLS_BACK:
-         if (menu->controls.capture_active)
-            menu->controls.cancel_capture(rib::words::BindingUnchanged);
-         menu->screens.remember("pause");
-         menu->focus.pause_action(RIB_RMLUI_ACTION_CONTROLS);
-         menu->view.screens.show_screen("pause");
-         menu->slots.focus_action(menu->focus.pause_action());
+         if (menu->navigation.show("controls"))
+            screen_shown(menu);
          break;
       case RIB_RMLUI_ACTION_CONTROLS_CANCEL:
          menu->controls.cancel_capture(rib::words::BindingUnchanged);
@@ -385,7 +376,7 @@ static void perform_action(Menu *menu, const rib::Event& event)
          rib_host_quit();
          break;
       case RIB_RMLUI_ACTION_SELECT_SLOT:
-         menu->navigation.focus_pause(event, false);
+         menu->navigation.select_slot(event.slot);
          break;
       default:
          break;
@@ -397,11 +388,8 @@ void *rib_menu_create(void)
    Menu *menu = new (std::nothrow) Menu{};
    if (!menu)
       return nullptr;
-   menu->focus = rib::Focus{};
    menu->slots.reset_transfer();
    menu->slots.set_selected_slot(1);
-   menu->focus.pause_action(RIB_RMLUI_ACTION_RESUME);
-   menu->focus.pause_row(0);
    menu->screens.remember("pause");
    active_menu = menu;
    if (pending_overlay_start)
@@ -479,9 +467,8 @@ void rib_menu_frame(void *data, int width, int height)
       menu->achievements.bind();
       menu->shaders.load(asset_directory);
       menu->slots.paint();
-      menu->slots.focus_action(menu->focus.pause_action());
       menu->slots.refresh();
-      menu->screens.show_screen("pause");
+      menu->navigation.open();
       menu->view.screens.set_footer_hint(rib::words::ContinueHint);
       if (!menu->controls.loaded)
       {
@@ -500,7 +487,6 @@ void rib_menu_frame(void *data, int width, int height)
          }
          menu->controls.loaded = true;
       }
-      menu->controls.focus(menu->controls.first());
       menu->controls.refresh();
       menu->volume.initialize();
       /* After the slots, so the lock from a switch replaces the slot count. */
@@ -583,11 +569,10 @@ void rib_menu_frame(void *data, int width, int height)
    menu->script.run(menu, {menu->screens.current(), menu->slots.transfer_pending(),
                menu->controls.capture_active, menu->controls.profile_id});
    menu->script.restore_hover();
-   /* After we put the pointer back for the script, so a hovered row is the
-    * focused row before the click in this frame. We play no scroll sound,
-    * because the pointer did not move by a step. */
-   if (!menu->controls.capture_active)
-      menu->navigation.focus_list(menu->view.lists.hovered_list_row());
+   /* Once we have put the pointer back after the script, we silently focus
+    * the stop the pointer moved onto, before the click of this frame. We never
+    * take the focus away from the keys for a pointer at rest. */
+   const bool pointer_moved = !menu->controls.capture_active && menu->view.follow_pointer();
 
    for (;;)
    {
@@ -605,11 +590,12 @@ void rib_menu_frame(void *data, int width, int height)
       load_design(menu, asset_directory);
       menu->achievements.bind();
       menu->screens.show_screen(menu->screens.current());
+      menu->navigation.enter();
    }
    menu->slots.refresh();
    menu->controls.update_binds(pointer.x, pointer.y,
-         !menu->script.wants_frames(),
-         !menu->script.wants_frames() || menu->script.has_hover());
+         !menu->script.wants_frames(), pointer_moved);
+   settle_focus(menu);
    menu->view.render(width, height);
 
 }
@@ -619,10 +605,18 @@ int rib_menu_key(void *data, enum rib_key action)
    auto *menu = static_cast<Menu*>(data);
    if (menu)
    {
-      if (menu->achievements.key(action)) return 0;
-      const auto event = menu->navigation.key(action);
-      if (event.kind != RIB_RMLUI_ACTION_NONE)
-         perform_action(menu, event);
+      if (!menu->achievements.key(action))
+      {
+         const auto event = menu->navigation.key(action);
+         if (event.kind != RIB_RMLUI_ACTION_NONE)
+            perform_action(menu, event);
+      }
+      /* On OK we click the focused element and queue its action in its
+       * listener. Run it now, as the action of the key, not a frame later. */
+      for (auto next = menu->view.intents.take(); next.kind != RIB_RMLUI_ACTION_NONE;
+            next = menu->view.intents.take())
+         perform_action(menu, next);
+      settle_focus(menu);
    }
    return 0;
 }

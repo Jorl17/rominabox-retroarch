@@ -5,207 +5,243 @@
 #include "slots.hpp"
 #include "sounds.hpp"
 #include "document.hpp"
+#include "elements.hpp"
 #include "lists.hpp"
 #include "parts.hpp"
+#include <cstdlib>
+#include <cstring>
 #include <string/stdstring.h>
 
 namespace rib {
-int Navigation::pause_row(char ids[][64], int capacity)
+Rml::Element *Navigation::element(const char *id) const
 {
-   char all[16][64];
-   int found = document.focusables("pause-panel", all, 16);
-   int count = 0;
-   int index;
-
-   for (index = 0; index < found && count < capacity; ++index)
-   {
-      if (document.element_disabled(all[index]))
-         continue;
-      strlcpy(ids[count], all[index], 64);
-      ++count;
-   }
-   return count;
+   return document.root() && id && *id ? document.root()->GetElementById(id) : nullptr;
 }
 
-int Navigation::pause_row_index(const char ids[][64], int count)
+Rml::Element *Navigation::panel() const
 {
-   const char *focused = focus.pause_element().c_str();
-   int index;
-
-   if (focused && *focused)
-      for (index = 0; index < count; ++index)
-         if (string_is_equal(ids[index], focused))
-            return index;
-   return 0;
+   return element(screens.screen_panel(screens.current()));
 }
 
-void Navigation::focus_pause_row(int index,
-      bool direction_up)
+void Navigation::enter()
 {
-   char ids[16][64];
-   const int count = pause_row(ids, 16);
-
-   if (count <= 0)
+   const char *screen = screens.current();
+   if (focus.set(focus.recall(screen)))
       return;
-   index = Focus::ring(index, count, 0);
-   focus.pause_row(index);
-   slots.focus_element(ids[index]);
-   play_move_sound(direction_up);
-}
-
-void Navigation::focus_pause(rib::Event focused,
-      bool direction_up)
-{
-   bool changed;
-
-   if (focused.kind == RIB_RMLUI_ACTION_LOAD &&
-       !slots.load_available())
-      focused = direction_up ? RIB_RMLUI_ACTION_SAVE :
-            RIB_RMLUI_ACTION_CONTROLS;
-   changed = !focus.pause_action().same_target(focused);
-   focus.pause_action(focused);
-   /* Focusing an action or a slot here moves the focus off the row. We track
-    * the row by id, not by this enum. */
-   focus.pause_row(-1);
-   slots.focus_action(focused);
-   if (focused.kind == RIB_RMLUI_ACTION_SELECT_SLOT && valid_slot(focused.slot))
-      slots.set_selected_slot(focused.slot);
-   if (changed)
-      play_move_sound(direction_up);
-}
-
-void Navigation::paint_list()
-{
-   const int rows = lists.visible_row_count();
-
-   if (focus.position(rib::FocusRegion::List) < rows)
+   /* We start the pad screen on its first control, not on the picker that
+    * comes before the controls in the document. */
+   if (screens.controls_visible())
    {
-      lists.focus_list_row(focus.position(rib::FocusRegion::List));
-      lists.focus_list_control(-1);
+      controls.focus(controls.first());
+      if (focus.stop(focus.current()))
+         return;
+   }
+   if (focus.set(focus.first(panel())))
+      return;
+   /* When there is nothing to focus, we highlight nothing, and not an element
+    * of the screen that we hid. */
+   if (document.root())
+      document.root()->Focus();
+   focus.paint();
+}
+
+void Navigation::open()
+{
+   openers.clear();
+   focus.forget();
+   focus.trap(nullptr);
+   dialog_held = false;
+   before_dialog.clear();
+   if (controls.device_picker_open)
+      controls.toggle_picker();
+   screens.show_screen("pause");
+   screens.remember("pause");
+   if (!focus.set(document_contract::Resume))
+      enter();
+}
+
+bool Navigation::show(const char *id)
+{
+   /* A copy, because we may forget `id` as an opener here. */
+   const std::string from = screens.current();
+   const std::string to = id ? id : "";
+   if (!screens.show_screen(to.c_str()))
+      return false;
+   const auto opener = openers.find(from);
+   const bool returning = opener != openers.end() && opener->second == to;
+   if (from != to)
+   {
+      if (controls.device_picker_open)
+         controls.toggle_picker();
+      if (!dialog_held)
+         focus.trap(nullptr);
+      if (returning)
+      {
+         openers.erase(opener);
+         focus.forget(from);
+      }
+      else
+      {
+         focus.remember(from);
+         openers[to] = from;
+      }
+   }
+   screens.remember(to.c_str());
+   enter();
+   play_action_sound(returning ? RIB_RMLUI_ACTION_CONTROLS_BACK : RIB_RMLUI_ACTION_SHOW_SCREEN);
+   return true;
+}
+
+void Navigation::back_to_opener()
+{
+   const auto opener = openers.find(screens.current());
+   show(opener != openers.end() ? opener->second.c_str() : "pause");
+}
+
+void Navigation::select_slot(int slot)
+{
+   if (!valid_slot(slot))
+      return;
+   slots.set_selected_slot(slot);
+   focus.set((document_contract::Slot + std::to_string(slot)).c_str());
+}
+
+bool Navigation::turn_page(int delta, Rml::Element *from)
+{
+   Rml::Element *list = from;
+   while (list && !list->IsClassSet(document_contract::List))
+      list = list->GetParentNode();
+   if (lists.turn_list_page(delta, list) < 0)
+      return false;
+   focus.set(lists.first_row(list));
+   return true;
+}
+
+void Navigation::picker()
+{
+   Rml::Element *box = element(document_contract::ControlsDevice);
+   if (controls.device_picker_open && box)
+   {
+      focus.trap(box);
+      Rml::Element *chosen = nullptr;
+      walk(box, [&](Rml::Element *option) {
+         if (option->IsClassSet(document_contract::Selected)
+               && option->GetId().rfind(document_contract::ControlsDeviceOptionPrefix, 0) == 0)
+         {
+            chosen = option;
+            return Walk::Stop;
+         }
+         return Walk::Continue;
+      });
+      if (!focus.set(chosen))
+         focus.set(focus.first(element(document_contract::ControlsDeviceList)));
       return;
    }
-   lists.focus_list_row(-1);
-   lists.focus_list_control(focus.position(rib::FocusRegion::List) - rows);
+   if (!dialog_held)
+      focus.trap(nullptr);
+   focus.set(document_contract::ControlsDeviceCurrent);
 }
 
-void Navigation::focus_list(int index)
+void Navigation::hold(Rml::Element *dialog)
 {
-   if (index < 0)
-      return;
-   focus.position(rib::FocusRegion::List, index);
-   paint_list();
-}
-
-Event Navigation::part_key(rib_key action)
-{
-   char ids[16][64];
-   const char *panel = screens.screen_panel(screens.current());
-   int count = document.focusables(panel, ids, 16);
-
-   if (count <= 0)
-      return {};
-   if (focus.position(rib::FocusRegion::Parts) < 0 || focus.position(rib::FocusRegion::Parts) >= count)
-      focus.position(rib::FocusRegion::Parts, 0);
-
-   switch (action)
+   if (dialog)
    {
-      case RIB_KEY_UP:
-      case RIB_KEY_DOWN:
-         focus.move(FocusRegion::Parts, count, action == RIB_KEY_UP ? -1 : 1);
-         document.mark_focused(panel, ids[focus.position(FocusRegion::Parts)]);
-         play_move_sound(action == RIB_KEY_UP);
-         return {};
-      case RIB_KEY_LEFT:
-      case RIB_KEY_RIGHT:
-         if (parts.part_is_slider(ids[focus.position(rib::FocusRegion::Parts)]))
-            parts.nudge_slider(ids[focus.position(rib::FocusRegion::Parts)],
-                  action == RIB_KEY_RIGHT ? 1 : -1);
-         return {};
-      case RIB_KEY_OK:
-      case RIB_KEY_SELECT:
-         document.click_element(ids[focus.position(rib::FocusRegion::Parts)]);
-         return {};
-      case RIB_KEY_CANCEL:
-      case RIB_KEY_RESUME:
-      case RIB_KEY_TOGGLE:
-         return back();
-      default:
-         return {};
+      if (dialog_held && focus.trapped() == dialog)
+         return;
+      if (!dialog_held)
+         before_dialog = focus.current_id();
+      dialog_held = true;
+      focus.trap(dialog);
+      Rml::Element *current = focus.current();
+      bool inside = false;
+      for (Rml::Element *at = current; at; at = at->GetParentNode())
+         inside = inside || at == dialog;
+      if (!inside || !focus.stop(current))
+         focus.set(focus.first(dialog));
+      return;
    }
+   if (!dialog_held)
+      return;
+   dialog_held = false;
+   focus.trap(nullptr);
+   if (controls.device_picker_open)
+      picker();
+   /* Closing the dialog may already have moved the focus somewhere useful. */
+   if (focus.stop(focus.current()))
+      return;
+   if (!focus.set(before_dialog.c_str()))
+      enter();
 }
 
 Event Navigation::back()
 {
-   // Press the Back button of the screen, with its declared destination.
-   if (!lists.click_screen_back())
-      return RIB_RMLUI_ACTION_CONTROLS_BACK;
+   if (controls.device_picker_open)
+   {
+      controls.toggle_picker();
+      picker();
+      play_action_sound(RIB_RMLUI_ACTION_CONTROLS_CANCEL);
+      return {};
+   }
+   if (string_is_equal(screens.current(), "pause"))
+      return RIB_RMLUI_ACTION_RESUME;
+   /* The back button of the screen, with its declared destination, if any. */
+   Rml::Element *own = nullptr;
+   walk(panel(), [&](Rml::Element *element) {
+      if (display_none(element))
+         return Walk::SkipChildren;
+      if (element->IsClassSet(document_contract::ListBack)
+            || element->IsClassSet(document_contract::OptionsBack))
+      {
+         own = element;
+         return Walk::Stop;
+      }
+      return Walk::Continue;
+   });
+   if (own)
+   {
+      own->Click();
+      return {};
+   }
+   return RIB_RMLUI_ACTION_CONTROLS_BACK;
+}
+
+Event Navigation::move(rib_key action)
+{
+   Rml::Element *from = focus.current();
+   if (!focus.stop(from))
+   {
+      /* When the focus is on something gone, such as a page turned away or
+       * a disabled button, the first key press only shows the highlight. */
+      enter();
+      return {};
+   }
+   const bool sideways = action == RIB_KEY_LEFT || action == RIB_KEY_RIGHT;
+   const int direction = action == RIB_KEY_RIGHT || action == RIB_KEY_DOWN ? 1 : -1;
+   if (sideways && from->IsClassSet(document_contract::Slider))
+   {
+      parts.nudge_slider(from->GetId().c_str(), direction);
+      return {};
+   }
+   if (sideways && from->IsClassSet(document_contract::ListRow))
+   {
+      if (turn_page(direction, from))
+         play_move_sound(action == RIB_KEY_LEFT);
+      return {};
+   }
+   if (navigate(document.get_context(), action))
+   {
+      Rml::Element *to = focus.current();
+      /* With SAVE and LOAD we use the slot the player reached with a key.
+       * Moving the pointer over a slot does not select it. */
+      if (to && to->IsClassSet(document_contract::SlotClass)
+            && to->GetId().rfind(document_contract::Slot, 0) == 0)
+         slots.set_selected_slot(std::atoi(to->GetId().c_str() + std::strlen(document_contract::Slot)));
+   }
+   focus.paint();
    return {};
 }
 
 Event Navigation::key(rib_key action)
-{
-   if (screens.controls_visible()) return controls_key(action);
-   if (string_is_equal(screens.current(), "pause")) return pause_key(action);
-
-   char ids[16][64];
-   const char *panel = screens.screen_panel(screens.current());
-   const int count = document.focusables(panel, ids, 16);
-   const int rows = lists.visible_row_count();
-   // In a panel with both, Left and Right move a slider, not the list page.
-   bool slider = false;
-   for (int index = 0; index < count; ++index)
-      if (parts.part_is_slider(ids[index])) slider = true;
-   return slider || rows <= 0 ? part_key(action) : list_key(action, rows);
-}
-
-Event Navigation::list_key(rib_key action, int rows)
-{
-   const int stops = rows + lists.list_control_count();
-
-   switch (action)
-   {
-      case RIB_KEY_UP:
-      case RIB_KEY_DOWN:
-         if (stops > 0)
-         {
-            focus_list(Focus::ring(focus.position(FocusRegion::List), stops,
-                  action == RIB_KEY_UP ? -1 : 1));
-            play_move_sound(action == RIB_KEY_UP);
-         }
-         return {};
-      case RIB_KEY_LEFT:
-      case RIB_KEY_RIGHT:
-         if (lists.turn_list_page(action == RIB_KEY_LEFT ? -1 : 1) >= 0)
-         {
-            focus_list(0);
-            play_action_sound(RIB_RMLUI_ACTION_LIST_PAGE);
-         }
-         return {};
-      case RIB_KEY_OK:
-      case RIB_KEY_SELECT:
-         if (focus.position(rib::FocusRegion::List) >= rows)
-         {
-            /* We go through the listener of the element, as for a pointer, where
-             * we already handle the switch and BACK. */
-            document.click_element(
-                  lists.list_control_id(focus.position(rib::FocusRegion::List) - rows));
-         }
-         else if (rows > 0)
-         {
-            return {RIB_RMLUI_ACTION_LIST_CHOOSE,
-                  lists.list_row_id(focus.position(rib::FocusRegion::List))};
-         }
-         return {};
-      case RIB_KEY_CANCEL:
-      case RIB_KEY_RESUME:
-      case RIB_KEY_TOGGLE:
-         return back();
-      default:
-         return {};
-   }
-}
-
-Event Navigation::controls_key(rib_key action)
 {
    if (controls.capture_active)
    {
@@ -218,142 +254,31 @@ Event Navigation::controls_key(rib_key action)
    switch (action)
    {
       case RIB_KEY_UP:
-      case RIB_KEY_LEFT:
       case RIB_KEY_DOWN:
+      case RIB_KEY_LEFT:
       case RIB_KEY_RIGHT:
-      {
-         const bool up = action == RIB_KEY_UP || action == RIB_KEY_LEFT;
-         play_move_sound(up);
-         controls.focus(controls.step(up ? -1 : 1));
-         return {};
-      }
+         return move(action);
       case RIB_KEY_OK:
       case RIB_KEY_SELECT:
-         if (focus.target(rib::FocusRegion::Controls).kind == rib::FocusTarget::Kind::Item)
-            controls.start_capture(focus.position(rib::FocusRegion::Controls));
-         else if (focus.target(rib::FocusRegion::Controls).kind == rib::FocusTarget::Kind::Reset)
-            return RIB_RMLUI_ACTION_CONTROLS_RESET;
+      {
+         /* We go through the listener of the element, as for a pointer. */
+         Rml::Element *focused = focus.current();
+         if (focus.stop(focused))
+            focused->Click();
          else
-            return RIB_RMLUI_ACTION_CONTROLS_BACK;
+            enter();
          return {};
-      case RIB_KEY_START:
-         return RIB_RMLUI_ACTION_CONTROLS_RESET;
+      }
       case RIB_KEY_CANCEL:
       case RIB_KEY_RESUME:
       case RIB_KEY_TOGGLE:
          return back();
-      default:
-         return {};
-   }
-}
-
-Event Navigation::pause_key(rib_key action)
-{
-   switch (action)
-   {
-      case RIB_KEY_UP:
-         if (focus.pause_row() < 0)
-         {
-            int slot = focus.pause_action().slot;
-            if (slot > 3)
-               focus_pause(rib::Event::select_slot(slot - 3), true);
-            else
-            {
-               /* From the top row of slots to the buttons, in the column of
-                * the slot. When the row has fewer than three buttons, we
-                * focus its last button. */
-               char ids[16][64];
-               const int count = pause_row(ids, 16);
-               focus_pause_row(
-                     slot - 1 < count ? slot - 1 : count - 1, true);
-            }
-         }
-         else
-         {
-            const int column = focus.pause_row() > 2 ? 2 : focus.pause_row();
-            focus.pause_row(-1);
-            focus_pause(
-                  rib::Event::select_slot(4 + column), true);
-         }
-         return {};
-      case RIB_KEY_DOWN:
-         if (focus.pause_row() < 0)
-         {
-            int slot = focus.pause_action().slot;
-            if (slot <= 3)
-               focus_pause(rib::Event::select_slot(slot + 3), false);
-            else
-            {
-               char ids[16][64];
-               const int count = pause_row(ids, 16);
-               focus_pause_row(
-                     slot - 4 < count ? slot - 4 : count - 1, false);
-            }
-         }
-         else
-         {
-            const int column = focus.pause_row() > 2 ? 2 : focus.pause_row();
-            focus.pause_row(-1);
-            focus_pause(
-                  rib::Event::select_slot(1 + column), false);
-         }
-         return {};
-      case RIB_KEY_LEFT:
-         if (focus.pause_row() < 0)
-         {
-            int slot = focus.pause_action().slot;
-            int row_start = slot <= 3 ? 1 : 4;
-            slot = slot == row_start ? row_start + 2 : slot - 1;
-            focus_pause(
-                  rib::Event::select_slot(slot), true);
-         }
-         else
-         {
-            char ids[16][64];
-            const int count = pause_row(ids, 16);
-            focus_pause_row(
-                  pause_row_index((const char (*)[64])ids, count) - 1, true);
-         }
-         return {};
-      case RIB_KEY_RIGHT:
-         if (focus.pause_row() < 0)
-         {
-            int slot = focus.pause_action().slot;
-            int row_end = slot <= 3 ? 3 : rib::kSlotCount;
-            slot = slot == row_end ? row_end - 2 : slot + 1;
-            focus_pause(
-                  rib::Event::select_slot(slot), false);
-         }
-         else
-         {
-            char ids[16][64];
-            const int count = pause_row(ids, 16);
-            focus_pause_row(
-                  pause_row_index((const char (*)[64])ids, count) + 1, false);
-         }
-         return {};
-      case RIB_KEY_OK:
-      case RIB_KEY_SELECT:
-         if (focus.pause_row() < 0)
-            return focus.pause_action();
-         else
-         {
-            /* Press the element itself, so a button from the design opens what
-             * its listener opens, without its name in this code. */
-            char ids[16][64];
-            const int count = pause_row(ids, 16);
-            const int index =
-                  pause_row_index((const char (*)[64])ids, count);
-            if (count > 0)
-               document.click_element(ids[index]);
-         }
-         return {};
-      case RIB_KEY_CANCEL:
-      case RIB_KEY_RESUME:
-      case RIB_KEY_TOGGLE:
-         return RIB_RMLUI_ACTION_RESUME;
       case RIB_KEY_START:
-         return RIB_RMLUI_ACTION_SAVE;
+         if (string_is_equal(screens.current(), "pause"))
+            return RIB_RMLUI_ACTION_SAVE;
+         if (screens.controls_visible())
+            return RIB_RMLUI_ACTION_CONTROLS_RESET;
+         return {};
       default:
          return {};
    }

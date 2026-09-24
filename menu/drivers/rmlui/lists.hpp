@@ -26,15 +26,19 @@ public:
    void visible_rows(std::vector<Rml::Element*> &rows) const;
    Rml::Element *visible_panel() const;
    void visible_controls(std::vector<Rml::Element*> &controls) const;
-   bool click_screen_back() const;
    int visible_row_count() const;
+   /* Mark a row or a list control `focused` directly. We let RmlUi handle the
+    * focus and mark it in Focus. We use these in test_rmlui_interaction.cpp to
+    * measure a row with the class set in the styling checks. */
    void focus_list_row(int index) const;
    int list_control_count() const;
    const char *list_control_id(int index);
    void focus_list_control(int index) const;
    const char *list_row_id(int index);
-   int hovered_list_row() const;
-   int turn_list_page(int delta) const;
+   /* Turn `list`, or the visible list, by one page. Returns the page, or -1. */
+   int turn_list_page(int delta, Rml::Element *list = nullptr) const;
+   /* The first row on the current page of `list`, or of the visible list. */
+   Rml::Element *first_row(Rml::Element *list = nullptr) const;
    void mark_row(const char *id, const char *on, const char *off) const;
    void select_row(const char *list_id, const char *row_id,
          const char *on, const char *off) const;

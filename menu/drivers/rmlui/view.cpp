@@ -55,11 +55,11 @@ void View::set_overlay_mode(bool only_overlays)
 }
 void View::wire_document()
 {
+   focus.attach(document.root());
    /* `opens_screen` means we handle the click through the screen declaration
     * in the design, not through this table. Hover still comes from here,
-    * because we track keyboard focus by action, and the player can also reach
-    * the two buttons that change screen with the arrow keys. There is nothing
-    * to add here for a screen that a design declares later. */
+    * because during capture we read which button is under the pointer. There
+    * is nothing to add here for a screen that a design declares later. */
    struct Binding { const char *id; rib_rmlui_action action; bool opens_screen; };
    const Binding bindings[] = {
       {document_contract::Resume, RIB_RMLUI_ACTION_RESUME, false},
@@ -75,7 +75,9 @@ void View::wire_document()
    for (const Binding& binding : bindings)
       if (Rml::Element *element = document.root()->GetElementById(binding.id))
       {
-         if (!binding.opens_screen)
+         if (binding.action == RIB_RMLUI_ACTION_CONTROLS_BACK)
+            element->AddEventListener(Rml::EventId::Click, new ReturnListener(intents));
+         else if (!binding.opens_screen)
             element->AddEventListener(Rml::EventId::Click,
                   new ActionListener(intents, binding.action));
          element->AddEventListener(Rml::EventId::Mouseover,
@@ -124,7 +126,9 @@ void View::pointer_button(bool down)
    pointer_down = down;
    if (down)
    {
+      /* In RmlUi a press focuses the stop under it. */
       document.get_context()->ProcessMouseButtonDown(0, 0);
+      focus.paint();
       parts.begin_drag(document.get_context()->GetHoverElement(), pointer_x);
    }
    else
@@ -141,12 +145,26 @@ void View::pointer_leave()
       return;
    document.get_context()->ProcessMouseLeave();
    hovered = RIB_RMLUI_ACTION_NONE;
+   pointer_settled = false;
    parts.end_drag();
    if (pointer_down)
    {
       pointer_down = false;
       document.get_context()->ProcessMouseButtonUp(0, 0);
    }
+}
+
+bool View::follow_pointer()
+{
+   if (!document.get_context())
+      return false;
+   const bool moved = pointer_settled && (pointer_x != settled_x || pointer_y != settled_y);
+   pointer_settled = true;
+   settled_x = pointer_x;
+   settled_y = pointer_y;
+   if (moved)
+      focus.set(focus.stop_at(document.get_context()->GetHoverElement()));
+   return moved;
 }
 
 bool View::move_pointer_to(const char *id)

@@ -3,6 +3,7 @@
 #include "elements.hpp"
 #include "host.h"
 #include "sounds.hpp"
+#include "navigation.hpp"
 #include <algorithm>
 #include <cstring>
 #include <libretro.h>
@@ -29,6 +30,22 @@ const char *status_text(const rib_achievements_snapshot_t& snapshot)
 Rml::ElementFormControlInput *field(Document& document, const char *id)
 {
    return document.root() ? dynamic_cast<Rml::ElementFormControlInput*>(document.root()->GetElementById(id)) : nullptr;
+}
+/* Focus the first button of a dialog that has just opened, unless the focus
+ * is already in it. We then keep the arrows inside the dialog. */
+void focus_dialog(Document& document, const char *id)
+{
+   auto *dialog = document.root() ? document.root()->GetElementById(id) : nullptr;
+   if (!dialog || hidden(dialog)) return;
+   for (auto *at = document.get_context()->GetFocusElement(); at; at = at->GetParentNode())
+      if (at == dialog) return;
+   walk(dialog, [&](Rml::Element *element) {
+      if (display_none(element)) return Walk::SkipChildren;
+      if (!element->IsClassSet(document_contract::MenuAction) || element->HasAttribute("disabled"))
+         return Walk::Continue;
+      element->Focus(true);
+      return Walk::Stop;
+   });
 }
 }
 void Achievements::bind()
@@ -138,6 +155,7 @@ void Achievements::update()
             (snapshot.status == RIB_ACHIEVEMENTS_ERROR && snapshot.account[0]))) show_form(false);
       paint();
       paint_rows();
+      if (snapshot.startup_waiting) focus_dialog(document, document_contract::AchievementsStartup);
    }
    text.update();
    if (!overlays.notification_active()) {
@@ -168,9 +186,9 @@ bool Achievements::request_exit(Exit exit)
       auto *focused = document.get_context()->GetFocusElement();
       confirmation_focus = form && focused ? focused->GetId() : "";
    }
-   pending_exit = exit; confirming = true; modal_focus = 0;
+   pending_exit = exit; confirming = true;
    paint();
-   document.mark_focused(document_contract::AchievementsConfirmation, document_contract::AchievementsKeepSession);
+   focus_dialog(document, document_contract::AchievementsConfirmation);
    return true;
 }
 bool Achievements::allow_quit()
@@ -236,16 +254,19 @@ bool Achievements::handle(const Event& event)
 bool Achievements::key(rib_key key)
 {
    if (modal()) {
-      const char *panel = snapshot.startup_waiting ? document_contract::AchievementsStartup : document_contract::AchievementsConfirmation;
-      char ids[4][64]; const int count = document.focusables(panel, ids, 4);
-      if (key == RIB_KEY_CANCEL && confirming) { action(AccountAction::KeepSession); return true; }
-      if (!count) return true;
-      if (key == RIB_KEY_UP || key == RIB_KEY_LEFT) modal_focus = (modal_focus + count - 1) % count;
-      if (key == RIB_KEY_DOWN || key == RIB_KEY_RIGHT) modal_focus = (modal_focus + 1) % count;
-      modal_focus %= count;
-      document.mark_focused(panel, ids[modal_focus]);
-      if (key == RIB_KEY_OK || key == RIB_KEY_SELECT) document.click_element(ids[modal_focus]);
-      return true;
+      /* We keep the focus inside an open dialog, so the arrows and OK work as
+       * usual there. With Back the player keeps playing, except while we are
+       * still restoring the game, when we ignore it. */
+      if (key == RIB_KEY_CANCEL || key == RIB_KEY_TOGGLE || key == RIB_KEY_RESUME) {
+         if (confirming) action(AccountAction::KeepSession);
+         return true;
+      }
+      if (key == RIB_KEY_OK || key == RIB_KEY_SELECT) {
+         focus_dialog(document, confirming ? document_contract::AchievementsConfirmation : document_contract::AchievementsStartup);
+         if (auto *focused = document.get_context()->GetFocusElement()) focused->Click();
+         return true;
+      }
+      return key == RIB_KEY_START;
    }
    if (form && (key == RIB_KEY_CANCEL || key == RIB_KEY_TOGGLE || key == RIB_KEY_RESUME)) {
       if (text.keyboard_open()) text.cancel_keyboard(); else action(AccountAction::Cancel);
@@ -260,8 +281,10 @@ bool Achievements::physical(bool down, unsigned key, uint32_t character, uint16_
    switch (key) {
       case RETROK_RETURN: case RETROK_KP_ENTER: this->key(RIB_KEY_OK); break;
       case RETROK_ESCAPE: this->key(RIB_KEY_CANCEL); break;
-      case RETROK_LEFT: case RETROK_UP: this->key(RIB_KEY_UP); break;
-      case RETROK_RIGHT: case RETROK_DOWN: this->key(RIB_KEY_DOWN); break;
+      case RETROK_LEFT: navigate(document.get_context(), RIB_KEY_LEFT); break;
+      case RETROK_UP: navigate(document.get_context(), RIB_KEY_UP); break;
+      case RETROK_RIGHT: navigate(document.get_context(), RIB_KEY_RIGHT); break;
+      case RETROK_DOWN: navigate(document.get_context(), RIB_KEY_DOWN); break;
       default: break;
    }
    return true;

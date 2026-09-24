@@ -57,12 +57,7 @@ void Slots::paint() const
 {
    if (!document.root()) return;
 
-   char row[16][64];
-   const int row_count = focusable_ids(document.root(), document_contract::PausePanel, row, 16);
-   for (int index = 0; index < row_count; ++index)
-      if (auto *element = document.root()->GetElementById(row[index]))
-         element->SetClass(document_contract::Focused, focus.pause_element() == row[index]);
-
+   /* We mark focus with `focused`, and a slot `selected` with or without it. */
    for (int index = 0; index < kSlotCount; ++index)
    {
       const int slot = index + 1;
@@ -70,7 +65,6 @@ void Slots::paint() const
       if (auto *element = document.root()->GetElementById(document_contract::Slot + suffix))
       {
          element->SetClass(document_contract::Selected, slot == selected_slot);
-         element->SetClass(document_contract::Focused, focus.highlighted_slot() == slot);
          element->SetClass(document_contract::Occupied, slots[index].occupied);
          element->SetClass(document_contract::Empty, !slots[index].occupied);
          element->SetClass(document_contract::Disabled, !guard.empty());
@@ -182,14 +176,25 @@ bool Slots::has_thumbnail(int slot) const
 }
 
 namespace rib {
+/* The element on Pause from which the player presses an action. */
 void Slots::focus_action(const Event& event)
 {
-   focus.pause_action(event);
-   paint();
+   switch (event.kind)
+   {
+      case RIB_RMLUI_ACTION_SELECT_SLOT:
+         if (valid_slot(event.slot))
+            focus.set((document_contract::Slot + std::to_string(event.slot)).c_str());
+         break;
+      case RIB_RMLUI_ACTION_RESUME: focus.set(document_contract::Resume); break;
+      case RIB_RMLUI_ACTION_SAVE: focus.set(document_contract::Save); break;
+      case RIB_RMLUI_ACTION_LOAD: focus.set(document_contract::Load); break;
+      case RIB_RMLUI_ACTION_CONTROLS: focus.set(document_contract::Controls); break;
+      case RIB_RMLUI_ACTION_QUIT: focus.set(document_contract::Quit); break;
+      default: break;
+   }
 }
 void Slots::focus_element(const char *id)
 {
-   focus.pause_element(id);
-   paint();
+   focus.set(id);
 }
 }

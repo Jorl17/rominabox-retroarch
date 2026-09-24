@@ -171,23 +171,6 @@ void Lists::visible_controls(std::vector<Rml::Element*> &out) const
       collect(panel, name, out);
 }
 
-bool Lists::click_screen_back() const
-{
-   auto *panel = visible_panel();
-   if (!panel) return false;
-   std::vector<Rml::Element*> back;
-   collect(panel, document_contract::ListBack, back);
-   collect(panel, document_contract::OptionsBack, back);
-   if (back.empty()) return false;
-   const auto& id = back.front()->GetId();
-   if (id.empty()) return false;
-   auto *element = document.root()->GetElementById(id);
-   if (!element) return false;
-   /* Click through the element listener, so a disabled element stays inert. */
-   element->Click();
-   return true;
-}
-
 int Lists::visible_row_count() const
 {
    std::vector<Rml::Element*> rows;
@@ -242,21 +225,6 @@ const char *Lists::list_row_id(int index)
    return row_id_buffer.c_str();
 }
 
-int Lists::hovered_list_row() const
-{
-   if (!document.get_context() || !document.root()) return -1;
-   auto *cursor = document.get_context()->GetHoverElement();
-   Rml::Element *row = nullptr;
-   for (; cursor; cursor = cursor->GetParentNode())
-      if (cursor->IsClassSet(document_contract::ListRow)) { row = cursor; break; }
-   if (!row) return -1;
-   std::vector<Rml::Element*> rows;
-   visible_rows(rows);
-   for (int index = 0; index < (int)rows.size(); ++index)
-      if (rows[index] == row) return index;
-   return -1;
-}
-
 bool Lists::page_has_row(Rml::Element *page)
 {
    std::vector<Rml::Element*> rows;
@@ -283,9 +251,9 @@ void Lists::mark_pager(Rml::Element *list, int page, int pages)
    }
 }
 
-int Lists::turn_list_page(int delta) const
+int Lists::turn_list_page(int delta, Rml::Element *list) const
 {
-   auto *list = visible_list();
+   if (!list) list = visible_list();
    if (!list) return -1;
    std::vector<Rml::Element*> pages;
    collect(list, document_contract::ListPage, pages);
@@ -311,6 +279,19 @@ int Lists::turn_list_page(int delta) const
    }
    mark_pager(list, next, (int)usable.size());
    return next;
+}
+
+Rml::Element *Lists::first_row(Rml::Element *list) const
+{
+   if (!list) list = visible_list();
+   Rml::Element *found = nullptr;
+   walk(list, [&](Rml::Element *element) {
+      if (display_none(element)) return Walk::SkipChildren;
+      if (!element->IsClassSet(document_contract::ListRow)) return Walk::Continue;
+      found = element;
+      return Walk::Stop;
+   });
+   return found;
 }
 
 void Lists::select_in(Rml::Element *list, const char *row_id,
