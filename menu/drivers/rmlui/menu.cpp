@@ -154,6 +154,11 @@ static Rml::Element *open_dialog(Menu *menu)
 static void settle_focus(Menu *menu)
 {
    menu->navigation.hold(open_dialog(menu));
+   /* When the focus ends where nothing can be used, as when closing a form
+    * moves it from a field to the form, we move it to the screen start. */
+   if (Rml::Element *focused = menu->focus.current())
+      if (!menu->focus.stop(focused))
+         menu->navigation.enter();
    menu->focus.paint();
    if (menu->focus.moved())
       menu->controls.refresh();
