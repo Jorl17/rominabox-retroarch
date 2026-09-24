@@ -28,6 +28,16 @@ const char *status_text(const rib_achievements_snapshot_t& snapshot)
       default: return "";
    }
 }
+/* The colour badge of achievement `id`, when it is already on disk. */
+std::string ready_badge(const rib_achievements_snapshot_t& snapshot, uint32_t id)
+{
+   rib_achievement_row_t item{};
+   for (size_t index = 0; index < snapshot.count; ++index)
+      if (rib_achievements_get_row(index, &item) && item.id == id &&
+            item.badge == RIB_ACHIEVEMENT_BADGE_READY)
+         return item.badge_path;
+   return {};
+}
 Rml::ElementFormControlInput *field(Document& document, const char *id)
 {
    return document.root() ? dynamic_cast<Rml::ElementFormControlInput*>(document.root()->GetElementById(id)) : nullptr;
@@ -199,9 +209,12 @@ void Achievements::update()
       rib_achievement_unlock_t unlocked{};
       popup_waiting = 0;
       if (rib_achievements_take_unlock(&unlocked)) {
-         overlays.notify({unlocked.title, std::to_string(unlocked.points) + " points", unlocked.badge_path});
+         // For a popup queued behind another, the badge may already be on disk.
+         const std::string badge = unlocked.badge_path[0] ? std::string(unlocked.badge_path)
+               : ready_badge(snapshot, unlocked.id);
+         overlays.notify({unlocked.title, std::to_string(unlocked.points) + " points", badge});
          // Earned just now, so we are still downloading the colour badge.
-         if (!unlocked.badge_path[0]) popup_waiting = unlocked.id;
+         if (badge.empty()) popup_waiting = unlocked.id;
       }
    }
 }
