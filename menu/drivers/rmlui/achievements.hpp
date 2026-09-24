@@ -39,6 +39,8 @@ private:
    TextEntry text;
    rib_achievements_snapshot_t snapshot{};
    uint32_t revision = UINT32_MAX;
+   /* The achievement whose popup is shown without its badge, or 0. */
+   uint32_t popup_waiting = 0;
    bool form = false, confirming = false, exit_approved = false;
    Exit pending_exit = Exit::Quit;
    int modal_focus = 0;

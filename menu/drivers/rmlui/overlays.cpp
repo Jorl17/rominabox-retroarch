@@ -106,6 +106,12 @@ void Overlays::notify(const Notification& next)
    paint_notification();
    rib_host_overlay_frames(true);
 }
+void Overlays::show_badge(const std::string& badge)
+{
+   if (!notification_active()) return;
+   notification.badge = badge;
+   paint_notification();
+}
 void Overlays::clear_notification()
 {
    notification_until = 0;
