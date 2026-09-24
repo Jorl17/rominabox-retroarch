@@ -1866,7 +1866,7 @@ rc_client_t *rcheevos_rib_prepare_client(void)
       if (rib_achievements_managed())
       {
          rc_client_set_host(rcheevos_locals.client, rcheevos_test_host());
-         rc_api_set_image_host(rcheevos_test_host());
+         rc_api_set_host(rcheevos_test_host());
       }
 #endif
    }
@@ -1902,7 +1902,7 @@ rc_client_t *rcheevos_rib_prepare_client(void)
       rc_client_set_host(rcheevos_locals.client, host);
 #ifdef RIB_ACHIEVEMENTS_TEST
       if (rib_achievements_managed())
-         rc_api_set_image_host(host);
+         rc_api_set_host(host);
 #endif
       if (!rib_achievements_managed())
          rcheevos_client_download_placeholder_badge();
