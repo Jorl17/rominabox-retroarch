@@ -111,9 +111,16 @@ void Achievements::paint_rows()
          case RIB_ACHIEVEMENT_UNSUPPORTED: state = "UNSUPPORTED"; break;
          default: break;
       }
+      Lists::Row::Badge badge = Lists::Row::Badge::None;
+      switch (item.badge) {
+         case RIB_ACHIEVEMENT_BADGE_LOADING: badge = Lists::Row::Badge::Loading; break;
+         case RIB_ACHIEVEMENT_BADGE_READY: badge = Lists::Row::Badge::Ready; break;
+         case RIB_ACHIEVEMENT_BADGE_FAILED: badge = Lists::Row::Badge::Failed; break;
+         default: break;
+      }
       rows.push_back({"achievement-" + std::to_string(item.id), item.title, item.description,
             std::to_string(item.points) + " PT / " + state, item.badge_path,
-            item.state == RIB_ACHIEVEMENT_UNLOCKED || item.state == RIB_ACHIEVEMENT_PENDING_UPLOAD});
+            item.state == RIB_ACHIEVEMENT_UNLOCKED || item.state == RIB_ACHIEVEMENT_PENDING_UPLOAD, badge});
    }
    lists.replace_rows(document_contract::AchievementsList, rows);
 }
@@ -151,6 +158,10 @@ void Achievements::paint()
 void Achievements::update()
 {
    if (!document.has_element(document_contract::AchievementsPanel)) return;
+   // First, so that when we retry a badge because the list is shown again,
+   // we request it for the rows in this frame.
+   auto *list = document.root()->GetElementById(document_contract::AchievementsList);
+   rib_achievements_list_shown(list && !hidden(list));
    rib_achievements_get_snapshot(&snapshot);
    if (snapshot.revision != revision) {
       revision = snapshot.revision;

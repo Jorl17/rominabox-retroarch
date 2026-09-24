@@ -16,7 +16,15 @@ public:
    Lists(Document& document, EventQueue& events) : document(document), events(events) {}
 
    void wire_lists(Rml::Element *scope = nullptr);
-   struct Row { std::string id, title, detail, state, icon; bool selected = false; };
+   struct Row
+   {
+      /* The state of the picture of the row. We show a placeholder while it
+       * loads, and a mark when we could not fetch it. */
+      enum class Badge { None, Loading, Ready, Failed };
+      std::string id, title, detail, state, icon;
+      bool selected = false;
+      Badge badge = Badge::None;
+   };
    // Replace generated data through the staged prototype from the design, and
    // keep the current page where possible. We leave static lists unchanged.
    void replace_rows(const char *list_id, const std::vector<Row>& rows);
