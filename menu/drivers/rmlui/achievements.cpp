@@ -30,6 +30,28 @@ Rml::ElementFormControlInput *field(Document& document, const char *id)
 {
    return document.root() ? dynamic_cast<Rml::ElementFormControlInput*>(document.root()->GetElementById(id)) : nullptr;
 }
+/* After the type of an input changes there is a new RmlUi text widget, and
+ * its text is placed only when the field is resized, so we would draw it at
+ * the corner of the window. We replace the field with a copy of the other
+ * type, with the same value, caret and focus. */
+void mask_password(Document& document, bool masked)
+{
+   auto *password = field(document, document_contract::AchievementPassword);
+   const Rml::String type = masked ? "password" : "text";
+   if (!password || password->GetAttribute<Rml::String>("type", "") == type) return;
+   const bool focused = document.get_context()->GetFocusElement() == password;
+   int start = 0, end = 0;
+   password->GetSelection(&start, &end, nullptr);
+   const Rml::String value = password->GetValue();
+   Rml::ElementPtr copy = password->Clone();
+   copy->SetAttribute("type", type);
+   password->GetParentNode()->ReplaceChild(std::move(copy), password);
+   if (!(password = field(document, document_contract::AchievementPassword))) return;
+   password->SetValue(value);
+   document.get_context()->Update();
+   if (focused) password->Focus();
+   password->SetSelectionRange(start, end);
+}
 }
 void Achievements::bind()
 {
@@ -57,9 +79,8 @@ void Achievements::show_form(bool show)
       if (auto *username = field(document, document_contract::AchievementUsername)) username->Focus();
    } else {
       text.disable();
-      if (auto *password = field(document, document_contract::AchievementPassword)) {
-         password->SetValue(""); password->SetAttribute("type", std::string("password"));
-      }
+      if (auto *password = field(document, document_contract::AchievementPassword)) password->SetValue("");
+      mask_password(document, true);
       document.set_element_text(document_contract::AchievementPasswordVisibility, "SHOW");
    }
    paint();
@@ -187,17 +208,7 @@ void Achievements::action(AccountAction wanted)
       case AccountAction::RevealPassword:
          if (auto *password = field(document, document_contract::AchievementPassword)) {
             const bool reveal = password->GetAttribute<std::string>("type", "password") == "password";
-            // After a change of type there is a new RmlUi text widget. Move
-            // focus and selection to it, so the OS text context is active for it.
-            const bool focused = document.get_context()->GetFocusElement() == password;
-            int start = 0, end = 0;
-            password->GetSelection(&start, &end, nullptr);
-            if (focused) password->Blur();
-            password->SetAttribute("type", std::string(reveal ? "text" : "password"));
-            password->SetValue(password->GetValue());
-            document.get_context()->Update();
-            if (focused) password->Focus();
-            password->SetSelectionRange(start, end);
+            mask_password(document, !reveal);
             document.set_element_text(document_contract::AchievementPasswordVisibility, reveal ? "HIDE" : "SHOW");
          }
          break;
