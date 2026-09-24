@@ -10,68 +10,57 @@
 
 namespace
 {
-enum class Replacement
-{
-   Controls,
-   Remap,
-   Volume
-};
-
 #if defined(_WIN32)
-bool rename_replaces_existing = false;
+constexpr bool platform_rename_replaces = false;
 #else
-bool rename_replaces_existing = true;
+constexpr bool platform_rename_replaces = true;
 #endif
-rib_rename_step rename_step = nullptr;
+rib_rename_step rename_step = filestream_rename;
+bool rename_replaces_existing = platform_rename_replaces;
 
-bool replace_file(const char *temporary, const char *path, Replacement policy)
+/* One policy for every menu file: move the finished temporary file onto the
+ * destination, removing the old file first where rename will not replace it,
+ * and never leave the temporary file behind. */
+bool replace_file(const char *temporary, const char *path)
 {
-   if (!rename_replaces_existing
-         && policy != Replacement::Controls && filestream_exists(path))
+   if (!rename_replaces_existing && filestream_exists(path))
       filestream_delete(path);
-   const int result = rename_step ? rename_step(temporary, path)
-         : policy == Replacement::Remap
-         ? filestream_rename(temporary, path) : rename(temporary, path);
-   if (result == 0)
+   if (rename_step(temporary, path) == 0)
       return true;
-   if (policy != Replacement::Controls)
-      filestream_delete(temporary);
+   filestream_delete(temporary);
    return false;
+}
+
+/* We reject a path that is too long for its temporary name, so we never cut
+ * it and write to some other file. */
+bool temporary_path(char (&temporary)[PATH_MAX_LENGTH], const char *path)
+{
+   return strlcpy(temporary, path, sizeof(temporary)) < sizeof(temporary)
+         && strlcat(temporary, ".tmp", sizeof(temporary)) < sizeof(temporary);
 }
 }
 
 void rib_files_use_rename(rib_rename_step step, bool replaces_existing)
 {
-   rename_step = step;
-#if defined(_WIN32)
-   rename_replaces_existing = step ? replaces_existing : false;
-#else
-   rename_replaces_existing = step ? replaces_existing : true;
-#endif
+   rename_step = step ? step : filestream_rename;
+   rename_replaces_existing = step ? replaces_existing : platform_rename_replaces;
 }
 
-bool rib_write_menu_config(config_file_t *config, const char *path,
-      enum rib_config_write_policy policy)
+bool rib_write_menu_config(config_file_t *config, const char *path)
 {
    char temporary[PATH_MAX_LENGTH];
-   if (policy == RIB_CONFIG_WRITE_REMAP)
-   {
-      if (strlcpy(temporary, path, sizeof(temporary)) >= sizeof(temporary)
-            || strlcat(temporary, ".tmp", sizeof(temporary)) >= sizeof(temporary))
-         return false;
-   }
-   else
-      snprintf(temporary, sizeof(temporary), "%s.tmp", path);
+   if (!temporary_path(temporary, path))
+      return false;
    if (!config_file_write(config, temporary, true))
       return false;
-   return replace_file(temporary, path, policy == RIB_CONFIG_WRITE_REMAP
-         ? Replacement::Remap : Replacement::Controls);
+   return replace_file(temporary, path);
 }
 
 bool rib_write_menu_volume(const char *path, float db)
 {
    char temporary[PATH_MAX_LENGTH];
-   snprintf(temporary, sizeof(temporary), "%s.tmp", path);
+   if (!temporary_path(temporary, path))
+      return false;
    FILE *file = fopen(temporary, "w");
    if (!file)
       return false;
@@ -81,7 +70,7 @@ bool rib_write_menu_volume(const char *path, float db)
       filestream_delete(temporary);
       return false;
    }
-   return replace_file(temporary, path, Replacement::Volume);
+   return replace_file(temporary, path);
 }
 
 /* Update input_libretro_device_p1 in an existing remap, or create one.
@@ -128,7 +117,7 @@ bool rib_write_remap_device(const char *path, unsigned device)
       return false;
    }
 
-   saved = rib_write_menu_config(conf, path, RIB_CONFIG_WRITE_REMAP);
+   saved = rib_write_menu_config(conf, path);
    config_file_free(conf);
    return saved;
 }

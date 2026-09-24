@@ -8,19 +8,11 @@
 extern "C" {
 #endif
 
-/* Failure handling differs by caller. For controls we keep a failed temporary
- * file and call rename directly. For remaps we replace on Windows and remove
- * the temporary file after a failed rename. We never free the config here. */
-enum rib_config_write_policy
-{
-   RIB_CONFIG_WRITE_CONTROLS,
-   RIB_CONFIG_WRITE_REMAP
-};
-bool rib_write_menu_config(config_file_t *config, const char *path,
-      enum rib_config_write_policy policy);
+/* Write through a temporary file, then replace the file at path with it. The
+ * config still belongs to the caller. */
+bool rib_write_menu_config(config_file_t *config, const char *path);
 
-/* Write the volume file in its exact decimal format, and clean up after a
- * close or rename failure, including replacement on Windows. */
+/* The volume file's exact decimal format, replaced the same way. */
 bool rib_write_menu_volume(const char *path, float db);
 
 /* The step that moves a finished temporary file onto its destination. It

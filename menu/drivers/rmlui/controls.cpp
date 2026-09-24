@@ -150,8 +150,7 @@ bool Controls::save()
       rib_host_write_bind(config, catalog.entries[index].id, catalog.entries[index].bind_index);
    }
 
-   saved = rib_write_menu_config(config, path,
-         RIB_CONFIG_WRITE_CONTROLS);
+   saved = rib_write_menu_config(config, path);
    config_file_free(config);
    return saved;
 }
