@@ -17,8 +17,14 @@ public:
    explicit ScreenListener(EventQueue& events) : events(events) {}
    void ProcessEvent(Rml::Event& event) override
    {
+      Rml::Element *button = event.GetCurrentElement();
+      if (button->HasAttribute("disabled") || button->IsClassSet(document_contract::Disabled))
+         return;
+      /* On return we focus the button the player opened the screen with. A
+       * pointer press already focuses it, but a script click does not. */
+      button->Focus(true);
       events.push({RIB_RMLUI_ACTION_SHOW_SCREEN,
-            event.GetCurrentElement()->GetAttribute<std::string>("data-screen-target", "")});
+            button->GetAttribute<std::string>("data-screen-target", "")});
    }
    void OnDetach(Rml::Element*) override { delete this; }
 private:
@@ -38,9 +44,11 @@ void Screens::remember(const char *id)
 
 void Screens::built_in_screens()
 {
-   /* Declare it and add its listeners once, as for a design screen. */
+   /* Declare it and add its listeners once, as for a design screen. BACK on
+    * Controls is not the button of Pause. With it the player goes back to the
+    * screen they came from (we add its listener in view.cpp). */
    declare_screen("pause", document_contract::PausePanel, rib::words::PausedHeading,
-         rib::words::ContinueHint, document_contract::ControlsBack);
+         rib::words::ContinueHint, "");
    declare_screen("controls", document_contract::ControlsPanel, rib::words::ControlsHeading,
          rib::words::BackHint, document_contract::Controls);
 }

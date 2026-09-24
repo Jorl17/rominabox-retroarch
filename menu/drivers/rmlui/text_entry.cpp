@@ -2,6 +2,8 @@
 #include "text_host.h"
 #include "elements.hpp"
 #include "../../../input/alt_enter_fullscreen.h"
+#include "navigation.hpp"
+#include "sounds.hpp"
 #include <libretro.h>
 #include <cstring>
 #include <RmlUi/Core/Input.h>
@@ -92,18 +94,10 @@ bool TextEntry::controller(rib_key key)
    if (panel_id.empty()) return false;
    if (keyboard_open()) return true;
    auto *focused = document.get_context()->GetFocusElement();
-   if (key == RIB_KEY_UP || key == RIB_KEY_DOWN) {
-      char ids[16][64];
-      const int count = document.focusables(panel_id.c_str(), ids, 16);
-      if (!count) return true;
-      int index = 0;
-      for (int at = 0; at < count; ++at)
-         if (focused && focused->GetId() == ids[at]) index = at;
-      index = (index + count + (key == RIB_KEY_UP ? -1 : 1)) % count;
-      document.root()->GetElementById(ids[index])->Focus();
+   /* The arrows move by the layout of the form, as everywhere in the menu, but
+    * the field with the caret gets Left and Right first. */
+   if (navigate(document.get_context(), key) || (key != RIB_KEY_OK && key != RIB_KEY_SELECT))
       return true;
-   }
-   if (key != RIB_KEY_OK && key != RIB_KEY_SELECT) return true;
    auto *field = dynamic_cast<Rml::ElementFormControlInput*>(focused);
    if (!field || hidden(field)) {
       if (focused && focused->GetTagName() == "button") focused->Click();
@@ -121,8 +115,6 @@ void TextEntry::update()
 {
    if (panel_id.empty()) return;
    rib_host_text_focus(true);
-   auto *focused = document.get_context()->GetFocusElement();
-   document.mark_focused(panel_id.c_str(), focused ? focused->GetId().c_str() : nullptr);
    if (!keyboard_open()) return;
    if (auto *field = input(editing_id.c_str())) field->SetValue(rib_host_keyboard_value());
    auto *grid = document.root()->GetElementById(document_contract::TextKeyboardGrid);
@@ -145,9 +137,22 @@ bool TextEntry::physical(bool down, unsigned key, uint32_t character, uint16_t m
    auto *panel = document.root()->GetElementById(panel_id);
    if (!panel || hidden(panel)) return false;
    if (alt_enter_is_chord(key, modifiers)) return false;
-   if (key == RETROK_TAB) return true;
-   if (down && !keyboard_open() && (key == RETROK_UP || key == RETROK_DOWN))
-      return controller(key == RETROK_UP ? RIB_KEY_UP : RIB_KEY_DOWN);
+   if (key == RETROK_TAB) {
+      /* With Tab the player goes from the username to the password only. */
+      auto *focused = document.get_context()->GetFocusElement();
+      auto *password = input(document_contract::AchievementPassword);
+      if (down && !keyboard_open() && focused && password && !hidden(password)
+            && focused->GetId() == document_contract::AchievementUsername && password->Focus(true))
+         play_move_sound(false);
+      return true;
+   }
+   /* While the form has the keyboard, Up and Down move in the menu. We pass
+    * Left and Right with their modifiers to the field below, and at its edge
+    * we pass them on. */
+   if (down && !keyboard_open() && (key == RETROK_UP || key == RETROK_DOWN)) {
+      navigate(document.get_context(), key == RETROK_UP ? RIB_KEY_UP : RIB_KEY_DOWN);
+      return true;
+   }
    if (down && key == RETROK_ESCAPE) {
       if (keyboard_open()) cancel_keyboard(); else document.click_element(cancel_id.c_str());
       return true;
@@ -173,7 +178,10 @@ bool TextEntry::physical(bool down, unsigned key, uint32_t character, uint16_t m
    auto mapped = key_id(key);
    if (keyboard_open() && character == 127) mapped = Rml::Input::KI_BACK;
    if (down) {
+      auto *before = context->GetFocusElement();
       context->ProcessKeyDown(mapped, flags);
+      if ((key == RETROK_LEFT || key == RETROK_RIGHT) && context->GetFocusElement() != before)
+         play_move_sound(key == RETROK_LEFT);
       if (character >= 32 && character != 127 && !(flags & Rml::Input::KM_CTRL))
          context->ProcessTextInput((Rml::Character)character);
    } else context->ProcessKeyUp(mapped, flags);

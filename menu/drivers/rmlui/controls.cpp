@@ -47,14 +47,34 @@ FocusTarget Controls::first() const
    return FocusTarget::item(0);
 }
 
-FocusTarget Controls::step(int direction) const
+namespace {
+/* The element for a stop on the pad screen. The controls of a stick share the
+ * box of their group, and any other control is its callout. */
+std::string stop_id(const rib_controls_catalog& catalog, FocusTarget target)
 {
-   std::vector<FocusTarget> stops;
+   switch (target.kind)
+   {
+      case FocusTarget::Kind::Reset: return document_contract::ControlsReset;
+      case FocusTarget::Kind::Back: return document_contract::ControlsBack;
+      case FocusTarget::Kind::Item: break;
+   }
+   const auto& entry = catalog.entries[target.index];
+   if (entry.group[0])
+      return document_contract::ControlGroupPrefix + std::string(entry.group);
+   return document_contract::ControlPrefix + std::string(entry.id);
+}
+
+/* The focused stop in RmlUi, as a stop of the pad screen, with an item index
+ * of -1 when it is none of them. For a stick, its first member. */
+FocusTarget focused_stop(const rib_controls_catalog& catalog, const std::string& id)
+{
+   if (id == document_contract::ControlsReset) return FocusTarget::reset();
+   if (id == document_contract::ControlsBack) return FocusTarget::back();
    for (int index = 0; index < catalog.count; ++index)
-      if (active(index)) stops.push_back(FocusTarget::item(index));
-   stops.push_back(FocusTarget::reset());
-   stops.push_back(FocusTarget::back());
-   return focus_state.next(FocusRegion::Controls, stops, direction);
+      if (catalog.entries[index].enabled && stop_id(catalog, FocusTarget::item(index)) == id)
+         return FocusTarget::item(index);
+   return FocusTarget::item(-1);
+}
 }
 
 /* At startup we read the author's defaults, then the player's file. When the
@@ -222,7 +242,7 @@ bool Controls::save()
 
 void Controls::refresh()
 {
-   const auto target = focus_state.target(FocusRegion::Controls);
+   const auto target = focused_stop(catalog, focus_state.current_id());
    const int focused = target.kind == FocusTarget::Kind::Item ? target.index : -1;
    int index;
    for (index = 0; index < catalog.count; ++index)
@@ -454,11 +474,9 @@ void Controls::hide_binds()
 
 void Controls::focus(FocusTarget target)
 {
-   if (target == focus_state.target(FocusRegion::Controls)) return;
    if (target.kind == FocusTarget::Kind::Item && !active(target.index)) return;
-   if (target.kind == FocusTarget::Kind::Slots) return;
-   focus_state.set(FocusRegion::Controls, target);
-   refresh();
+   if (focus_state.set(stop_id(catalog, target).c_str()))
+      refresh();
 }
 
 void Controls::update_binds(int x, int y, bool pointer_active, bool hover_active)
@@ -481,6 +499,9 @@ void Controls::update_binds(int x, int y, bool pointer_active, bool hover_active
       current = binds.control;
    else if (hover_active)
    {
+      /* The pointer moved in this frame. A callout under it is already
+       * focused, as any stop is. The picture buttons on the pad are not
+       * stops, so for one of those we focus the control it shows. */
       hovered = this->hovered;
       if (hovered.kind == RIB_RMLUI_ACTION_CONTROL)
       {
@@ -491,15 +512,8 @@ void Controls::update_binds(int x, int y, bool pointer_active, bool hover_active
             current = index;
          }
       }
-      else if (hovered.kind == RIB_RMLUI_ACTION_CONTROLS_RESET
-            || hovered.kind == RIB_RMLUI_ACTION_CONTROLS_BACK)
-      {
-         focus(hovered.kind == RIB_RMLUI_ACTION_CONTROLS_RESET
-               ? FocusTarget::reset() : FocusTarget::back());
-         current = -1;
-      }
    }
-   const auto target = focus_state.target(FocusRegion::Controls);
+   const auto target = focused_stop(catalog, focus_state.current_id());
    const int focused = target.kind == FocusTarget::Kind::Item ? target.index : -1;
    if (current < 0 && focused >= 0
          && focused < catalog.count)
@@ -555,7 +569,6 @@ void Controls::choose_device(const char *chosen)
          RARCH_ERR("[RIB] could not re-read controls from %s after changing "
                "controller; the menu still lists the previous pad.\n",
                defaults_path);
-      focus_state.set(FocusRegion::Controls, FocusTarget::item(0));
       focus(first());
       refresh();
    }

@@ -1,6 +1,10 @@
 #pragma once
 #include "events.h"
 #include "menu_api.h"
+#include "sounds.hpp"
+#include <RmlUi/Core.h>
+#include <map>
+#include <string>
 
 namespace rib {
 class Focus;
@@ -10,8 +14,41 @@ class Slots;
 class Document;
 class Lists;
 class Parts;
-/* The navigation rules for every region of the menu. We return immediate
- * intents to Menu to dispatch, and send clicks to the element listeners. */
+
+/* Move the focus for an arrow with the RmlUi navigation, from the focused
+ * element to the next stop on screen, or not at all at an edge, and play the
+ * move cue for a move. Use this for every arrow, including the physical keys
+ * of the text path. Returns whether the focus moved. */
+inline bool navigate(Rml::Context *context, rib_key key)
+{
+   Rml::Input::KeyIdentifier identifier;
+   switch (key)
+   {
+      case RIB_KEY_UP: identifier = Rml::Input::KI_UP; break;
+      case RIB_KEY_DOWN: identifier = Rml::Input::KI_DOWN; break;
+      case RIB_KEY_LEFT: identifier = Rml::Input::KI_LEFT; break;
+      case RIB_KEY_RIGHT: identifier = Rml::Input::KI_RIGHT; break;
+      default: return false;
+   }
+   if (!context)
+      return false;
+   /* We search by layout boxes, and a panel shown in this frame has none yet. */
+   context->Update();
+   Rml::Element *before = context->GetFocusElement();
+   context->ProcessKeyDown(identifier, 0);
+   context->ProcessKeyUp(identifier, 0);
+   if (context->GetFocusElement() == before)
+      return false;
+   play_move_sound(key == RIB_KEY_UP || key == RIB_KEY_LEFT);
+   return true;
+}
+
+/* Keys, screens and focus. We let RmlUi choose where an arrow goes, and keep
+ * here the rules of our menu. Left and Right move sliders and turn list
+ * pages. The arrows stay inside an open picker or dialog. We start a screen
+ * on its first stop, and on return we focus the element the player left it
+ * from. We return immediate intents to Menu to dispatch, and on OK we click
+ * the focused element, through the same listener as for a pointer. */
 class Navigation
 {
 public:
@@ -20,18 +57,29 @@ public:
       : focus(focus), screens(screens), controls(controls), slots(slots),
         document(document), lists(lists), parts(parts) {}
    Event key(rib_key action);
-   void focus_list(int index);
-   void paint_list();
-   void focus_pause(Event event, bool direction_up);
+   /* We open the menu on Pause, with CONTINUE highlighted. */
+   void open();
+   /* Show a screen and focus it. Showing the screen the player came from is a
+    * return, so we focus the element the player left it from and play the
+    * cancel cue. Otherwise we go forward and play the confirm cue. */
+   bool show(const char *id);
+   /* The screen the player opened the current one from, or Pause. */
+   void back_to_opener();
+   /* Focus the first stop of the current screen, or the remembered element. */
+   void enter();
+   void select_slot(int slot);
+   /* Turn the list with `from` (or the visible one) and focus its first row. */
+   bool turn_page(int delta, Rml::Element *from = nullptr);
+   /* Call after the controller picker opens or closes. */
+   void picker();
+   /* While a dialog is open, the arrows stay in it, and when it closes we put
+    * the focus back where it was. nullptr when no dialog is open. */
+   void hold(Rml::Element *dialog);
 private:
-   Event part_key(rib_key action);
-   Event list_key(rib_key action, int rows);
-   Event controls_key(rib_key action);
-   Event pause_key(rib_key action);
+   Event move(rib_key action);
    Event back();
-   int pause_row(char ids[][64], int capacity);
-   int pause_row_index(const char ids[][64], int count);
-   void focus_pause_row(int index, bool direction_up);
+   Rml::Element *panel() const;
+   Rml::Element *element(const char *id) const;
    Focus& focus;
    Screens& screens;
    Controls& controls;
@@ -39,5 +87,9 @@ private:
    Document& document;
    Lists& lists;
    Parts& parts;
+   /* The screen from which the player opened each screen, for Back. */
+   std::map<std::string, std::string> openers;
+   std::string before_dialog;
+   bool dialog_held = false;
 };
 }

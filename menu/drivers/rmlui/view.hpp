@@ -27,6 +27,10 @@ public:
    void pointer_button(bool down);
    void pointer_leave();
    bool move_pointer_to(const char *id);
+   /* Once a frame, after every pointer move. When the pointer moved onto a
+    * stop, focus it without a sound. When it did not move, the focus stays
+    * where the keys put it. Returns whether it moved. */
+   bool follow_pointer();
    Document document;
    EventQueue intents;
    Event hovered;
@@ -42,6 +46,9 @@ private:
    const rib_controls_catalog *catalog = nullptr;
    bool pointer_down = false;
    int pointer_x = 0, pointer_y = 0;
+   /* Its position at the last follow_pointer, unknown until the first frame. */
+   bool pointer_settled = false;
+   int settled_x = 0, settled_y = 0;
 };
 /* The one retained presentation in the player. We compose it here and bind it
  * in Menu. A document-only test may create a separate View. */

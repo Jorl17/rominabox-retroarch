@@ -24,6 +24,25 @@ private:
    Event action;
    bool check_disabled;
 };
+/* A back button with no declared destination. Choosing it returns to the
+ * screen the player came from. When a design declares it as the button of a
+ * screen with a destination, we use that destination. */
+class ReturnListener : public Rml::EventListener
+{
+public:
+   explicit ReturnListener(EventQueue& events) : events(events) {}
+   void ProcessEvent(Rml::Event& event) override
+   {
+      auto *element = event.GetCurrentElement();
+      if (!element || element->HasAttribute("data-screen-target")
+            || element->HasAttribute("disabled") || element->IsClassSet(document_contract::Disabled))
+         return;
+      events.push(RIB_RMLUI_ACTION_CONTROLS_BACK);
+   }
+   void OnDetach(Rml::Element*) override { delete this; }
+private:
+   EventQueue& events;
+};
 class HoverListener : public Rml::EventListener
 {
 public:
