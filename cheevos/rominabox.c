@@ -57,6 +57,8 @@ typedef struct rib_session {
 
 static rib_session_t rib;
 
+static void rib_cancel_session(bool change_preference);
+
 static void rib_lock(void)
 {
 #ifdef HAVE_THREADS
@@ -390,7 +392,8 @@ void rib_achievements_skip_startup(void)
 {
    if (!rib.snapshot.startup_waiting)
       return;
-   rib_achievements_set_enabled(false);
+   /* Off for this launch only. We keep the player's saved choice of ON. */
+   rib_cancel_session(false);
    rib.snapshot.startup_skipped = true;
    rib.snapshot.revision++;
 }
@@ -633,7 +636,7 @@ bool rib_achievements_retry(void)
    return rib_begin_login(true, NULL);
 }
 
-void rib_achievements_cancel(void)
+static void rib_cancel_session(bool change_preference)
 {
    rc_client_t *client = get_rcheevos_locals()->client;
    bool had_pending_upload;
@@ -650,7 +653,8 @@ void rib_achievements_cancel(void)
       rc_client_logout(client);
    rib.snapshot.status = rib.token[0] ? RIB_ACHIEVEMENTS_OFF :
          RIB_ACHIEVEMENTS_SIGNED_OUT;
-   rib.snapshot.enabled_preference = false;
+   if (change_preference)
+      rib.snapshot.enabled_preference = false;
    rib.snapshot.pending_upload = false;
    if (had_pending_upload)
    {
@@ -660,8 +664,13 @@ void rib_achievements_cancel(void)
             sizeof(rib.snapshot.error));
    }
    rib.snapshot.revision++;
-   if (rib.token[0] && !rib_write_session())
+   if (change_preference && rib.token[0] && !rib_write_session())
       rib_error("Cannot save the achievements setting in game storage.");
+}
+
+void rib_achievements_cancel(void)
+{
+   rib_cancel_session(true);
 }
 
 void rib_achievements_sign_out(void)
