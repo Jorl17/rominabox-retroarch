@@ -8260,17 +8260,17 @@ void input_keyboard_event(bool down, unsigned code,
     * frame, so otherwise we would miss a down and an up between two
     * samples. */
    held_key_note(code, down);
-#ifdef HAVE_RMLUI
-   if (rib_rmlui_text_event(down, code, character, mod))
-      return;
-#endif
    /* Return with Alt is the fullscreen chord. Record it before any return,
-    * and do not also pass that Return to the menu or the core, because Enter
-    * alone is Start. */
+    * also before the one for the menu text entry, and do not also pass that
+    * Return to the menu or the core, because Enter alone is Start. */
    alt_enter_note(code, down, mod);
    if ((code == ALT_ENTER_RETURN || code == ALT_ENTER_KP_RETURN)
          && alt_enter_masks_return())
       return;
+#ifdef HAVE_RMLUI
+   if (rib_rmlui_text_event(down, code, character, mod))
+      return;
+#endif
 
    /* If screensaver is active, then it should be
     * disabled if:

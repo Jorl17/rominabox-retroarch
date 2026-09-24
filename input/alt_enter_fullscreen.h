@@ -16,6 +16,14 @@
 #define ALT_ENTER_KP_RETURN 271u
 #define ALT_ENTER_ALT 0x04u
 
+/* The Return of the chord, down or up. In the menu text entry we use it for
+ * the fullscreen toggle, and do not press the focused button with it. */
+static inline int alt_enter_is_chord(unsigned code, unsigned modifiers)
+{
+   return (code == ALT_ENTER_RETURN || code == ALT_ENTER_KP_RETURN)
+         && (modifiers & ALT_ENTER_ALT);
+}
+
 void alt_enter_reset(void);
 void alt_enter_note(unsigned code, int down, unsigned modifiers);
 int alt_enter_fullscreen_due(void);

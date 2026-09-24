@@ -3,6 +3,7 @@
 #include "elements.hpp"
 #include "host.h"
 #include "sounds.hpp"
+#include "../../../input/alt_enter_fullscreen.h"
 #include <algorithm>
 #include <cstring>
 #include <libretro.h>
@@ -267,6 +268,7 @@ bool Achievements::key(rib_key key)
 bool Achievements::physical(bool down, unsigned key, uint32_t character, uint16_t modifiers)
 {
    if (!modal()) return text.physical(down, key, character, modifiers);
+   if (alt_enter_is_chord(key, modifiers)) return false;
    if (!down) return true;
    switch (key) {
       case RETROK_RETURN: case RETROK_KP_ENTER: this->key(RIB_KEY_OK); break;

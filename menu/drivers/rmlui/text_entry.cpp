@@ -1,6 +1,7 @@
 #include "text_entry.hpp"
 #include "text_host.h"
 #include "elements.hpp"
+#include "../../../input/alt_enter_fullscreen.h"
 #include <libretro.h>
 #include <cstring>
 #include <RmlUi/Core/Input.h>
@@ -143,6 +144,7 @@ bool TextEntry::physical(bool down, unsigned key, uint32_t character, uint16_t m
    if (panel_id.empty() || !document.root()) return false;
    auto *panel = document.root()->GetElementById(panel_id);
    if (!panel || hidden(panel)) return false;
+   if (alt_enter_is_chord(key, modifiers)) return false;
    if (key == RETROK_TAB) return true;
    if (down && !keyboard_open() && (key == RETROK_UP || key == RETROK_DOWN))
       return controller(key == RETROK_UP ? RIB_KEY_UP : RIB_KEY_DOWN);
