@@ -135,6 +135,10 @@ void Achievements::paint_rows()
          case RIB_ACHIEVEMENT_BADGE_FAILED: badge = Lists::Row::Badge::Failed; break;
          default: break;
       }
+      if (item.id == popup_waiting && item.badge == RIB_ACHIEVEMENT_BADGE_READY) {
+         overlays.show_badge(item.badge_path);
+         popup_waiting = 0;
+      }
       rows.push_back({"achievement-" + std::to_string(item.id), item.title, item.description,
             std::to_string(item.points) + " PT / " + state, item.badge_path,
             item.state == RIB_ACHIEVEMENT_UNLOCKED || item.state == RIB_ACHIEVEMENT_PENDING_UPLOAD, badge});
@@ -193,8 +197,12 @@ void Achievements::update()
    text.update();
    if (!overlays.notification_active()) {
       rib_achievement_unlock_t unlocked{};
-      if (rib_achievements_take_unlock(&unlocked))
+      popup_waiting = 0;
+      if (rib_achievements_take_unlock(&unlocked)) {
          overlays.notify({unlocked.title, std::to_string(unlocked.points) + " points", unlocked.badge_path});
+         // Earned just now, so we are still downloading the colour badge.
+         if (!unlocked.badge_path[0]) popup_waiting = unlocked.id;
+      }
    }
 }
 void Achievements::sign_in()

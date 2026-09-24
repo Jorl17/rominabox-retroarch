@@ -1,12 +1,18 @@
 #pragma once
 
+#include <RmlUi/Core/Element.h>
 #include <string>
 
 namespace rib {
 class Document;
 
-/* The status lines of the menu. In Slots we explain a refused action only on
- * an empty main line, and we clear a line when its message expires. */
+/* Set the text of a status line. When `text` is empty, put back the text
+ * the line had in the design, which we save in its data-prompt attribute
+ * the first time. */
+void paint_status_line(Rml::Element *line, const std::string& text);
+
+/* The main status line and the lines on the CONTROLS and HOTKEYS screens. We
+ * show a message for five seconds, then put back the text from the design. */
 class Status
 {
 public:

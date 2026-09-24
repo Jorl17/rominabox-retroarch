@@ -109,18 +109,8 @@ void Slots::paint() const
             button->RemoveAttribute("disabled");
       }
 
-   if (auto *line = document.root()->GetElementById(document_contract::Status))
-   {
-      /* When there is nothing to report, we show the text the line had in the
-       * design, which we keep from the document as loaded. */
-      if (!line->HasAttribute("data-prompt"))
-         line->SetAttribute("data-prompt", line->GetInnerRML());
-      const std::string& shown = status.main_text().empty()
-            ? guard_reason : status.main_text();
-      line->SetInnerRML(shown.empty()
-            ? line->GetAttribute<Rml::String>("data-prompt", "")
-            : Rml::StringUtilities::EncodeRml(shown));
-   }
+   paint_status_line(document.root()->GetElementById(document_contract::Status),
+         status.main_text().empty() ? guard_reason : status.main_text());
 }
 
 void Slots::set_selected_slot(int slot)

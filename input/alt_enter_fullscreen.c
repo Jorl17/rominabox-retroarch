@@ -2,7 +2,9 @@
 
 static int return_down;
 static int alt_held;
-static int latched;
+/* A chord press not yet sampled in the runloop. We keep it after the key-up,
+ * so a press with both down and up between two samples still counts. */
+static int press_pending;
 
 static int is_return(unsigned code)
 {
@@ -13,7 +15,7 @@ void alt_enter_reset(void)
 {
    return_down = 0;
    alt_held = 0;
-   latched = 0;
+   press_pending = 0;
 }
 
 void alt_enter_note(unsigned code, int down, unsigned modifiers)
@@ -24,9 +26,11 @@ void alt_enter_note(unsigned code, int down, unsigned modifiers)
    {
       return_down = 0;
       alt_held = 0;
-      latched = 0;
       return;
    }
+   /* A repeat while the chord is held is not another press. */
+   if ((modifiers & ALT_ENTER_ALT) && !(return_down && alt_held))
+      press_pending = 1;
    /* The modifier is in the Return event. On macOS it is not in the event
     * of the Alt key, where flagsChanged contains the AppKit bitfield. */
    return_down = 1;
@@ -35,9 +39,9 @@ void alt_enter_note(unsigned code, int down, unsigned modifiers)
 
 int alt_enter_fullscreen_due(void)
 {
-   if (!(return_down && alt_held) || latched)
+   if (!press_pending)
       return 0;
-   latched = 1;
+   press_pending = 0;
    return 1;
 }
 

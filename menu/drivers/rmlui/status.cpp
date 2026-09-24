@@ -5,13 +5,22 @@
 #include <RmlUi/Core/StringUtilities.h>
 
 namespace rib {
+void paint_status_line(Rml::Element *line, const std::string& text)
+{
+   if (!line) return;
+   if (!line->HasAttribute("data-prompt"))
+      line->SetAttribute("data-prompt", line->GetInnerRML());
+   line->SetInnerRML(text.empty()
+         ? line->GetAttribute<Rml::String>("data-prompt", "")
+         : Rml::StringUtilities::EncodeRml(text));
+}
+
 void Status::show(Message& message, const char *id, const char *text)
 {
    message.text = text ? text : "";
    message.expires = document.elapsed() + 5.0;
    if (document.root())
-      if (auto *element = document.root()->GetElementById(id))
-         element->SetInnerRML(Rml::StringUtilities::EncodeRml(message.text));
+      paint_status_line(document.root()->GetElementById(id), message.text);
 }
 
 void Status::expire(Message& message, const char *id)

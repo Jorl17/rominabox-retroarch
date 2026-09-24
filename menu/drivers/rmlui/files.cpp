@@ -6,25 +6,40 @@
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#if defined(_WIN32)
+#include <windows.h>
+#include <encodings/utf.h>
+#endif
 
 namespace
 {
 #if defined(_WIN32)
-constexpr bool platform_rename_replaces = false;
+/* On Windows, rename fails when the destination exists. MoveFileEx replaces it
+ * in one step, so after a failed move the old file is still there. */
+int platform_replace(const char *from, const char *to)
+{
+   wchar_t *wide_from = utf8_to_utf16_string_alloc(from);
+   wchar_t *wide_to = utf8_to_utf16_string_alloc(to);
+   const bool moved = wide_from && wide_to && MoveFileExW(wide_from, wide_to,
+         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+   free(wide_from);
+   free(wide_to);
+   return moved ? 0 : -1;
+}
 #else
-constexpr bool platform_rename_replaces = true;
+int platform_replace(const char *from, const char *to)
+{
+   return filestream_rename(from, to);
+}
 #endif
-rib_rename_step rename_step = filestream_rename;
-bool rename_replaces_existing = platform_rename_replaces;
+rib_rename_step rename_step = platform_replace;
 
 /* One policy for every menu file: move the finished temporary file onto the
- * destination, removing the old file first where rename will not replace it,
- * and never leave the temporary file behind. */
+ * destination, and never leave the temporary file behind. */
 bool replace_file(const char *temporary, const char *path)
 {
-   if (!rename_replaces_existing && filestream_exists(path))
-      filestream_delete(path);
    if (rename_step(temporary, path) == 0)
       return true;
    filestream_delete(temporary);
@@ -40,10 +55,9 @@ bool temporary_path(char (&temporary)[PATH_MAX_LENGTH], const char *path)
 }
 }
 
-void rib_files_use_rename(rib_rename_step step, bool replaces_existing)
+void rib_files_use_rename(rib_rename_step step)
 {
-   rename_step = step ? step : filestream_rename;
-   rename_replaces_existing = step ? replaces_existing : platform_rename_replaces;
+   rename_step = step ? step : platform_replace;
 }
 
 bool rib_write_menu_config(config_file_t *config, const char *path)

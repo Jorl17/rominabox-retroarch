@@ -26,6 +26,8 @@ public:
    void update(bool script_pending);
    struct Notification { std::string title, detail, badge; };
    void notify(const Notification& notification);
+   /* The badge of the notification on screen, once its picture exists. */
+   void show_badge(const std::string& badge);
    void clear_notification();
    bool notification_active() const { return notification_until != 0; }
    bool drawing() const { return running || notification_active(); }

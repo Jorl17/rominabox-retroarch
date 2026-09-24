@@ -8,6 +8,7 @@
 #include <retro_miscellaneous.h>
 #include <string/stdstring.h>
 #include <cstdio>
+#include <string>
 
 namespace rib {
 void Discs::configure(const rib_design_data& design)
@@ -80,14 +81,15 @@ void Discs::sync()
       document.set_shown(row, true);
       lists.fit_row_title(row, label);
    }
-   if (rows > 0)
-      lists.retarget_pages(rows_id);
-   if (count > 0 && current < (unsigned)rows)
    {
-      const char *row = lists.row_in(rows_id, (int)current);
+      /* The page shown is the one with the disc in the drive. */
+      const std::string current_row = count > 0 && current < (unsigned)rows
+            ? lists.row_in(rows_id, (int)current) : "";
 
-      if (row)
-         lists.select_row(rows_id, row, mark, "");
+      if (rows > 0)
+         lists.retarget_pages(rows_id, current_row.empty() ? nullptr : current_row.c_str());
+      if (!current_row.empty())
+         lists.select_row(rows_id, current_row.c_str(), mark, "");
    }
    {
       char status_id[40];
