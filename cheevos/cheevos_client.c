@@ -501,6 +501,7 @@ static void rcheevos_client_download_task_callback(retro_task_t* task,
 {
    rc_client_download_task_data_t* callback_data = (rc_client_download_task_data_t*)user_data;
    http_transfer_data_t* http_data = (http_transfer_data_t*)task_data;
+   bool downloaded = false;
 
    if (!http_data)
    {
@@ -519,9 +520,14 @@ static void rcheevos_client_download_task_callback(retro_task_t* task,
 #ifdef HAVE_MENU
       rcheevos_menu_update_badge_references(callback_data->badge_name);
 #endif
+      downloaded = true;
       if (rib_achievements_managed())
          rib_achievements_badge_downloaded();
    }
+
+   /* Otherwise we would wait for a picture that never arrives. */
+   if (!downloaded && rib_achievements_managed())
+      rib_achievements_badge_failed(callback_data->badge_name);
 
    if (callback_data->queue)
    {
@@ -613,9 +619,15 @@ bool rcheevos_client_download_badge(rc_client_download_queue_t* queue,
    strlcpy(taskdata->badge_fullpath, badge_fullpath, sizeof(taskdata->badge_fullpath));
    strlcpy(taskdata->badge_name, badge_name, sizeof(taskdata->badge_name));
 
-   task_push_http_transfer_with_user_agent(url,
+   /* We get no callback for a request we could not queue, so report the
+    * failure here, or the caller would wait forever. */
+   if (!task_push_http_transfer_with_user_agent(url,
       true, "GET", rcheevos_locals->user_agent_core,
-      rcheevos_client_download_task_callback, taskdata);
+      rcheevos_client_download_task_callback, taskdata))
+   {
+      free(taskdata);
+      return false;
+   }
 
    return true;
 }

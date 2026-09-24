@@ -297,13 +297,16 @@ static void catalog_mark_failures(rc_client_t *client,
    catalog_free_failures(failures);
 }
 
+/* Each time we show the list, we request again every badge not on disk,
+ * failed ones and ones still waiting for a reply that may never come. */
 void rib_catalog_list_shown(bool shown, rib_achievements_snapshot_t *snapshot)
 {
    size_t index;
    bool retry = shown && !catalog.list_shown;
    catalog.list_shown = shown;
    for (index = 0; retry && index < catalog.count; ++index)
-      if (catalog.rows[index].badge == RIB_ACHIEVEMENT_BADGE_FAILED)
+      if (catalog.rows[index].badge == RIB_ACHIEVEMENT_BADGE_FAILED ||
+          catalog.rows[index].badge == RIB_ACHIEVEMENT_BADGE_LOADING)
       {
          catalog.rows[index].badge = RIB_ACHIEVEMENT_BADGE_NONE;
          snapshot->revision++;
