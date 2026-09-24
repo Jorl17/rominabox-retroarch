@@ -539,7 +539,16 @@ void rib_menu_frame(void *data, int width, int height)
 
       menu->view.pointer_move(pointer.x, pointer.y);
       menu->script.restore_hover();
-      menu->view.pointer_button(pointer_pressed);
+      {
+         /* While we capture a binding, a press moves nothing. In RmlUi a press
+          * focuses what is under it, so we give the focus back to the
+          * control being bound. The press can still reach CANCEL. */
+         const std::string kept = menu->controls.capture_active
+               ? menu->focus.current_id() : std::string();
+         menu->view.pointer_button(pointer_pressed);
+         if (!kept.empty())
+            menu->focus.set(kept.c_str());
+      }
 
       if (menu->controls.capture_active && pointer_pressed && !menu->pointer_pressed &&
             (menu->view.hovered.kind == RIB_RMLUI_ACTION_CONTROLS_CANCEL ||
