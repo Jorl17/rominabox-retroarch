@@ -40,6 +40,7 @@ typedef struct rib_achievements_snapshot {
    size_t count;
    bool enabled_preference;
    bool pending_upload;
+   bool upload_failed;
    bool startup_waiting;
    bool startup_skipped;
    char account[RIB_ACHIEVEMENTS_ACCOUNT_SIZE];

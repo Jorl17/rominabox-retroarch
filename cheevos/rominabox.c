@@ -2,6 +2,7 @@
  * HTTP transport, game hashing and core memory map of RetroArch/rcheevos. */
 #include "rominabox.h"
 #include "rominabox_internal.h"
+#include "rominabox_storage.h"
 #include "cheevos.h"
 #include "cheevos_client.h"
 #include "cheevos_locals.h"
@@ -9,18 +10,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
-
-#ifndef _WIN32
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#else
-#include <io.h>
-#include <fcntl.h>
-#include <share.h>
-#include <sys/stat.h>
-#endif
 
 #include <compat/strl.h>
 #include <file/file_path.h>
@@ -37,6 +26,12 @@ typedef enum rib_completion_kind {
    RIB_COMPLETION_LOGIN,
    RIB_COMPLETION_LOAD
 } rib_completion_kind_t;
+
+typedef enum rib_upload_event {
+   RIB_UPLOAD_EVENT_NONE,
+   RIB_UPLOAD_EVENT_DISCONNECTED,
+   RIB_UPLOAD_EVENT_RECONNECTED
+} rib_upload_event_t;
 
 typedef struct rib_completion {
    rib_completion_kind_t kind;
@@ -56,8 +51,13 @@ typedef struct rib_session {
    unsigned generation;
    bool content_present;
    bool rows_dirty;
+   bool badge_dirty;
    bool unlock_changed;
-   int pending_upload_event; /* 0 none, 1 disconnected, 2 reconnected */
+   rib_upload_event_t pending_upload_event;
+   unsigned inflight_awards;
+   bool retry_pending;
+   bool upload_error_changed;
+   char upload_error[RIB_ACHIEVEMENTS_ERROR_SIZE];
    rib_completion_t completion;
    rib_unlock_node_t *unlock_head;
    rib_unlock_node_t *unlock_tail;
@@ -92,8 +92,7 @@ static void rib_copy(char *dest, const char *src, size_t capacity)
 static bool rib_included(void)
 {
    const char *flag = getenv("ROMINABOX_ACHIEVEMENTS");
-   return flag && strcmp(flag, "1") == 0 &&
-          getenv("ROMINABOX_DATA_DIR") && *getenv("ROMINABOX_DATA_DIR");
+   return flag && strcmp(flag, "1") == 0;
 }
 
 bool rib_achievements_managed(void)
@@ -101,24 +100,9 @@ bool rib_achievements_managed(void)
    return getenv("ROMINABOX_ACHIEVEMENTS") != NULL;
 }
 
-static bool rib_session_path(char path[PATH_MAX_LENGTH])
-{
-   const char *data_dir = getenv("ROMINABOX_DATA_DIR");
-   int length;
-   if (!data_dir || !*data_dir || !path_is_directory(data_dir))
-      return false;
-   length = snprintf(path, PATH_MAX_LENGTH, "%s/achievements.session", data_dir);
-   return length > 0 && length < PATH_MAX_LENGTH;
-}
-
 bool rib_achievements_badge_directory(char *path, size_t capacity)
 {
-   const char *data_dir = getenv("ROMINABOX_DATA_DIR");
-   int length;
-   if (!rib_included() || !data_dir)
-      return false;
-   length = snprintf(path, capacity, "%s/achievements-badges", data_dir);
-   return length > 0 && (size_t)length < capacity;
+   return rib_included() && rib_storage_badge_directory(path, capacity);
 }
 
 static void rib_clear_unlocks(void)
@@ -155,121 +139,36 @@ static void rib_error(const char *message)
 
 static void rib_read_session(void)
 {
-   char path[PATH_MAX_LENGTH];
-   char enabled[8];
-   FILE *file;
-   size_t size;
-
-   if (!rib_session_path(path))
+   rib_stored_session_t stored;
+   if (!rib_storage_read(&stored))
       return;
-   file = fopen(path, "rb");
-   if (!file)
-      return;
-
-   if (!fgets(rib.username, sizeof(rib.username), file) ||
-       !fgets(rib.token, sizeof(rib.token), file) ||
-       !fgets(enabled, sizeof(enabled), file))
-      goto invalid;
-
-   size = strlen(rib.username);
-   if (!size || rib.username[size - 1] != '\n')
-      goto invalid;
-   rib.username[size - 1] = '\0';
-
-   size = strlen(rib.token);
-   if (!size || rib.token[size - 1] != '\n')
-      goto invalid;
-   rib.token[size - 1] = '\0';
-
-   if (!rib.username[0] || !rib.token[0] ||
-       (strcmp(enabled, "0\n") != 0 && strcmp(enabled, "1\n") != 0))
-      goto invalid;
-
-   rib.snapshot.enabled_preference = enabled[0] == '1';
+   rib_copy(rib.username, stored.username, sizeof(rib.username));
+   rib_copy(rib.token, stored.token, sizeof(rib.token));
+   rib.snapshot.enabled_preference = stored.enabled;
    rib_copy(rib.snapshot.account, rib.username, sizeof(rib.snapshot.account));
-   fclose(file);
-   return;
-
-invalid:
-   rib.username[0] = rib.token[0] = '\0';
-   fclose(file);
 }
 
 static bool rib_write_session(void)
 {
-   char path[PATH_MAX_LENGTH];
-   FILE *file;
-   int descriptor;
-   int length;
-#ifndef _WIN32
-   char temp[PATH_MAX_LENGTH];
-#endif
-
-   if (!rib_session_path(path))
-      return false;
+   rib_stored_session_t stored = {{0}};
    if (!rib.token[0])
-      return remove(path) == 0 || errno == ENOENT;
-
-#ifdef _WIN32
-   /* The per-game directory has a Windows ACL for this user only. */
-   if (_sopen_s(&descriptor, path, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY,
-         _SH_DENYRW, _S_IREAD | _S_IWRITE) != 0)
-      return false;
-   file = _fdopen(descriptor, "wb");
-#else
-   length = snprintf(temp, sizeof(temp), "%s.tmp.XXXXXX", path);
-   if (length < 0 || (size_t)length >= sizeof(temp))
-      return false;
-   descriptor = mkstemp(temp);
-   if (descriptor < 0)
-      return false;
-   fchmod(descriptor, 0600);
-   file = fdopen(descriptor, "wb");
-#endif
-   if (!file)
-   {
-#ifdef _WIN32
-      _close(descriptor);
-#else
-      close(descriptor);
-      unlink(temp);
-#endif
-      return false;
-   }
-
-   length = fprintf(file, "%s\n%s\n%d\n", rib.username, rib.token,
-         rib.snapshot.enabled_preference ? 1 : 0);
-   if (fclose(file) != 0 || length < 0)
-   {
-#ifndef _WIN32
-      unlink(temp);
-#endif
-      return false;
-   }
-
-#ifdef _WIN32
-   return true;
-#else
-   if (rename(temp, path) == 0)
-      return true;
-   unlink(temp);
-   return false;
-#endif
+      return rib_storage_remove();
+   rib_copy(stored.username, rib.username, sizeof(stored.username));
+   rib_copy(stored.token, rib.token, sizeof(stored.token));
+   stored.enabled = rib.snapshot.enabled_preference;
+   return rib_storage_write(&stored);
 }
 
 static void rib_badge_path(char path[RIB_ACHIEVEMENTS_BADGE_PATH_SIZE],
       const rc_client_achievement_t *achievement)
 {
    char directory[PATH_MAX_LENGTH];
-   const char *p;
    int length;
    path[0] = '\0';
-   if (!achievement || !rib_achievements_badge_directory(directory, sizeof(directory)))
+   if (!achievement ||
+       !rib_storage_badge_name_valid(achievement->badge_name) ||
+       !rib_achievements_badge_directory(directory, sizeof(directory)))
       return;
-   for (p = achievement->badge_name; *p; ++p)
-      if (!((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'z') ||
-            (*p >= 'A' && *p <= 'Z') || *p == '_' || *p == '-'))
-         return;
    length = snprintf(path, RIB_ACHIEVEMENTS_BADGE_PATH_SIZE,
          "%s/%s%s.png", directory, achievement->badge_name,
          (achievement->unlocked & RC_CLIENT_ACHIEVEMENT_UNLOCKED_SOFTCORE) ?
@@ -352,6 +251,59 @@ static void rib_refresh_rows(void)
    rib.snapshot.revision++;
 }
 
+static void rib_refresh_badge_paths(void)
+{
+   rc_client_t *client = get_rcheevos_locals()->client;
+   size_t index;
+   if (!client || !rc_client_is_game_loaded(client))
+      return;
+   for (index = 0; index < rib.snapshot.count; ++index)
+   {
+      const rc_client_achievement_t *achievement;
+      char path[RIB_ACHIEVEMENTS_BADGE_PATH_SIZE];
+      if (rib.rows[index].badge_path[0])
+         continue;
+      achievement = rc_client_get_achievement_info(client, rib.rows[index].id);
+      rib_badge_path(path, achievement);
+      if (path[0])
+      {
+         rib_copy(rib.rows[index].badge_path, path,
+               sizeof(rib.rows[index].badge_path));
+         rib.snapshot.revision++;
+      }
+   }
+}
+
+/* An HTTP task can complete off the main thread. We change the copied rows
+ * and publish a new revision only in the next pump on the main thread. */
+void rib_achievements_badge_downloaded(void)
+{
+   rib_lock();
+   rib.badge_dirty = true;
+   rib_unlock();
+}
+
+unsigned rib_achievements_award_request_started(void)
+{
+   unsigned generation = 0;
+   rib_lock();
+   if (rib.content_present)
+   {
+      generation = rib.generation;
+      ++rib.inflight_awards;
+   }
+   rib_unlock();
+   return generation;
+}
+
+void rib_achievements_award_request_finished(unsigned generation)
+{
+   rib_lock();
+   if (generation == rib.generation && rib.inflight_awards)
+      --rib.inflight_awards;
+   rib_unlock();
+}
+
 static void rib_queue_completion(rib_completion_kind_t kind, int result,
       const char *error, void *userdata)
 {
@@ -429,8 +381,12 @@ void rib_achievements_pump(void)
    const rc_client_user_t *user;
    struct retro_game_info info;
    unsigned generation;
-   int pending_upload_event;
+   rib_upload_event_t pending_upload_event;
+   unsigned inflight_awards;
    bool unlock_changed;
+   bool badge_dirty;
+   bool upload_error_changed;
+   char upload_error[RIB_ACHIEVEMENTS_ERROR_SIZE];
 
    if (!rib_achievements_managed())
       return;
@@ -439,14 +395,31 @@ void rib_achievements_pump(void)
    rib.completion.kind = RIB_COMPLETION_NONE;
    generation = rib.generation;
    pending_upload_event = rib.pending_upload_event;
-   rib.pending_upload_event = 0;
+   rib.pending_upload_event = RIB_UPLOAD_EVENT_NONE;
+   inflight_awards = rib.inflight_awards;
    unlock_changed = rib.unlock_changed;
    rib.unlock_changed = false;
+   badge_dirty = rib.badge_dirty;
+   rib.badge_dirty = false;
+   upload_error_changed = rib.upload_error_changed;
+   rib.upload_error_changed = false;
+   rib_copy(upload_error, rib.upload_error, sizeof(upload_error));
    rib_unlock();
 
-   if (pending_upload_event)
+   if (pending_upload_event == RIB_UPLOAD_EVENT_DISCONNECTED)
+      rib.retry_pending = true;
+   else if (pending_upload_event == RIB_UPLOAD_EVENT_RECONNECTED)
+      rib.retry_pending = false;
+   if (rib.snapshot.pending_upload !=
+       (rib.retry_pending || inflight_awards > 0))
    {
-      rib.snapshot.pending_upload = pending_upload_event == 1;
+      rib.snapshot.pending_upload = rib.retry_pending || inflight_awards > 0;
+      rib.snapshot.revision++;
+   }
+   if (upload_error_changed)
+   {
+      rib.snapshot.upload_failed = true;
+      rib_copy(rib.snapshot.error, upload_error, sizeof(rib.snapshot.error));
       rib.snapshot.revision++;
    }
    if (unlock_changed)
@@ -466,7 +439,8 @@ void rib_achievements_pump(void)
             rib.snapshot.status = RIB_ACHIEVEMENTS_SIGNED_OUT;
             rib_copy(rib.snapshot.error, "Sign in again to enable achievements.",
                   sizeof(rib.snapshot.error));
-            rib_write_session();
+            if (!rib_write_session())
+               rib_error("Cannot remove the expired achievements session from game storage.");
          }
          else
             rib_error(completion.error[0] ? completion.error : "Sign in failed.");
@@ -542,6 +516,8 @@ void rib_achievements_pump(void)
    }
    else
       rib_unlock();
+   if (badge_dirty)
+      rib_refresh_badge_paths();
 }
 
 bool rib_achievements_evaluating(void)
@@ -626,14 +602,28 @@ void rib_achievements_event(const rc_client_event_t *event)
    else if (event->type == RC_CLIENT_EVENT_DISCONNECTED)
    {
       rib_lock();
-      rib.pending_upload_event = 1;
+      rib.pending_upload_event = RIB_UPLOAD_EVENT_DISCONNECTED;
       rib.rows_dirty = true;
       rib_unlock();
    }
    else if (event->type == RC_CLIENT_EVENT_RECONNECTED)
    {
       rib_lock();
-      rib.pending_upload_event = 2;
+      rib.pending_upload_event = RIB_UPLOAD_EVENT_RECONNECTED;
+      rib.rows_dirty = true;
+      rib_unlock();
+   }
+   else if (event->type == RC_CLIENT_EVENT_SERVER_ERROR &&
+            event->server_error && event->server_error->api &&
+            strcmp(event->server_error->api, "award_achievement") == 0)
+   {
+      rib_lock();
+      rib_copy(rib.upload_error,
+            event->server_error->error_message ?
+            event->server_error->error_message :
+            "An achievement upload was rejected by RetroAchievements.",
+            sizeof(rib.upload_error));
+      rib.upload_error_changed = true;
       rib.rows_dirty = true;
       rib_unlock();
    }
@@ -652,6 +642,11 @@ bool rib_achievements_content_load(const struct retro_game_info *info)
    }
    if (!rib_included())
       return false;
+   if (!rib_storage_available())
+   {
+      rib_error("The game storage path must be an existing absolute directory.");
+      return false;
+   }
 
 #ifdef HAVE_THREADS
    if (!rib.lock)
@@ -696,7 +691,12 @@ void rib_achievements_content_unload(void)
    ++rib.generation;
    rib.completion.kind = RIB_COMPLETION_NONE;
    rib.content_present = false;
-   rib.pending_upload_event = 0;
+   rib.pending_upload_event = RIB_UPLOAD_EVENT_NONE;
+   rib.inflight_awards = 0;
+   rib.retry_pending = false;
+   rib.upload_error_changed = false;
+   rib.upload_error[0] = '\0';
+   rib.badge_dirty = false;
    rib.unlock_changed = false;
    rib_unlock();
    if (client)
@@ -708,6 +708,7 @@ void rib_achievements_content_unload(void)
    rib.content_size = 0;
    rib.content_path[0] = '\0';
    rib.snapshot.pending_upload = false;
+   rib.snapshot.upload_failed = false;
    rib.snapshot.game_title[0] = '\0';
    rib.snapshot.startup_waiting = false;
    rib.snapshot.startup_skipped = false;
@@ -735,27 +736,25 @@ bool rib_achievements_get_row(size_t index, rib_achievement_row_t *out)
    {
       const rc_client_achievement_t *achievement = rc_client_get_achievement_info(
             get_rcheevos_locals()->client, out->id);
-      if (achievement && !rib.badge_requested[index])
+      if (achievement && !rib.badge_requested[index] &&
+          rib_storage_badge_name_valid(achievement->badge_name))
       {
          const bool unlocked = out->state == RIB_ACHIEVEMENT_UNLOCKED ||
                out->state == RIB_ACHIEVEMENT_PENDING_UPLOAD;
          char badge_name[32];
+         int length;
          if (unlocked)
-            rib_copy(badge_name, achievement->badge_name, sizeof(badge_name));
-         else
-            snprintf(badge_name, sizeof(badge_name), "%s_lock",
+            length = snprintf(badge_name, sizeof(badge_name), "%s",
                   achievement->badge_name);
-         rcheevos_client_download_badge_from_url(unlocked ?
-               achievement->badge_url : achievement->badge_locked_url,
-               badge_name);
-         rib.badge_requested[index] = true;
-      }
-      rib_badge_path(out->badge_path, achievement);
-      if (out->badge_path[0])
-      {
-         rib_copy(rib.rows[index].badge_path, out->badge_path,
-               sizeof(rib.rows[index].badge_path));
-         rib.snapshot.revision++;
+         else
+            length = snprintf(badge_name, sizeof(badge_name), "%s_lock",
+                  achievement->badge_name);
+         if (length > 0 && length < sizeof(badge_name) &&
+             rib_storage_badge_name_valid(badge_name) &&
+             rcheevos_client_download_badge_from_url(unlocked ?
+                   achievement->badge_url : achievement->badge_locked_url,
+                   badge_name))
+            rib.badge_requested[index] = true;
       }
    }
    return true;
@@ -844,6 +843,9 @@ bool rib_achievements_set_enabled(bool enabled)
    if (client && rc_client_get_user_info(client) &&
        rc_client_is_game_loaded(client))
    {
+      /* We evaluated no frames while OFF, so discard partial hit counts from
+       * before then. Earned and unsent awards stay after rc_client_reset. */
+      rc_client_reset(client);
       rib.snapshot.status = RIB_ACHIEVEMENTS_ACTIVE;
       rib.snapshot.revision++;
       if (!rib_write_session())
@@ -868,9 +870,14 @@ bool rib_achievements_retry(void)
 void rib_achievements_cancel(void)
 {
    rc_client_t *client = get_rcheevos_locals()->client;
+   bool had_pending_upload;
    rib_lock();
+   had_pending_upload = rib.inflight_awards > 0 || rib.retry_pending;
    ++rib.generation;
    rib.completion.kind = RIB_COMPLETION_NONE;
+   rib.inflight_awards = 0;
+   rib.retry_pending = false;
+   rib.pending_upload_event = RIB_UPLOAD_EVENT_NONE;
    rib_unlock();
    if (client && (rib.snapshot.status == RIB_ACHIEVEMENTS_SIGNING_IN ||
                   rib.snapshot.status == RIB_ACHIEVEMENTS_LOADING))
@@ -878,15 +885,22 @@ void rib_achievements_cancel(void)
    rib.snapshot.status = rib.token[0] ? RIB_ACHIEVEMENTS_OFF :
          RIB_ACHIEVEMENTS_SIGNED_OUT;
    rib.snapshot.enabled_preference = false;
+   rib.snapshot.pending_upload = false;
+   if (had_pending_upload)
+   {
+      rib.snapshot.upload_failed = true;
+      rib_copy(rib.snapshot.error,
+            "An achievement upload was not confirmed before signing out.",
+            sizeof(rib.snapshot.error));
+   }
    rib.snapshot.revision++;
-   if (rib.token[0])
-      rib_write_session();
+   if (rib.token[0] && !rib_write_session())
+      rib_error("Cannot save the achievements setting in game storage.");
 }
 
 void rib_achievements_sign_out(void)
 {
    rc_client_t *client = get_rcheevos_locals()->client;
-   char path[PATH_MAX_LENGTH];
    rib_achievements_cancel();
    if (client)
       rc_client_logout(client);
@@ -897,7 +911,6 @@ void rib_achievements_sign_out(void)
    rib.snapshot.pending_upload = false;
    rib.snapshot.status = RIB_ACHIEVEMENTS_SIGNED_OUT;
    rib.snapshot.revision++;
-   if (!rib_session_path(path) ||
-       (remove(path) != 0 && errno != ENOENT))
+   if (!rib_storage_remove())
       rib_error("Cannot remove the achievements session from game storage.");
 }

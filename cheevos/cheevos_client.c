@@ -17,6 +17,7 @@
 
 #include "cheevos.h"
 #include "rominabox_internal.h"
+#include "rominabox_storage.h"
 
 #include <features/features_cpu.h>
 #include <file/file_path.h>
@@ -242,6 +243,7 @@ typedef struct rc_client_http_task_data_t
 {
    rc_client_server_callback_t callback;
    void* callback_data;
+   unsigned managed_award_generation;
 } rc_client_http_task_data_t;
 
 static void rcheevos_client_http_task_callback(retro_task_t* task,
@@ -271,6 +273,9 @@ static void rcheevos_client_http_task_callback(retro_task_t* task,
       callback_data->callback(&server_response, callback_data->callback_data);
    }
 
+   if (callback_data->managed_award_generation)
+      rib_achievements_award_request_finished(
+            callback_data->managed_award_generation);
    free(callback_data);
 }
 
@@ -371,10 +376,18 @@ void rcheevos_client_server_call(const rc_api_request_t* request,
 
    taskdata->callback      = callback;
    taskdata->callback_data = callback_data;
+   taskdata->managed_award_generation = 0;
 
    if (request->post_data)
    {
+      static const char award_api[] = "r=awardachievement";
       rcheevos_log_post_url(request->url, request->post_data);
+      if (rib_achievements_managed() &&
+          strncmp(request->post_data, award_api, sizeof(award_api) - 1) == 0 &&
+          (request->post_data[sizeof(award_api) - 1] == '&' ||
+           request->post_data[sizeof(award_api) - 1] == '\0'))
+         taskdata->managed_award_generation =
+               rib_achievements_award_request_started();
 
 #ifdef CHEEVOS_JSON_OVERRIDE
       if (strstr(request->post_data, "r=patch") || strstr(request->post_data, "r=achievementsets"))
@@ -460,12 +473,14 @@ static void rcheevos_client_download_task_callback(retro_task_t* task,
    {
       CHEEVOS_LOG(RCHEEVOS_TAG "Error writing %s\n", callback_data->badge_fullpath);
    }
-#ifdef HAVE_MENU
    else
    {
+#ifdef HAVE_MENU
       rcheevos_menu_update_badge_references(callback_data->badge_name);
-   }
 #endif
+      if (rib_achievements_managed())
+         rib_achievements_badge_downloaded();
+   }
 
    if (callback_data->queue)
    {
@@ -492,6 +507,12 @@ bool rcheevos_client_download_badge(rc_client_download_queue_t* queue,
    char badge_fullpath[512] = "";
    rcheevos_locals_t* rcheevos_locals = get_rcheevos_locals();
 
+   if (!rib_storage_badge_name_valid(badge_name))
+   {
+      CHEEVOS_LOG(RCHEEVOS_TAG "Rejecting badge with unsafe name.\n");
+      return false;
+   }
+
    /* make sure the directory exists */
    if (rib_achievements_managed())
    {
@@ -513,38 +534,6 @@ bool rcheevos_client_download_badge(rc_client_download_queue_t* queue,
    fill_pathname_slash(badge_fullpath, sizeof(badge_fullpath));
    badge_fullname      = badge_fullpath + strlen(badge_fullpath);
    badge_fullname_size = sizeof(badge_fullpath) - (badge_fullname - badge_fullpath);
-
-   /* badge_name is supplied by the achievement server (or, on a
-    * compromised TLS path, an attacker-controlled MITM).
-    * fill_pathname_slash ensures we are anchored under the
-    * badges directory, but if badge_name contains '..', '/', '\\'
-    * or other path-component separators the resulting filesystem
-    * write escapes that directory.  Validate that badge_name is
-    * a single safe filename component (alphanumerics plus '_' and
-    * '-' suffixed by '_lock' on the lock variant); the underscore
-    * is enough because real badge names from the server are
-    * numeric IDs ("12345") or numeric IDs with a "_lock" suffix.
-    * Reject anything else rather than synthesising a sanitised
-    * version, since a bogus badge name from the server is itself
-    * a signal that something is wrong. */
-   {
-      const char *p;
-      bool        ok = (badge_name && *badge_name);
-      for (p = badge_name; ok && *p; p++)
-      {
-         char c = *p;
-         if (!(   (c >= '0' && c <= '9')
-               || (c >= 'a' && c <= 'z')
-               || (c >= 'A' && c <= 'Z')
-               || c == '_' || c == '-'))
-            ok = false;
-      }
-      if (!ok)
-      {
-         CHEEVOS_LOG(RCHEEVOS_TAG "Rejecting badge with unsafe name.\n");
-         return false;
-      }
-   }
 
    if (snprintf(badge_fullname, badge_fullname_size,
             "%s" FILE_PATH_PNG_EXTENSION, badge_name) >= badge_fullname_size)

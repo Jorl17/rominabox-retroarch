@@ -17,6 +17,9 @@ bool rib_achievements_startup_gate_active(void);
 void rib_achievements_finish_startup_gate(void);
 void rib_achievements_event(const rc_client_event_t *event);
 bool rib_achievements_badge_directory(char *path, size_t capacity);
+void rib_achievements_badge_downloaded(void);
+unsigned rib_achievements_award_request_started(void);
+void rib_achievements_award_request_finished(unsigned generation);
 
 /* A private adapter. We manage the rc_client, the hashing setup and the core
  * memory mapping only in cheevos.c. Never include this file from RmlUi. */
