@@ -5,7 +5,9 @@
 #include "navigation.hpp"
 #include "sounds.hpp"
 #include <libretro.h>
+#include <algorithm>
 #include <cstring>
+#include <vector>
 #include <RmlUi/Core/Input.h>
 
 namespace rib {
@@ -138,12 +140,26 @@ bool TextEntry::physical(bool down, unsigned key, uint32_t character, uint16_t m
    if (!panel || hidden(panel)) return false;
    if (alt_enter_is_chord(key, modifiers)) return false;
    if (key == RETROK_TAB) {
-      /* With Tab the player goes from the username to the password only. */
-      auto *focused = document.get_context()->GetFocusElement();
-      auto *password = input(document_contract::AchievementPassword);
-      if (down && !keyboard_open() && focused && password && !hidden(password)
-            && focused->GetId() == document_contract::AchievementUsername && password->Focus(true))
-         play_move_sound(false);
+      /* With Tab the player moves through the fields and buttons of the form,
+       * in document order, and back with Shift+Tab, never out of the form. */
+      if (down && !keyboard_open()) {
+         std::vector<Rml::Element*> stops;
+         walk(panel, [&](Rml::Element *element) {
+            if (display_none(element)) return Walk::SkipChildren;
+            if (element->GetComputedValues().tab_index() == Rml::Style::TabIndex::Auto &&
+                  !element->HasAttribute("disabled"))
+               stops.push_back(element);
+            return Walk::Continue;
+         });
+         if (!stops.empty()) {
+            const bool back = modifiers & RETROKMOD_SHIFT;
+            const auto at = std::find(stops.begin(), stops.end(), document.get_context()->GetFocusElement());
+            const int count = (int)stops.size();
+            const int next = at == stops.end() ? (back ? count - 1 : 0)
+                  : ((int)(at - stops.begin()) + (back ? count - 1 : 1)) % count;
+            if (stops[next]->Focus(true)) play_move_sound(back);
+         }
+      }
       return true;
    }
    /* While the form has the keyboard, Up and Down move in the menu. We pass
