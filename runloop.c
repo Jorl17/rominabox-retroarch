@@ -6208,6 +6208,11 @@ static enum runloop_state_enum runloop_check_state(
       {
          const char *start_at_menu = getenv("ROMINABOX_START_AT_MENU");
          bool keep_menu_open = start_at_menu && string_is_equal(start_at_menu, "1");
+#ifdef HAVE_CHEEVOS
+         /* We already showed the startup menu at the autosave gate. Pressing
+          * Continue must not open it again when the core first advances. */
+         keep_menu_open = keep_menu_open && !rib_startup_keep_menu;
+#endif
          startup_overlay_checked = true;
 #ifdef HAVE_RMLUI
          /* The game has begun, so start what the design draws over it. The
