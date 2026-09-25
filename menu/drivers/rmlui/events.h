@@ -7,7 +7,6 @@ enum rib_rmlui_action
    RIB_RMLUI_ACTION_RESUME,
    RIB_RMLUI_ACTION_SAVE,
    RIB_RMLUI_ACTION_LOAD,
-   RIB_RMLUI_ACTION_CONTROLS,
    RIB_RMLUI_ACTION_QUIT,
    RIB_RMLUI_ACTION_SELECT_SLOT,
    RIB_RMLUI_ACTION_CONTROLS_BACK,
@@ -18,7 +17,6 @@ enum rib_rmlui_action
    RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE,
    RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE,
    RIB_RMLUI_ACTION_SLIDER,
-   RIB_RMLUI_ACTION_TOGGLE,
    RIB_RMLUI_ACTION_LIST_CHOOSE,
    RIB_RMLUI_ACTION_LIST_PAGE,
    RIB_RMLUI_ACTION_PART_TOGGLE,
@@ -44,6 +42,8 @@ struct Event
    float fraction;
    bool on;
    int slot = 0;
+   /* A page turned: -1 back, 1 on. */
+   int direction = 0;
    AccountAction account = AccountAction::Open;
    Event(rib_rmlui_action kind = RIB_RMLUI_ACTION_NONE, std::string id = {},
          float fraction = 0.0f, bool on = false)
@@ -62,7 +62,8 @@ struct Event
    }
    bool same_target(const Event& other) const
    {
-      return kind == other.kind && id == other.id && slot == other.slot && account == other.account;
+      return kind == other.kind && id == other.id && slot == other.slot
+            && direction == other.direction && account == other.account;
    }
 };
 

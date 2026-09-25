@@ -327,7 +327,7 @@ void rib_host_apply_shader(const char *id, const char *path)
       applied = video_shader_apply_shader(settings, video_shader_parse_type(path), path, false);
    else
       applied = video_shader_apply_shader(settings, RARCH_SHADER_NONE, NULL, false);
-   fprintf(stderr, "[RIB] shader '%s' %s: %s\n", id,
+   RARCH_LOG("[RIB] shader '%s' %s: %s\n", id,
          applied ? "applied" : "not applied", path[0] ? path : "unfiltered");
 }
 
@@ -492,6 +492,8 @@ rib_pointer rib_host_pointer(void)
    return result;
 }
 
+#ifdef RIB_MENU_SCRIPT
+/* The test script driver's picture and exit, in a test build only. */
 bool rib_host_prepare_script_shot(void)
 {
    settings_t *settings = config_get_ptr();
@@ -513,3 +515,4 @@ void rib_host_script_finished(void)
 {
    disk_control_log_core_image(&runloop_state_get_ptr()->system.disk_control, "menu script done");
 }
+#endif

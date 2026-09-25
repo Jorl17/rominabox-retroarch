@@ -117,16 +117,23 @@ void Parts::paint_slider(Rml::Element *slider, float fraction, const char *reado
    auto *thumb = find_class(slider, document_contract::SliderThumb);
    const float width = track ? track->GetBox().GetSize(Rml::BoxArea::Content).x : 0.0f;
    const float thumb_width = thumb ? thumb->GetBox().GetSize(Rml::BoxArea::Border).x : 0.0f;
-   if (fill && width > 0.0f)
-      fill->SetProperty("width", std::to_string(width * fraction) + "px");
-   if (thumb && width > 0.0f)
+   /* We measure in pixels, which change with the window and with the layout
+    * of the track, so we run this whenever those may have changed and write
+    * only what differs from the last write. */
+   Painted& painted = slider_painted[slider->GetId()];
+   if (width > 0.0f)
    {
-      const float travel = std::max(0.0f, width - thumb_width);
-      thumb->SetProperty("left", std::to_string(travel * fraction) + "px");
+      const float filled = width * fraction;
+      const float left = std::max(0.0f, width - thumb_width) * fraction;
+      if (fill && filled != painted.fill)
+         fill->SetProperty("width", std::to_string(filled) + "px");
+      if (thumb && left != painted.left)
+         thumb->SetProperty("left", std::to_string(left) + "px");
+      painted.fill = filled;
+      painted.left = left;
    }
    if (readout)
-      if (auto *text = find_class(slider, document_contract::SliderReadout))
-         text->SetInnerRML(Rml::StringUtilities::EncodeRml(readout));
+      write_text(find_class(slider, document_contract::SliderReadout), readout);
 }
 
 void Parts::remember_slider(const std::string& id, float fraction)
@@ -208,9 +215,10 @@ void Parts::end_drag()
    drag_element = nullptr;
 }
 
-void Parts::clear_drag()
+void Parts::forget()
 {
    drag_element = nullptr;
+   slider_painted.clear();
 }
 
 }

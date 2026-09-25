@@ -2,9 +2,9 @@
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/SystemInterface.h>
-#include <ctime>
 #include <memory>
 #include <string>
+#include <vector>
 #include "text_input_platform.hpp"
 
 class RominaboxRenderer;
@@ -21,18 +21,18 @@ public:
    Document(const Document&) = delete;
    Document& operator=(const Document&) = delete;
 
-   bool initialize(const char *assets, int width, int height, bool core_context);
+   /* The composed document in `assets`, drawn with `fonts`, the files
+    * declared in the design next to it. */
+   bool initialize(const char *assets, const std::vector<std::string>& fonts,
+         int width, int height, bool core_context);
    void shutdown();
    void show();
    void settle();
-   bool reload_if_changed();
    void render(int width, int height);
    void capture_next(const char *path);
    bool click_element(const char *id);
-   int focusables(const char *panel, char ids[][64], int capacity);
    bool element_center(const char *id, int *x, int *y);
    bool element_box(const char *id, int *x, int *y, int *w, int *h);
-   bool element_disabled(const char *id);
    bool pointer_inside(const char *id, int x, int y);
    bool has_element(const char *id);
    void set_element_text(const char *id, const char *text);
@@ -49,6 +49,9 @@ public:
 #ifdef RIB_RMLUI_HEADLESS
    void advance(double seconds) { system.clock_offset += seconds; }
    unsigned texture_loads() const { return texture_count; }
+   /* How much geometry we have built. In a frame with no change we build
+    * none. */
+   unsigned geometry_compiled() const { return geometry_count; }
 #endif
 
 private:
@@ -75,10 +78,9 @@ private:
    Rml::ElementDocument *document = nullptr;
    std::string asset_dir;
    std::string capture_path;
-   time_t rml_mtime = 0;
-   time_t rcss_mtime = 0;
 #ifdef RIB_RMLUI_HEADLESS
    unsigned texture_count = 0;
+   unsigned geometry_count = 0;
 #endif
 };
 }

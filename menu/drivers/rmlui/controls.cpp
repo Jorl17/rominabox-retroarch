@@ -6,6 +6,8 @@
 #include "control_view.hpp"
 #include "lists.hpp"
 #include "status.hpp"
+#include "sounds.hpp"
+#include "elements.hpp"
 #include "../../../verbosity.h"
 #include <file/config_file.h>
 #include <streams/file_stream.h>
@@ -14,10 +16,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
-
-#ifndef RIB_RMLUI_DEFAULT_ASSETS
-#define RIB_RMLUI_DEFAULT_ASSETS "."
-#endif
 
 namespace rib {
 int Controls::index_of(const char *id) const
@@ -80,21 +78,23 @@ FocusTarget focused_stop(const rib_controls_catalog& catalog, const std::string&
 /* At startup we read the author's defaults, then the player's file. When the
  * player chose another pad, we use that pad. Otherwise we only put the
  * player's labels and bindings over the author's. */
-bool Controls::load_file(const char *file, bool defaults)
+void Controls::load(const char *assets, const char *data)
 {
-   if (defaults)
-   {
-      strlcpy(defaults_path, file, sizeof(defaults_path));
-      return apply(NULL, false);
-   }
-   if (file != path)
-      strlcpy(path, file, sizeof(path));
+   this->assets = assets ? assets : "";
+   defaults_path = this->assets + "/controls-defaults.cfg";
+   path = data && *data ? std::string(data) + "/controls.cfg" : std::string();
+   if (!apply(NULL, false))
+      RARCH_WARN("[RmlUi] Controls defaults not found at %s.\n", defaults_path.c_str());
+   if (path.empty())
+      return;
    const std::string chosen = player_profile();
    if (!chosen.empty() && chosen != profile_id)
-      return apply(chosen.c_str(), true);
-   const bool read = read_player_file();
-   show_pad();
-   return read;
+      apply(chosen.c_str(), true);
+   else
+   {
+      read_player_file();
+      show_pad();
+   }
 }
 
 /* The one way we apply a pad: its controls, labels and bindings from the
@@ -121,22 +121,17 @@ bool Controls::read_defaults(const char *wanted)
    bool present = false;
    int index;
 
-   if (!defaults_path[0])
-   {
-      const char *assets = getenv("ROMINABOX_RML_ASSETS");
-      snprintf(defaults_path, sizeof(defaults_path), "%s/controls-defaults.cfg",
-            assets && *assets ? assets : RIB_RMLUI_DEFAULT_ASSETS);
-   }
    /* We find the author's pad when we open the defaults. For a pad that this
     * game does not offer, we use the author's pad instead. */
-   exported_profile[0] = '\0';
-   if (!(config = rib_open_controls(defaults_path, true, exported_profile,
+   char exported[32] = "";
+   if (!(config = rib_open_controls(defaults_path.c_str(), true, exported,
                &catalog, &present, rib_host_bind_index)))
       return false;
+   exported_profile = exported;
    if (!wanted || !*wanted
          || !rib_controls_discover(config, wanted, &catalog, rib_host_bind_index))
-      wanted = exported_profile;
-   strlcpy(profile_id, wanted, sizeof(profile_id));
+      wanted = exported_profile.c_str();
+   profile_id = wanted;
    rib_controls_read_enabled(config, &catalog);
    for (index = 0; index < catalog.count; ++index)
    {
@@ -157,8 +152,8 @@ std::string Controls::player_profile()
 {
    char named[32] = "";
    bool present = false;
-   if (path[0])
-      if (config_file_t *config = rib_open_controls(path, false, named, &catalog,
+   if (!path.empty())
+      if (config_file_t *config = rib_open_controls(path.c_str(), false, named, &catalog,
                &present, rib_host_bind_index))
          config_file_free(config);
    return named;
@@ -171,7 +166,7 @@ bool Controls::read_player_file()
    config_file_t *config;
    int index;
 
-   if (!path[0] || !(config = rib_open_controls(path, false, named, &catalog,
+   if (path.empty() || !(config = rib_open_controls(path.c_str(), false, named, &catalog,
                &present, rib_host_bind_index)))
       return false;
    for (index = 0; index < catalog.count; ++index)
@@ -191,26 +186,22 @@ bool Controls::read_player_file()
  * its scene in the export. */
 void Controls::show_pad()
 {
-   const char *drawn = control_view.scene_profile();
-   if (!*drawn)
-      drawn = exported_profile;
-   if (!string_is_equal(drawn, profile_id))
+   const std::string drawn = *control_view.scene_profile()
+         ? control_view.scene_profile() : exported_profile;
+   if (drawn != profile_id)
    {
-      const char *assets = getenv("ROMINABOX_RML_ASSETS");
-      char scene[PATH_MAX_LENGTH];
+      const std::string scene = assets + "/scene-" + profile_id + ".rml";
       int64_t length = 0;
       void *markup = NULL;
-      snprintf(scene, sizeof(scene), "%s/scene-%s.rml",
-            assets && *assets ? assets : RIB_RMLUI_DEFAULT_ASSETS, profile_id);
-      if (filestream_read_file(scene, &markup, &length) && markup
-            && control_view.set_scene(profile_id, (const char*)markup))
-         RARCH_LOG("[RIB] drawing '%s' from %s.\n", profile_id, scene);
+      if (filestream_read_file(scene.c_str(), &markup, &length) && markup
+            && control_view.set_scene(profile_id.c_str(), (const char*)markup))
+         RARCH_LOG("[RIB] drawing '%s' from %s.\n", profile_id.c_str(), scene.c_str());
       else
          RARCH_ERR("[RIB] no scene for '%s' at %s; the pad on screen "
-               "is still the one the game was exported with.\n", profile_id, scene);
+               "is still the one the game was exported with.\n", profile_id.c_str(), scene.c_str());
       free(markup);
    }
-   control_view.set_device_picker(catalog, device_picker_open, profile_id);
+   control_view.set_device_picker(catalog, device_picker_open, profile_id.c_str());
 }
 
 bool Controls::save()
@@ -219,10 +210,10 @@ bool Controls::save()
    bool saved;
    int index;
 
-   if (!path[0] || !(config = config_file_new_alloc()))
+   if (path.empty() || !(config = config_file_new_alloc()))
       return false;
 
-   config_set_string(config, "controls_profile", profile_id);
+   config_set_string(config, "controls_profile", profile_id.c_str());
    for (index = 0; index < catalog.count; ++index)
    {
       char key[96];
@@ -235,7 +226,7 @@ bool Controls::save()
       rib_host_write_bind(config, catalog.entries[index].id, catalog.entries[index].bind_index);
    }
 
-   saved = rib_write_menu_config(config, path);
+   saved = rib_write_menu_config(config, path.c_str());
    config_file_free(config);
    return saved;
 }
@@ -249,58 +240,46 @@ void Controls::refresh()
          ? stop_id(catalog, FocusTarget::item(capture_control)) : std::string();
    for (index = 0; index < catalog.count; ++index)
    {
-      char display_label[NAME_MAX_LENGTH * 2];
-      char binding[4096];
-      char group_id[96];
-
       if (!active(index))
          continue;
-      strlcpy(display_label, catalog.entries[index].label,
-            sizeof(display_label));
-      callout_text(index, binding, sizeof(binding));
+      const std::string binding = callout_text(index);
       const std::string stop = stop_id(catalog, FocusTarget::item(index));
       control_view.set_control_state(stop.c_str(), catalog.entries[index].id,
-            display_label, binding, stop == captured);
+            catalog.entries[index].label, binding.c_str(), stop == captured);
       if (catalog.entries[index].group[0])
-      {
-         snprintf(group_id, sizeof(group_id), "%s%s", document_contract::ControlGroupBindingPrefix,
-               catalog.entries[index].group);
-         document.set_element_text(group_id, binding);
-      }
+         document.set_element_text((document_contract::ControlGroupBindingPrefix
+               + std::string(catalog.entries[index].group)).c_str(), binding.c_str());
    }
    control_view.set_capturing(capture_active);
 }
 
-void Controls::cancel_capture(const char *status)
+void Controls::cancel_capture()
 {
    if (!capture_active)
       return;
    rib_host_capture_cancel();
    capture_active = false;
-   this->status.set_controls(status ? status : rib::words::BindingUnchanged);
-   screens.set_footer_hint(screens.controls_visible() ? rib::words::BackHint :
-                                                       rib::words::ContinueHint);
+   this->status.set_controls(say(Word::BindingUnchanged).c_str());
+   screens.restore_footer();
    refresh();
 }
 
 void Controls::start_capture(int index)
 {
-   char status[96];
    if (!active(index))
       return;
    if (!rib_host_capture_start(catalog.entries[index].bind_index,
             RIB_CONTROL_CAPTURE_SECONDS))
    {
-      this->status.set_controls(rib::words::CaptureFailed);
+      this->status.set_controls(say(Word::CaptureFailed).c_str());
       return;
    }
    capture_active = true;
    capture_control = index;
    capture_ignore_pointer = true;
-   snprintf(status, sizeof(status), rib::words::CaptureStarted,
-         console_name(index));
-   this->status.set_controls(status);
-   screens.set_footer_hint(rib::words::CancelHint);
+   this->status.set_controls(say(Word::CaptureCountdown, {{"control", console_name(index)},
+         {"seconds", std::to_string(RIB_CONTROL_CAPTURE_SECONDS)}}).c_str());
+   screens.set_footer_hint(say(Word::CancelHint).c_str());
    refresh();
 }
 
@@ -334,60 +313,35 @@ bool Controls::same_bind_target(int left, int right) const
    return group_left[0] && group_right[0] && string_is_equal(group_left, group_right);
 }
 
-void Controls::bind_anchor(int index, char *out, size_t length) const
+std::string Controls::bind_anchor(int index) const
 {
    if (catalog.entries[index].group[0])
    {
-      snprintf(out, length, "%s%s", document_contract::ControlGroupPrefix, catalog.entries[index].group);
-      if (document.has_element(out))
-         return;
+      const std::string group = document_contract::ControlGroupPrefix + std::string(catalog.entries[index].group);
+      if (document.has_element(group.c_str()))
+         return group;
    }
-   snprintf(out, length, "%s%s", document_contract::ControlPrefix, catalog.entries[index].id);
+   return document_contract::ControlPrefix + std::string(catalog.entries[index].id);
 }
 
-void Controls::callout_text(int index, char *out, size_t length) const
+std::string Controls::callout_text(int index) const
 {
    int members[RIB_CONTROL_MAX];
-   int member_count = 0;
    char details[RIB_HOST_BIND_LINE_MAX][64];
    char kinds[RIB_HOST_BIND_LINE_MAX][8];
    int lines = 0;
-   int slot;
-   size_t used = 0;
 
-   if (!out || !length)
-      return;
-   out[0] = '\0';
    if (index < 0 || index >= catalog.count)
-   {
-      strlcpy(out, rib::words::Unbound, length);
-      return;
-   }
-   member_count = bind_members(index, members);
-
-   for (slot = 0; slot < member_count; ++slot)
-   {
-      const unsigned at = catalog.entries[members[slot]].bind_index;
-      rib_host_bind_lines(at,
-            details, kinds, &lines);
-   }
+      return say(Word::Unbound);
+   const int member_count = bind_members(index, members);
+   for (int member = 0; member < member_count; ++member)
+      rib_host_bind_lines(catalog.entries[members[member]].bind_index, details, kinds, &lines);
    if (lines <= 0)
-   {
-      strlcpy(out, rib::words::Unbound, length);
-      return;
-   }
-   for (slot = 0; slot < lines; ++slot)
-   {
-      if (slot && used + 2 < length)
-      {
-         out[used++] = ',';
-         out[used++] = ' ';
-         out[used] = '\0';
-      }
-      used += strlcpy(out + used, details[slot], length - used);
-      if (used >= length)
-         break;
-   }
+      return say(Word::Unbound);
+   std::string text;
+   for (int line = 0; line < lines; ++line)
+      text += (line ? ", " : "") + std::string(details[line]);
+   return text;
 }
 
 void Controls::show_binds(int index)
@@ -401,7 +355,6 @@ void Controls::show_binds(int index)
    int rows;
    int slot;
    int member;
-   char anchor[96];
 
    member_count = bind_members(index, members);
 
@@ -428,36 +381,29 @@ void Controls::show_binds(int index)
       return;
    }
 
-   rows = lists.rows_in(binds.list);
+   rows = lists.rows_in(binds.list.c_str());
    if (lines > rows)
       RARCH_ERR("[RIB] '%s' has %d binds and the menu was built with %d rows; "
             "the rest are not shown.\n",
             catalog.entries[index].id, lines, rows);
    for (slot = 0; slot < rows; ++slot)
    {
-      const char *id = lists.row_in(binds.list, slot);
-      char row[64];
-      if (!id || !*id)
+      const std::string row = lists.row_in(binds.list.c_str(), slot);
+      if (row.empty())
          break;
-      strlcpy(row, id, sizeof(row));
       if (slot < lines)
-      {
-         lists.set_row_text(row, titles[slot], details[slot], kinds[slot]);
-         document.set_shown(row, true);
-      }
-      else
-         document.set_shown(row, false);
+         lists.set_row_text(row.c_str(), titles[slot], details[slot], kinds[slot]);
+      document.set_shown(row.c_str(), slot < lines);
    }
-   lists.retarget_pages(binds.list);
-   bind_anchor(index, anchor, sizeof(anchor));
-   lists.place_list(binds.list, anchor, binds.width);
+   lists.retarget_pages(binds.list.c_str());
+   lists.place_list(binds.list.c_str(), bind_anchor(index).c_str(), binds.width);
    binds.open = true;
 }
 
 void Controls::hide_binds()
 {
-   if (binds.list[0])
-      document.set_shown(binds.list, false);
+   if (!binds.list.empty())
+      document.set_shown(binds.list.c_str(), false);
    binds.open = false;
 }
 
@@ -472,7 +418,7 @@ void Controls::update_binds(int x, int y, bool pointer_active)
    int current = -1;
    int64_t now;
 
-   if (!binds.list[0] || !screens.controls_visible()
+   if (binds.list.empty() || !screens.showing(ScreenRole::Controls)
          || capture_active || device_picker_open)
    {
       hide_binds();
@@ -481,7 +427,7 @@ void Controls::update_binds(int x, int y, bool pointer_active)
    }
 
    if (pointer_active
-         && document.pointer_inside(binds.list, x, y)
+         && document.pointer_inside(binds.list.c_str(), x, y)
          && binds.control >= 0)
       current = binds.control;
    const auto target = focused_stop(catalog, focus_state.current_id());
@@ -513,11 +459,11 @@ void Controls::update_binds(int x, int y, bool pointer_active)
 void Controls::choose_device(const char *chosen)
 {
    device_picker_open = false;
-   if (chosen && *chosen && !string_is_equal(chosen, profile_id))
+   if (chosen && *chosen && profile_id != chosen)
    {
       int index;
 
-      strlcpy(profile_id, chosen, sizeof(profile_id));
+      profile_id = chosen;
       /* The pad belongs to the player who picks it, so we write it to the
        * per-game override and never to the author's fixed defaults. */
       save();
@@ -539,24 +485,24 @@ void Controls::choose_device(const char *chosen)
       if (!apply(chosen, true))
          RARCH_ERR("[RIB] could not re-read controls from %s after changing "
                "controller; the menu still lists the previous pad.\n",
-               defaults_path);
+               defaults_path.c_str());
       focus(first());
       refresh();
    }
-   control_view.set_device_picker(catalog, false, profile_id);
+   control_view.set_device_picker(catalog, false, profile_id.c_str());
 }
 
 void Controls::reset_defaults()
 {
    if (capture_active)
-      cancel_capture(NULL);
+      cancel_capture();
    device_picker_open = false;
    if (!apply(NULL, false))
-      this->status.set_controls(rib::words::DefaultsLoadFailed);
+      this->status.set_controls(say(Word::DefaultsLoadFailed).c_str());
    else if (!save())
-      this->status.set_controls(rib::words::DefaultsSaveFailed);
+      this->status.set_controls(say(Word::DefaultsSaveFailed).c_str());
    else
-      this->status.set_controls(rib::words::DefaultsRestored);
+      this->status.set_controls(say(Word::DefaultsRestored).c_str());
    refresh();
 }
 
@@ -564,7 +510,6 @@ void Controls::poll_capture()
 {
    if (capture_active)
    {
-      char capture_status[96];
       float remaining = 0.0f;
       enum rib_capture_result result = rib_host_capture_poll(
             !capture_ignore_pointer, &remaining);
@@ -573,54 +518,136 @@ void Controls::poll_capture()
          int conflict = find_conflict(capture_control);
          capture_active = false;
          rib_host_restore_keyboard_mapping();
-         if (conflict >= 0)
-         {
-            snprintf(capture_status, sizeof(capture_status),
-                  rib::words::BindingConflict,
-                  console_name(conflict));
-            if (!save())
-               strlcpy(capture_status, rib::words::BindingSaveFailed,
-                     sizeof(capture_status));
-            this->status.set_controls(capture_status);
-         }
-         else if (save())
-            this->status.set_controls(rib::words::BindingSaved);
+         const bool saved = save();
+         if (!saved)
+            this->status.set_controls(say(Word::BindingSaveFailed).c_str());
+         else if (conflict >= 0)
+            this->status.set_controls(say(Word::BindingConflict,
+                  {{"control", console_name(conflict)}}).c_str());
          else
-            this->status.set_controls(rib::words::BindingSaveFailed);
+            this->status.set_controls(say(Word::BindingSaved).c_str());
          refresh();
-         screens.set_footer_hint(rib::words::BackHint);
+         screens.restore_footer();
       }
       else if (result == RIB_CAPTURE_TIMED_OUT)
       {
          capture_active = false;
-         this->status.set_controls(rib::words::CaptureTimeout);
-         screens.set_footer_hint(rib::words::BackHint);
+         this->status.set_controls(say(Word::CaptureTimeout).c_str());
+         screens.restore_footer();
          refresh();
       }
       else
-      {
-         snprintf(capture_status, sizeof(capture_status),
-               "%s: PRESS AN INPUT (%u)",
-               console_name(capture_control),
-               (unsigned)(remaining + 0.999f));
-         this->status.set_controls(capture_status);
-      }
+         this->status.set_controls(say(Word::CaptureCountdown,
+               {{"control", console_name(capture_control)},
+                {"seconds", std::to_string((unsigned)(remaining + 0.999f))}}).c_str());
    }
 
 }
 
-void Controls::configure_binds(const rib_design_data& design)
+void Controls::configure_binds(const BindsDeclaration& declared)
 {
-   strlcpy(binds.list, design.binds_list, sizeof(binds.list));
-   binds.after_ms = design.binds_after_ms;
-   binds.hover_after_ms = design.binds_hover_after_ms;
-   binds.width = design.binds_width;
+   binds.list = declared.list;
+   binds.after_ms = declared.after_ms;
+   binds.hover_after_ms = declared.hover_after_ms;
+   binds.width = declared.width;
 }
 
 void Controls::toggle_picker()
 {
    device_picker_open = !device_picker_open;
-   control_view.set_device_picker(catalog, device_picker_open, profile_id);
+   control_view.set_device_picker(catalog, device_picker_open, profile_id.c_str());
+}
+
+void Controls::close_picker()
+{
+   if (device_picker_open)
+      toggle_picker();
+}
+
+void Controls::focus_picker()
+{
+   Rml::Element *box = document.root()
+         ? document.root()->GetElementById(document_contract::ControlsDevice) : nullptr;
+   if (device_picker_open && box)
+   {
+      focus_state.trap(box);
+      Rml::Element *chosen = nullptr;
+      walk(box, [&](Rml::Element *option) {
+         if (option->IsClassSet(document_contract::Selected)
+               && option->GetId().rfind(document_contract::ControlsDeviceOptionPrefix, 0) == 0)
+         {
+            chosen = option;
+            return Walk::Stop;
+         }
+         return Walk::Continue;
+      });
+      if (!focus_state.set(chosen))
+         focus_state.set(focus_state.first(
+               document.root()->GetElementById(document_contract::ControlsDeviceList)));
+      return;
+   }
+   focus_state.trap(nullptr);
+   focus_state.set(document_contract::ControlsDeviceCurrent);
+}
+
+bool Controls::handle(const Event& event)
+{
+   switch (event.kind)
+   {
+      case RIB_RMLUI_ACTION_CONTROLS_CANCEL:
+         play_action_sound(event.kind);
+         cancel_capture();
+         return true;
+      case RIB_RMLUI_ACTION_CONTROLS_BACK:
+         /* Leaving the pad screen ends a capture. We choose the next
+          * screen in the menu code. */
+         cancel_capture();
+         return false;
+      default:
+         break;
+   }
+   /* While we capture a binding, the player cannot press anything else. */
+   if (capture_active)
+      return true;
+   switch (event.kind)
+   {
+      case RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE:
+         toggle_picker();
+         focus_picker();
+         return true;
+      case RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE:
+         choose_device(event.id.c_str());
+         focus_picker();
+         return true;
+      case RIB_RMLUI_ACTION_CONTROL:
+      {
+         const int index = index_of(event.id.c_str());
+         if (active(index))
+         {
+            play_action_sound(event.kind);
+            focus(FocusTarget::item(index));
+            start_capture(index);
+         }
+         return true;
+      }
+      case RIB_RMLUI_ACTION_CONTROLS_RESET:
+         play_action_sound(event.kind);
+         reset_defaults();
+         return true;
+      default:
+         return false;
+   }
+}
+
+void Controls::screen_shown(bool showing)
+{
+   if (showing)
+   {
+      status.set_controls(say(Word::ChooseControl).c_str());
+      refresh();
+   }
+   else
+      cancel_capture();
 }
 
 

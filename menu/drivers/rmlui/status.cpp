@@ -8,11 +8,13 @@ namespace rib {
 void paint_status_line(Rml::Element *line, const std::string& text)
 {
    if (!line) return;
-   if (!line->HasAttribute("data-prompt"))
-      line->SetAttribute("data-prompt", line->GetInnerRML());
-   line->SetInnerRML(text.empty()
-         ? line->GetAttribute<Rml::String>("data-prompt", "")
-         : Rml::StringUtilities::EncodeRml(text));
+   if (!line->HasAttribute(document_contract::PromptAttribute))
+      line->SetAttribute(document_contract::PromptAttribute, line->GetInnerRML());
+   const Rml::String shown = text.empty()
+         ? line->GetAttribute<Rml::String>(document_contract::PromptAttribute, "")
+         : Rml::StringUtilities::EncodeRml(text);
+   if (line->GetInnerRML() != shown)
+      line->SetInnerRML(shown);
 }
 
 void Status::show(Message& message, const char *id, const char *text)

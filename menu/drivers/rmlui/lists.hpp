@@ -31,21 +31,9 @@ public:
    // Replace generated data through the staged prototype from the design, and
    // keep the current page where possible. We leave static lists unchanged.
    void replace_rows(const char *list_id, const std::vector<Row>& rows);
-   void wire_toggles();
+   /* For a switch, set the fact `on` and the word for its state in `<id>-state`. */
    void set_toggle(const char *id, const char *state, bool on);
    Rml::Element *visible_list() const;
-   void visible_rows(std::vector<Rml::Element*> &rows) const;
-   Rml::Element *visible_panel() const;
-   void visible_controls(std::vector<Rml::Element*> &controls) const;
-   int visible_row_count() const;
-   /* Mark a row or a list control `focused` directly. We let RmlUi handle the
-    * focus and mark it in Focus. We use these in test_rmlui_interaction.cpp to
-    * measure a row with the class set in the styling checks. */
-   void focus_list_row(int index) const;
-   int list_control_count() const;
-   const char *list_control_id(int index);
-   void focus_list_control(int index) const;
-   const char *list_row_id(int index);
    /* Turn `list`, or the visible list, by one page. Returns the page, or -1. */
    int turn_list_page(int delta, Rml::Element *list = nullptr) const;
    /* The first row on the current page of `list`, or of the visible list. */
@@ -57,7 +45,8 @@ public:
          const char *detail, const char *state) const;
    void fit_row_title(const char *id, const char *text) const;
    int rows_in(const char *list_id) const;
-   const char *row_in(const char *list_id, int index);
+   /* The id of row `index` of the list, or "". */
+   std::string row_in(const char *list_id, int index) const;
    /* Hide the pages without rows and show the one with `keep_row`, or the
     * first. */
    void retarget_pages(const char *list_id, const char *keep_row = nullptr) const;
@@ -65,7 +54,6 @@ public:
 
 private:
    Rml::Element *list_element(const char *list_id) const;
-   void set_text(const std::string& id, const char *text) const;
    void select_in(Rml::Element *list, const char *row_id,
          const char *on, const char *off) const;
    static bool page_has_row(Rml::Element *page);
@@ -76,8 +64,5 @@ private:
 
    Document& document;
    EventQueue& events;
-   std::string control_id_buffer;
-   std::string row_id_buffer;
-   std::string row_in_buffer;
 };
 }

@@ -4,6 +4,7 @@
 #include "../../../input/alt_enter_fullscreen.h"
 #include "navigation.hpp"
 #include "sounds.hpp"
+#include "words.hpp"
 #include <libretro.h>
 #include <algorithm>
 #include <cstring>
@@ -33,14 +34,16 @@ Rml::Input::KeyIdentifier key_id(unsigned key)
       default: return KI_UNKNOWN;
    }
 }
+/* On the RetroArch keyboard the keys have symbols or English names. We name
+ * them with the words of the menu. */
 const char *key_label(const char *label)
 {
-   if (!std::strcmp(label, "\xe2\x87\xa6") || !std::strcmp(label, "Bksp")) return "DEL";
-   if (!std::strcmp(label, "\xe2\x8f\x8e") || !std::strcmp(label, "Enter")) return "OK";
-   if (!std::strcmp(label, "\xe2\x87\xa7") || !std::strcmp(label, "Upper")) return "ABC";
-   if (!std::strcmp(label, "\xe2\x87\xa9") || !std::strcmp(label, "Lower")) return "abc";
-   if (!std::strcmp(label, "\xe2\x8a\x95") || !std::strcmp(label, "Next")) return "#+=";
-   if (!std::strcmp(label, " ")) return "_";
+   if (!std::strcmp(label, "\xe2\x87\xa6") || !std::strcmp(label, "Bksp")) return say(Word::KeyDelete).c_str();
+   if (!std::strcmp(label, "\xe2\x8f\x8e") || !std::strcmp(label, "Enter")) return say(Word::KeyEnter).c_str();
+   if (!std::strcmp(label, "\xe2\x87\xa7") || !std::strcmp(label, "Upper")) return say(Word::KeyUpper).c_str();
+   if (!std::strcmp(label, "\xe2\x87\xa9") || !std::strcmp(label, "Lower")) return say(Word::KeyLower).c_str();
+   if (!std::strcmp(label, "\xe2\x8a\x95") || !std::strcmp(label, "Next")) return say(Word::KeySymbols).c_str();
+   if (!std::strcmp(label, " ")) return say(Word::KeySpace).c_str();
    return label;
 }
 }
@@ -56,9 +59,9 @@ void TextEntry::bind()
    grid->SetInnerRML("");
    for (unsigned index = 0; index < RIB_KEYBOARD_KEYS; ++index) {
       auto key = document.root()->CreateElement("button");
-      key->SetClass("menu-action", true);
-      key->SetClass("text-key", true);
-      key->SetAttribute("data-key", index);
+      key->SetClass(document_contract::MenuAction, true);
+      key->SetClass(document_contract::TextKey, true);
+      key->SetAttribute(document_contract::KeyAttribute, index);
       grid->AppendChild(std::move(key));
    }
    grid->AddEventListener(Rml::EventId::Click, this);
@@ -71,8 +74,12 @@ void TextEntry::enable(const char *panel, const char *submit, const char *cancel
 void TextEntry::disable()
 {
    cancel_keyboard();
-   if (!panel_id.empty() && document.get_context())
-      if (auto *focused = document.get_context()->GetFocusElement()) focused->Blur();
+   /* Take the focus from a field of the form, but leave it where it is when it
+    * has already moved to a screen we showed since. */
+   if (!panel_id.empty() && document.root() && document.get_context())
+      if (auto *focused = document.get_context()->GetFocusElement())
+         if (auto *panel = document.root()->GetElementById(panel_id); panel && panel->Contains(focused))
+            focused->Blur();
    panel_id.clear(); submit_id.clear(); cancel_id.clear();
    rib_host_text_focus(false);
 }
@@ -124,14 +131,14 @@ void TextEntry::update()
    for (int index = 0; index < grid->GetNumChildren(); ++index) {
       auto *key = grid->GetChild(index);
       key->SetInnerRML(Rml::StringUtilities::EncodeRml(key_label(rib_host_keyboard_label(index))));
-      key->SetClass("focused", index == rib_host_keyboard_focus());
+      key->SetClass(document_contract::Focused, index == rib_host_keyboard_focus());
    }
 }
 void TextEntry::ProcessEvent(Rml::Event& event)
 {
    auto *target = event.GetTargetElement();
-   while (target && !target->HasAttribute("data-key")) target = target->GetParentNode();
-   if (target) rib_host_keyboard_choose(target->GetAttribute<unsigned>("data-key", RIB_KEYBOARD_KEYS));
+   while (target && !target->HasAttribute(document_contract::KeyAttribute)) target = target->GetParentNode();
+   if (target) rib_host_keyboard_choose(target->GetAttribute<unsigned>(document_contract::KeyAttribute, RIB_KEYBOARD_KEYS));
 }
 bool TextEntry::physical(bool down, unsigned key, uint32_t character, uint16_t modifiers)
 {

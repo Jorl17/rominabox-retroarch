@@ -8,7 +8,48 @@
  * composed menu against this list (desktop/src-tauri/src/menu/contract.rs).
  * Slots is the required slot-button prefix; kSlotCount expands it to the
  * numbered ids. */
+/* A reader defines the declarations it reads; the others read as nothing. */
+#ifndef RIB_SLOT_COUNT
+#define RIB_SLOT_COUNT(count)
+#endif
+#ifndef RIB_CANVAS
+#define RIB_CANVAS(width, height)
+#endif
+#ifndef RIB_ROLE
+#define RIB_ROLE(name, word)
+#endif
+#ifndef RIB_ELEMENT
+#define RIB_ELEMENT(name, value, scope, presence)
+#endif
+#ifndef RIB_CLASS
+#define RIB_CLASS(name, value, scope, presence)
+#endif
+#ifndef RIB_ATTRIBUTE
+#define RIB_ATTRIBUTE(name, value, scope, presence)
+#endif
+#ifndef RIB_FACT
+#define RIB_FACT(name, value)
+#endif
+
 RIB_SLOT_COUNT(6)
+
+/* The reference canvas, in dp: every design is laid out on it, and the
+ * player scales it to fit the window, keeping its shape. The exporter gives
+ * a stylesheet the same numbers as design(canvas-width) and
+ * design(canvas-height). */
+RIB_CANVAS(960, 600)
+
+/* What the menu treats a screen as, when it treats it specially. design.cfg
+ * names a screen's role as screen_role_<id> = "<word>", and the scopes below
+ * name a role by its first field. */
+RIB_ROLE(Pause, "pause")
+RIB_ROLE(Options, "options")
+RIB_ROLE(Controls, "controls")
+RIB_ROLE(Shaders, "shaders")
+RIB_ROLE(Achievements, "achievements")
+RIB_ROLE(Discs, "discs")
+/* QUICK SIGN IN's list of the accounts other games saved. */
+RIB_ROLE(Accounts, "accounts")
 
 /* Every document. */
 RIB_ELEMENT(Body, "body", Shared, Required)
@@ -22,6 +63,7 @@ RIB_ELEMENT(SplashLogo, "splash-logo", Splash, Required)
  * skeleton always draws. */
 RIB_ELEMENT(Heading, "heading", Menu, Required)
 RIB_ELEMENT(FooterHint, "footer-hint", Menu, Required)
+RIB_ELEMENT(Footer, "footer", Menu, Optional)
 RIB_ELEMENT(UnlockTitle, "unlock-title", Menu, Optional)
 RIB_ELEMENT(UnlockDetail, "unlock-detail", Menu, Optional)
 RIB_ELEMENT(UnlockBadge, "unlock-badge", Menu, Optional)
@@ -55,6 +97,9 @@ RIB_ELEMENT(ControlsDevice, "controls-device", Controls, Optional)
 RIB_ELEMENT(ControlsDeviceCurrent, "controls-device-current", Controls, Optional)
 RIB_ELEMENT(ControlsDeviceList, "controls-device-list", Controls, Optional)
 RIB_CLASS(ControlGroup, "control-group", Controls, Optional)
+RIB_CLASS(ControlCallout, "control-callout", Controls, Optional)
+RIB_CLASS(ControlPickerLabel, "control-picker-label", Controls, Optional)
+RIB_CLASS(ControlPickerCurrent, "control-picker-current", Controls, Optional)
 
 /* The options screen, the volume control in it, and its entries. */
 RIB_CLASS(OptionsBack, "options-back", Options, Required)
@@ -104,6 +149,7 @@ RIB_ELEMENT(AchievementsStartupRetry, "achievements-startup-retry", Achievements
 RIB_ELEMENT(AchievementsSkipStartup, "achievements-skip-startup", Achievements, Required)
 RIB_ELEMENT(TextKeyboard, "text-keyboard", Achievements, Optional)
 RIB_ELEMENT(TextKeyboardGrid, "text-keyboard-grid", Achievements, Optional)
+RIB_CLASS(TextKey, "text-key", Achievements, Optional)
 
 /* Generated list screens (shaders, achievements, the disc list). */
 RIB_CLASS(List, "list", Menu, Optional)
@@ -113,12 +159,18 @@ RIB_CLASS(ListPager, "list-pager", Menu, Optional)
 RIB_CLASS(ListPagerCount, "list-pager-count", Menu, Optional)
 RIB_CLASS(ListPagerPrev, "list-pager-prev", Menu, Optional)
 RIB_CLASS(ListPagerNext, "list-pager-next", Menu, Optional)
-RIB_CLASS(ListToggle, "list-toggle", Menu, Optional)
 RIB_CLASS(ListBack, "list-back", Menu, Optional)
 RIB_CLASS(ListControl, "list-control", Menu, Optional)
 RIB_CLASS(ListRowTitle, "list-row-title", Menu, Optional)
 RIB_CLASS(ListRowDetail, "list-row-detail", Menu, Optional)
 RIB_CLASS(ListRowState, "list-row-state", Menu, Optional)
+RIB_CLASS(ListRowIcon, "list-row-icon", Menu, Optional)
+/* The row a live list is filled from, hidden in the list. */
+RIB_CLASS(ListPrototype, "list-prototype", Menu, Optional)
+/* A row with no picture and no second line. */
+RIB_CLASS(Line, "line", Menu, Optional)
+/* How many rows one page of a live list holds. */
+RIB_ATTRIBUTE(PageSizeAttribute, "data-page-size", Menu, Optional)
 
 /* Ids the exporter generates, by prefix. */
 RIB_ELEMENT(ControlPrefix, "control-", Generated, Optional)
@@ -130,6 +182,15 @@ RIB_ELEMENT(SlotStatePrefix, "slot-state-", Generated, Optional)
 RIB_ELEMENT(ControlsDeviceOptionPrefix, "controls-device-option-", Generated, Optional)
 RIB_ELEMENT(ControlGroupPrefix, "control-group-", Generated, Optional)
 RIB_ELEMENT(ControlGroupBindingPrefix, "control-group-binding-", Generated, Optional)
+RIB_ELEMENT(AchievementRowPrefix, "achievement-", Generated, Optional)
+RIB_ELEMENT(AccountRowPrefix, "account-", Generated, Optional)
+/* Ids the exporter builds from a screen's or a row's own id. */
+RIB_ELEMENT(ListSuffix, "-list", Generated, Optional)
+RIB_ELEMENT(StatusSuffix, "-status", Generated, Optional)
+RIB_ELEMENT(TitleSuffix, "-title", Generated, Optional)
+RIB_ELEMENT(DetailSuffix, "-detail", Generated, Optional)
+RIB_ELEMENT(StateSuffix, "-state", Generated, Optional)
+RIB_ELEMENT(PageCountSuffix, "-page-count", Generated, Optional)
 
 /* State classes the player sets. */
 RIB_CLASS(Focused, "focused", State, Optional)
@@ -143,11 +204,23 @@ RIB_CLASS(Capturing, "capturing", State, Optional)
 RIB_CLASS(Showing, "showing", State, Optional)
 RIB_CLASS(Leaving, "leaving", State, Optional)
 RIB_CLASS(Overlay, "overlay", State, Optional)
+/* A list row whose picture is still on its way. */
+RIB_CLASS(BadgeLoading, "badge-loading", State, Optional)
+/* Beside an open dialog or picker: the shared navigation part makes it no
+ * stop, so the arrows stay inside. */
+RIB_CLASS(NavOutside, "nav-outside", State, Optional)
 
 /* State attributes the player sets on the document. data-focus is the id of
  * the element with focus, so a design can style anything by what has focus:
  * [data-focus=save] .slot.selected is the slot SAVE is about to use. */
 RIB_ATTRIBUTE(FocusAttribute, "data-focus", State, Optional)
+/* The screen a button shows, which the player writes on it. */
+RIB_ATTRIBUTE(ScreenTargetAttribute, "data-screen-target", State, Optional)
+/* A status line's own words, kept while the player writes a message over
+ * them. */
+RIB_ATTRIBUTE(PromptAttribute, "data-prompt", State, Optional)
+/* Which of the on-screen keyboard's keys a button is. */
+RIB_ATTRIBUTE(KeyAttribute, "data-key", State, Optional)
 /* An element marked data-fact="<name>" shows that fact as its text, kept up
  * to date by the player; the design decides where. Its own text is what a
  * preview shows. The facts: */
@@ -156,3 +229,11 @@ RIB_ATTRIBUTE(FactAttribute, "data-fact", State, Optional)
 RIB_FACT(ChosenSlotFact, "chosen-slot")
 /* How many accounts QUICK SIGN IN offers, as a number. */
 RIB_FACT(SavedAccountsFact, "saved-accounts")
+
+#undef RIB_SLOT_COUNT
+#undef RIB_CANVAS
+#undef RIB_ROLE
+#undef RIB_ELEMENT
+#undef RIB_CLASS
+#undef RIB_ATTRIBUTE
+#undef RIB_FACT

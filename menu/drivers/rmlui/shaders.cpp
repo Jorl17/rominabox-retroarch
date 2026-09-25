@@ -1,9 +1,6 @@
 #include "shaders.hpp"
 #include "host.h"
-#include "document.hpp"
 #include "lists.hpp"
-#include "parts.hpp"
-#include "slots.hpp"
 #include "../rmlui_shader_mark.h"
 #include "../../../verbosity.h"
 #include <streams/file_stream.h>
@@ -22,40 +19,12 @@ void Shaders::load(const char *asset_directory, const char *data_directory)
 void Shaders::show_running() const
 {
    const char *relatives[RIB_SHADER_MAX];
-   const char *current;
-   int index;
-   int row;
-   int rows;
-   int matched = -1;
-   bool ours = false;
-
    if (catalog.count <= 0)
       return;
-   rows = lists.visible_row_count();
-   for (row = 0; row < rows && !ours; ++row)
-   {
-      const char *id = lists.list_row_id(row);
-
-      for (index = 0; index < catalog.count; ++index)
-         if (id && string_is_equal(id, catalog.entries[index].id))
-            ours = true;
-   }
-   if (!ours)
-      return;
-
-   for (index = 0; index < catalog.count; ++index)
+   for (int index = 0; index < catalog.count; ++index)
       relatives[index] = catalog.entries[index].preset;
-   current = rib_host_current_shader();
-   matched = rib_shader_mark_index(current, relatives, catalog.count);
-   if (matched < 0)
-   {
-      fprintf(stderr, "[RIB] no bundled shader matches the one running: %s\n",
-            current && current[0] ? current : "none");
-      lists.mark_row("", catalog.state_on, catalog.state_off);
-      return;
-   }
-   fprintf(stderr, "[RIB] shader row '%s' is the one running\n", catalog.entries[matched].id);
-   lists.mark_row(catalog.entries[matched].id,
+   const int matched = rib_shader_mark_index(rib_host_current_shader(), relatives, catalog.count);
+   lists.mark_row(matched < 0 ? "" : catalog.entries[matched].id,
          catalog.state_on, catalog.state_off);
 }
 

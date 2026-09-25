@@ -17,13 +17,15 @@ size_t state_count(Document& document, size_t saved)
 }
 }
 
-void SavedAccounts::configure(const rib_design_data& design)
+void SavedAccounts::configure(const DesignDeclarations& design)
 {
    screen.clear();
-   for (size_t index = 0; index < design.screen_count; ++index)
-      if (screen_role(design.screens[index].role) == role())
+   panel.clear();
+   for (const ScreenDeclaration& declared : design.screens)
+      if (declared.role == role())
       {
-         screen = design.screens[index].id;
+         screen = declared.id;
+         panel = declared.panel;
          break;
       }
 }
@@ -51,13 +53,13 @@ void SavedAccounts::fill()
    for (size_t index = 0; index < count; ++index)
    {
       Lists::Row row;
-      row.id = "account-" + std::to_string(index);
+      row.id = document_contract::AccountRowPrefix + std::to_string(index);
       row.title = found[index].display_name;
       row.line = true;
       rows.push_back(row);
    }
    if (!screen.empty())
-      lists.replace_rows((screen + "-list").c_str(), rows);
+      lists.replace_rows((screen + document_contract::ListSuffix).c_str(), rows);
    state_count(document, count);
 }
 
@@ -65,8 +67,8 @@ void SavedAccounts::set_forgetting(bool on)
 {
    forgetting = on;
    document.set_class(document_contract::AccountsForget, document_contract::On, on);
-   if (!screen.empty())
-      document.set_class((screen + "-panel").c_str(), document_contract::On, on);
+   if (!panel.empty())
+      document.set_class(panel.c_str(), document_contract::On, on);
 }
 
 void SavedAccounts::shown()
@@ -75,12 +77,12 @@ void SavedAccounts::shown()
    leaving = ScreenRole::None;
    fill();
    if (!screen.empty())
-      document.set_element_text((screen + "-status").c_str(), "");
+      document.set_element_text((screen + document_contract::StatusSuffix).c_str(), "");
 }
 
 bool SavedAccounts::choose(const char *row)
 {
-   const char *prefix = "account-";
+   const char *prefix = document_contract::AccountRowPrefix;
    if (!row || std::strncmp(row, prefix, std::strlen(prefix)))
       return false;
    const size_t index = (size_t)std::strtoul(row + std::strlen(prefix), nullptr, 10);
@@ -100,7 +102,7 @@ bool SavedAccounts::choose(const char *row)
       return true;
    }
    if (!screen.empty())
-      document.set_element_text((screen + "-status").c_str(), words::QuickSignInFailed);
+      document.set_element_text((screen + document_contract::StatusSuffix).c_str(), say(Word::QuickSignInFailed).c_str());
    return false;
 }
 

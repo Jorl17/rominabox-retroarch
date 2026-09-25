@@ -3,6 +3,7 @@
 
 #include <string>
 #include <cstring>
+#include <cstdint>
 #include "events.h"
 #include <retro_miscellaneous.h>
 
@@ -29,40 +30,51 @@ class Document;
 class Focus;
 class Status;
 
-/* The selected slot, kept thumbnails, checks and the current save or load
- * task. We store through the host, and match each callback to its request. */
+/* The selected slot, kept thumbnails and the current save or load task.
+ * We store through the host, and match each callback to its request. */
 class Slots
 {
 public:
    Slots(Document& document, Focus& focus, Status& status)
       : document(document), focus(focus), status(status) {}
    enum class Transfer { Save, Load };
-   void reset_transfer() { transfer = {}; }
+   void reset_transfer() { transfer = {}; awaiting = {}; }
    bool transfer_pending() const { return transfer.pending; }
    bool load_available() const;
+   /* Read every slot from the host, when the menu opens and when a save or a
+    * load finishes. Nothing else changes them. */
    void refresh();
+   /* Call once a frame. Returns the slot still waiting for its picture. */
+   void follow();
    void request(Transfer kind);
+   /* Handle SAVE, LOAD and the choice of a slot, one transfer at a time. There
+    * is nothing to load from an empty slot. False for anything else. */
+   bool handle(const Event& event);
    void notify_task(const char *path, int slot, bool is_save, bool success);
-   void focus_action(const Event& event);
-   void focus_element(const char *id);
    void paint() const;
    void set_selected_slot(int slot);
    void set_slot_state(int slot, bool occupied, const char *thumbnail_path);
    void set_game_aspect(float aspect);
-   void guard_slots(const char *label, const char *reason);
-   bool slots_guarded() const { return !guard.empty(); }
    int selected() const { return selected_slot; }
    bool occupied(int slot) const;
    bool has_thumbnail(int slot) const;
 
 private:
    bool begin_transfer(Transfer kind);
+   void look_at(int slot);
+   /* How long we wait for the picture of a saved slot. */
+   static constexpr int64_t kPictureWaitUs = 5000000;
+   struct Awaiting
+   {
+      int slot = 0;
+      int64_t until = 0;
+   } awaiting;
    struct Request
    {
       bool pending = false;
       Transfer kind = Transfer::Load;
       int slot = 0;
-      char path[PATH_MAX_LENGTH]{};
+      std::string path;
    } transfer;
    struct SlotState
    {
@@ -79,7 +91,5 @@ private:
    float game_aspect = 4.0f / 3.0f;
    int selected_slot = 1;
    SlotState slots[kSlotCount];
-   std::string guard;
-   std::string guard_reason;
 };
 }

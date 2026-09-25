@@ -1,5 +1,6 @@
 #pragma once
 
+#include "declarations.h"
 #include "events.h"
 #include "screen_role.hpp"
 #include <string>
@@ -8,42 +9,46 @@
 namespace rib {
 class Document;
 
-/* The screens declared in the selected design, and their document actions. We
- * declare built-in screens after adding listeners, before design screens. */
+/* The screens declared in the selected design, and their document actions.
+ * In the menu we find the screens that we treat specially by their declared
+ * role, never by an id. */
 class Screens
 {
 public:
    Screens(Document& document, EventQueue& events, Event& hovered)
       : document(document), events(events), hovered(hovered) {}
 
-   const char *current() const { return active; }
-   bool controls_visible() const;
-   void remember(const char *id);
+   /* The screen showing now, by its declared id. */
+   const std::string& current() const { return active; }
+   ScreenRole current_role() const { return role_of(active); }
+   bool showing(ScreenRole role) const
+   {
+      return role != ScreenRole::None && current_role() == role;
+   }
+   /* Take `id` as the screen showing, without showing it. */
+   void remember(const std::string& id) { active = id; }
+   /* For a document without design declarations, declare the Pause and
+    * Controls screens of Native, as for a design. */
    void built_in_screens();
    void clear_screens();
-   void declare_screen(const char *id, const char *panel,
-         const char *heading, const char *footer, const char *button,
-         ScreenRole role = ScreenRole::None);
+   void declare_screen(const ScreenDeclaration& screen);
    /* The declared role of screen `id`, None when it has none. */
-   ScreenRole role_of(const char *id) const;
+   ScreenRole role_of(const std::string& id) const;
    /* The first screen declared with `role`, or "" when there is none. */
-   const char *with_role(ScreenRole role) const;
-   bool show_screen(const char *id);
-   const char *screen_panel(const char *id) const;
-   const char *pause_screen_button();
+   const std::string& with_role(ScreenRole role) const;
+   bool show_screen(const std::string& id);
+   /* The panel of screen `id`, or "". */
+   const std::string& screen_panel(const std::string& id) const;
    void set_footer_hint(const char *hint) const;
+   /* The footer declared for the screen showing now. */
+   void restore_footer() const;
 
 private:
-   struct Screen
-   {
-      std::string id, panel, heading, footer, button;
-      ScreenRole role;
-   };
+   const ScreenDeclaration *find(const std::string& id) const;
    Document& document;
    EventQueue& events;
    Event& hovered;
-   std::vector<Screen> screens;
-   std::string pause_button_id;
-   char active[32] = "pause";
+   std::vector<ScreenDeclaration> screens;
+   std::string active;
 };
 }

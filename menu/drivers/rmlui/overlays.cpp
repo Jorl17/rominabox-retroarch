@@ -3,15 +3,12 @@
 #include <cstring>
 
 namespace rib {
-void Overlays::load(const rib_design_data& design)
+void Overlays::load(const DesignDeclarations& design)
 {
    if (notification_active()) paint_notification();
-   count = design.overlay_count;
-   for (int index = 0; index < count; ++index)
-   {
-      overlays[index] = Overlay{};
-      overlays[index].declaration = design.overlays[index];
-   }
+   overlays.clear();
+   for (const OverlayDeclaration& declaration : design.overlays)
+      overlays.push_back(Overlay{declaration});
 }
 
 void Overlays::begin()
@@ -25,14 +22,13 @@ void Overlays::begin()
 
 int64_t Overlays::begins_at(const Overlay& overlay) const
 {
-   if (!*overlay.declaration.follows)
+   if (overlay.declaration.follows.empty())
       return started_at;
-   for (int index = 0; index < count; ++index)
+   for (const Overlay& before : overlays)
    {
-      const auto& before = overlays[index];
       if (&before == &overlay)
          break;
-      if (std::strcmp(before.declaration.id, overlay.declaration.follows) == 0)
+      if (before.declaration.id == overlay.declaration.follows)
          return before.finished ? before.finished_at : 0;
    }
    return started_at;
@@ -44,7 +40,7 @@ void Overlays::update(bool script_pending)
    if (running && !started_at)
       started_at = now;
    bool pending = false;
-   for (int index = 0; running && index < count; ++index)
+   for (size_t index = 0; running && index < overlays.size(); ++index)
    {
       auto& overlay = overlays[index];
       const auto& declaration = overlay.declaration;

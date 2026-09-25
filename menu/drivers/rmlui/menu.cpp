@@ -6,11 +6,11 @@
 
 #include <new>
 #include <stdint.h>
+#include <string>
 #include <retro_miscellaneous.h>
 #include <file/file_path.h>
 #include <file/config_file.h>
 #include <streams/file_stream.h>
-#include <string/stdstring.h>
 #include "../../../verbosity.h"
 #include "../rmlui_bridge.h"
 #include "menu_api.h"
@@ -48,7 +48,6 @@ struct Menu
    /* The list of each screen that has one. We pass a chosen row to the list of
     * the screen showing, which we find by the declared role of the screen. */
    rib::ListOwner *const owners[3] = {&discs, &shaders, &accounts};
-   rib::Toggles toggles{view.lists, view.slots};
    rib::PlayerSettings settings{view.parts, view.lists};
    rib::Focus& focus = view.focus;
    rib::Screens& screens = view.screens;
@@ -106,7 +105,7 @@ bool rib_rmlui_allow_quit(void)
 /* The list of the screen showing now, if it has one. */
 static rib::ListOwner *showing_list(Menu *menu)
 {
-   const rib::ScreenRole role = menu->screens.role_of(menu->screens.current());
+   const rib::ScreenRole role = menu->screens.current_role();
    for (rib::ListOwner *owner : menu->owners)
       if (role != rib::ScreenRole::None && owner->role() == role)
          return owner;
@@ -122,27 +121,33 @@ static const char *absolute_data_directory(void)
    return data;
 }
 
-/* We load the declarations once. These assignments set the starting state of
- * each feature. There is no document or input code in the loader. */
-static void load_design(Menu *menu, const char *assets)
+/* Prepare a screen after we show it, apart from its focus. We call this for
+ * every screen, through Navigation. */
+static void screen_shown(Menu *menu)
 {
-   rib_design_declarations *loaded = rib_load_design(assets);
-   const rib_design_data *design = rib_design_get(loaded);
-   size_t index;
-   menu->view.screens.clear_screens();
-   menu->discs.configure(*design);
-   menu->accounts.configure(*design);
-   for (index = 0; index < design->screen_count; ++index)
-   {
-      const rib_screen_declaration *screen = &design->screens[index];
-      menu->view.screens.declare_screen(screen->id, screen->panel, screen->heading,
-            screen->footer, screen->button, rib::screen_role(screen->role));
-   }
-   menu->toggles.load(*design, absolute_data_directory());
-   menu->settings.load(*design, absolute_data_directory());
-   menu->overlays.load(*design);
-   menu->controls.configure_binds(*design);
-   rib_design_free(loaded);
+   const rib::ScreenRole role = menu->screens.current_role();
+   menu->controls.screen_shown(role == rib::ScreenRole::Controls);
+   menu->achievements.screen_shown(role == rib::ScreenRole::Achievements);
+   /* We measure the slider from the box of the track. While the panel is
+    * hidden its width is zero, so painting leaves the thumb at its position in
+    * the stylesheet, at the low end. Paint again now that we show the screen. */
+   menu->settings.paint();
+   if (rib::ListOwner *owner = showing_list(menu))
+      owner->shown();
+}
+
+/* Give each feature what the design declares for it. We declare screens on
+ * the loaded document, so call this after the document loads. */
+static void apply_design(Menu *menu, const rib::DesignDeclarations& design, const char *data)
+{
+   menu->screens.clear_screens();
+   for (const rib::ScreenDeclaration& screen : design.screens)
+      menu->screens.declare_screen(screen);
+   menu->discs.configure(design);
+   menu->accounts.configure(design);
+   menu->settings.load(design, data);
+   menu->overlays.load(design);
+   menu->controls.configure_binds(design.binds);
 }
 
 void rib_rmlui_notify_state_task(const char *path, int slot,
@@ -184,19 +189,20 @@ static void reset_interaction(Menu *menu, bool opening)
       return;
    menu->achievements.leave_form();
    if (menu->controls.capture_active)
-      menu->controls.cancel_capture(NULL);
-   menu->screens.remember("pause");
+      menu->controls.cancel_capture();
    menu->pointer_pressed = false;
    menu->controls.capture_ignore_pointer = false;
    menu->view.clear_intents();
    menu->view.pointer_leave();
-   if (opening)
+   if (!opening)
    {
-      /* Pause, with CONTINUE highlighted. */
-      menu->navigation.open();
-      menu->view.screens.set_footer_hint(rib::words::ContinueHint);
-      settle_focus(menu);
+      menu->navigation.close();
+      return;
    }
+   /* Show on the slots any save the player made with a hotkey during play. */
+   menu->slots.refresh();
+   menu->navigation.open();
+   settle_focus(menu);
 }
 
 void rib_menu_toggle(void *userdata, bool on)
@@ -207,205 +213,56 @@ void rib_menu_toggle(void *userdata, bool on)
 bool rib_menu_consume_toggle(void *userdata)
 {
    Menu *menu = (Menu*)userdata;
-   return menu && (menu->achievements.modal() || rib::toggle_stays_in_menu(
-         menu->screens.controls_visible() || !string_is_equal(menu->screens.current(), "pause"),
-         menu->controls.capture_active));
+   return menu && (menu->achievements.modal() || menu->controls.capture_active
+         || !menu->screens.showing(rib::ScreenRole::Pause));
 }
 
-/* Prepare a screen after we show it, apart from its focus. */
-static void screen_shown(Menu *menu)
-{
-   if (menu->screens.controls_visible())
-   {
-      menu->view.status.set_controls(rib::words::ChooseControl);
-      menu->controls.refresh();
-   }
-   else if (menu->controls.capture_active)
-      menu->controls.cancel_capture(rib::words::BindingUnchanged);
-   /* We measure the slider from the box of the track. While the panel is
-    * hidden its width is zero, so painting leaves the thumb at its position in
-    * the stylesheet, at the low end. Paint again now that we show the screen. */
-   menu->settings.paint();
-   menu->shaders.show_running();
-   if (rib::ListOwner *owner = showing_list(menu))
-      owner->shown();
-   if (menu->screens.role_of(menu->screens.current()) == rib::ScreenRole::Achievements)
-      menu->achievements.shown();
-}
-
-/* When we have finished with the list of a screen, as on QUICK SIGN IN once
- * sign-in has started, we show the screen that the list returns. */
-static void follow_list(Menu *menu, rib::ListOwner *owner)
-{
-   const char *screen = owner ? menu->screens.with_role(owner->leave_for()) : "";
-   if (screen[0] && menu->navigation.show(screen))
-      screen_shown(menu);
-}
-
+/* Pass an event to its feature, where we decide what to do with it, if
+ * anything. For example, we give every press to a capture and to an open
+ * dialog, and run one slot transfer at a time. Here we only move between
+ * screens and leave the menu. */
 static void perform_action(Menu *menu, const rib::Event& event)
 {
-   const auto action = event.kind;
-   int control_index;
-
-   if (!menu)
+   if (!menu || menu->achievements.handle(event) || menu->controls.handle(event)
+         || menu->slots.handle(event) || menu->settings.handle(event))
       return;
 
-   if (menu->achievements.handle(event)) return;
-
-   if (menu->controls.capture_active &&
-       action != RIB_RMLUI_ACTION_CONTROLS_CANCEL &&
-       action != RIB_RMLUI_ACTION_CONTROLS_BACK)
-      return;
-
-   if (action == RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE)
+   switch (event.kind)
    {
-      menu->controls.toggle_picker();
-      menu->navigation.picker();
-      return;
-   }
-   if (action == RIB_RMLUI_ACTION_SLIDER)
-   {
-      rib::play_action_sound(action);
-      menu->settings.slide(event.id.c_str(), event.fraction, true);
-      return;
-   }
-   if (action == RIB_RMLUI_ACTION_LIST_CHOOSE || action == RIB_RMLUI_ACTION_LIST_ACTION)
-   {
-      const char *id = event.id.c_str();
-      rib::ListOwner *owner = showing_list(menu);
-      const bool done = owner && (action == RIB_RMLUI_ACTION_LIST_CHOOSE ?
-            owner->choose(id) : owner->act(id));
-
-      if (done)
-         rib::play_action_sound(action);
-      menu->focus.set(id);
-      follow_list(menu, owner);
-      return;
-   }
-   if (action == RIB_RMLUI_ACTION_LIST_PAGE)
-   {
-      const char *which = event.id.c_str();
-      int delta = which && string_is_equal(which, "prev") ? -1 : 1;
-
-      rib::play_action_sound(action);
-      menu->navigation.turn_page(delta, menu->focus.current());
-      return;
-   }
-   if (action == RIB_RMLUI_ACTION_PART_TOGGLE)
-   {
-      rib::play_action_sound(action);
-      menu->settings.toggle(event.id.c_str());
-      return;
-   }
-   if (action == RIB_RMLUI_ACTION_TOGGLE)
-   {
-      const char *id = event.id.c_str();
-      rib::play_action_sound(action);
-      menu->toggles.toggle(id, absolute_data_directory());
-      return;
-   }
-   if (action == RIB_RMLUI_ACTION_SHOW_SCREEN)
-   {
-      /* We capture and navigate on the active screen, with the id from the event. */
-      const char *wanted = event.id.c_str();
-      char screen_id[32];
-
-      screen_id[0] = '\0';
-      if (wanted && *wanted)
-         strlcpy(screen_id, wanted, sizeof(screen_id));
-      /* Pressing the button in the column opens the circle. With more than one
-       * image, we make it open the list instead, because a second button would
-       * move the column, and hiding the only button would leave a gap. */
-      menu->discs.redirect(screen_id, sizeof(screen_id));
-      if (!string_is_equal(screen_id, "achievements")) menu->achievements.leave_form();
-      /* The heading and footer of the screen come from the design, and we
-       * set the focus and the sound in Navigation. Here we keep only the
-       * fact used in Menu, which is that on the controls screen we capture
-       * differently. */
-      if (screen_id[0] && menu->navigation.show(screen_id))
-         screen_shown(menu);
-      return;
-   }
-
-   if (action == RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE)
-   {
-      menu->controls.choose_device(event.id.c_str());
-      menu->navigation.picker();
-      return;
-   }
-
-   if (action == RIB_RMLUI_ACTION_CONTROLS_BACK)
-   {
-      /* Go back to the screen from which the player opened this one. */
-      if (menu->controls.capture_active)
-         menu->controls.cancel_capture(rib::words::BindingUnchanged);
-      menu->navigation.back_to_opener();
-      screen_shown(menu);
-      return;
-   }
-
-   if (action == RIB_RMLUI_ACTION_CONTROL)
-   {
-      control_index = menu->controls.index_of(event.id.c_str());
-      if (menu->controls.active(control_index))
+      case RIB_RMLUI_ACTION_LIST_CHOOSE:
+      case RIB_RMLUI_ACTION_LIST_ACTION:
       {
-         rib::play_action_sound(action);
-         menu->controls.focus(rib::FocusTarget::item(control_index));
-         menu->controls.start_capture(control_index);
+         rib::ListOwner *owner = showing_list(menu);
+         const char *id = event.id.c_str();
+         if (owner && (event.kind == RIB_RMLUI_ACTION_LIST_CHOOSE ? owner->choose(id) : owner->act(id)))
+            rib::play_action_sound(event.kind);
+         menu->focus.set(id);
+         /* When we have finished with the list of a screen, as on QUICK SIGN IN
+          * once sign-in has started, we show the screen that the list
+          * returns. */
+         const std::string& next = owner ? menu->screens.with_role(owner->leave_for()) : std::string();
+         if (!next.empty())
+            menu->navigation.show(next);
+         break;
       }
-      return;
-   }
-
-   if ((action == RIB_RMLUI_ACTION_SAVE ||
-            action == RIB_RMLUI_ACTION_LOAD) &&
-         (menu->slots.transfer_pending() || menu->slots.slots_guarded()))
-      return;
-   if (menu->slots.slots_guarded() && (event.kind == RIB_RMLUI_ACTION_SELECT_SLOT && rib::valid_slot(event.slot)))
-      return;
-
-   if (action == RIB_RMLUI_ACTION_LOAD && !menu->slots.load_available())
-      return;
-   rib::play_action_sound(action);
-
-   switch (action)
-   {
-      case RIB_RMLUI_ACTION_SAVE:
-         menu->slots.request(rib::Slots::Transfer::Save);
+      case RIB_RMLUI_ACTION_LIST_PAGE:
+         rib::play_action_sound(event.kind);
+         menu->navigation.turn_page(event.direction, menu->focus.current());
          break;
-      case RIB_RMLUI_ACTION_LOAD:
-         menu->slots.request(rib::Slots::Transfer::Load);
+      case RIB_RMLUI_ACTION_SHOW_SCREEN:
+         menu->navigation.show(menu->discs.redirect(event.id));
          break;
-      case RIB_RMLUI_ACTION_CONTROLS:
-      {
-         /* Open the screen on the pause row in the design, through its button.
-          * We use this path for both the keyboard and the pointer. */
-         const char *button = menu->view.screens.pause_screen_button();
-
-         if (button && *button)
-         {
-            menu->view.document.click_element(button);
-            return;
-         }
-      }
-         /* The heading and the footer are in the design, with the
-          * screen. */
-         if (menu->navigation.show("controls"))
-            screen_shown(menu);
-         break;
-      case RIB_RMLUI_ACTION_CONTROLS_CANCEL:
-         menu->controls.cancel_capture(rib::words::BindingUnchanged);
-         break;
-      case RIB_RMLUI_ACTION_CONTROLS_RESET:
-         menu->controls.reset_defaults();
+      case RIB_RMLUI_ACTION_CONTROLS_BACK:
+         /* Go back to the screen from which the player opened this one. */
+         menu->navigation.back();
          break;
       case RIB_RMLUI_ACTION_RESUME:
+         rib::play_action_sound(event.kind);
          rib_host_resume();
          break;
       case RIB_RMLUI_ACTION_QUIT:
+         rib::play_action_sound(event.kind);
          rib_host_quit();
-         break;
-      case RIB_RMLUI_ACTION_SELECT_SLOT:
-         menu->navigation.select_slot(event.slot);
          break;
       default:
          break;
@@ -417,9 +274,9 @@ void *rib_menu_create(void)
    Menu *menu = new (std::nothrow) Menu{};
    if (!menu)
       return nullptr;
+   menu->navigation.on_shown([menu] { screen_shown(menu); });
    menu->slots.reset_transfer();
    menu->slots.set_selected_slot(1);
-   menu->screens.remember("pause");
    active_menu = menu;
    if (pending_overlay_start)
    {
@@ -435,7 +292,7 @@ void rib_menu_destroy(void *data)
    if (active_menu == data)
       active_menu = NULL;
    if (menu && menu->controls.capture_active)
-      menu->controls.cancel_capture(NULL);
+      menu->controls.cancel_capture();
    if (menu) menu->achievements.context_lost();
    rib::menu_view().shutdown();
    pending_overlay_start = false;
@@ -447,7 +304,7 @@ void rib_menu_context_destroy(void *data)
 {
    Menu *menu = (Menu*)data;
    if (menu && menu->controls.capture_active)
-      menu->controls.cancel_capture(NULL);
+      menu->controls.cancel_capture();
    if (menu) menu->achievements.context_lost();
    rib::menu_view().shutdown();
    if (menu)
@@ -466,62 +323,58 @@ void rib_menu_context_reset(void *data)
       rib_host_overlay_frames(true);
 }
 
+/* Load the document, the declarations of the design and everything from the
+ * game that we show in the menu, once for each document. */
+static bool initialize(Menu *menu, const char *assets, int width, int height)
+{
+   const char *data = absolute_data_directory();
+   const rib::DesignDeclarations design = rib::load_design(assets);
+   /* Read the words of the design before we write any. */
+   rib::use_words(design.words);
+   if (!menu->view.initialize(assets, design.fonts, width, height,
+            rib_host_core_gl_context(), menu->controls.catalog))
+   {
+      RARCH_ERR("[RmlUi] Failed to initialize menu from %s: its menu.rml, or the "
+            "fonts its design.cfg lists, would not load.\n", assets);
+      menu->overlays.stop();
+      rib_host_overlay_frames(false);
+      return false;
+   }
+   /* Declare the screens and overlays of the design before we show any. */
+   apply_design(menu, design, data);
+   menu->achievements.bind();
+   menu->accounts.bind();
+   menu->shaders.load(assets, data);
+   menu->slots.paint();
+   menu->slots.refresh();
+   menu->navigation.open();
+   if (!menu->controls.loaded)
+   {
+      menu->controls.load(assets, data);
+      menu->controls.loaded = true;
+   }
+   menu->controls.refresh();
+   menu->settings.attach();
+   rib::load_level_cue(assets);
+   RARCH_LOG("[RmlUi] Loaded menu from %s.\n", assets);
+   return true;
+}
+
 void rib_menu_frame(void *data, int width, int height)
 {
    Menu *menu = (Menu*)data;
    rib_pointer pointer;
-   const char *asset_directory = getenv("ROMINABOX_RML_ASSETS");
-   const char *data_directory = absolute_data_directory();
 
    if (!menu)
       return;
 
    if (!menu->initialized)
    {
-      if (!asset_directory || !*asset_directory)
-         asset_directory = RIB_RMLUI_DEFAULT_ASSETS;
-      menu->initialized = menu->view.initialize(asset_directory,
-            width, height,
-            rib_host_core_gl_context(), menu->controls.catalog);
+      const char *assets = getenv("ROMINABOX_RML_ASSETS");
+      menu->initialized = initialize(menu,
+            assets && *assets ? assets : RIB_RMLUI_DEFAULT_ASSETS, width, height);
       if (!menu->initialized)
-      {
-         RARCH_ERR("[RmlUi] Failed to initialize menu from %s.\n",
-               asset_directory);
-         menu->overlays.stop();
-         rib_host_overlay_frames(false);
          return;
-      }
-      /* Read the screens and overlays in the design before we show any. */
-      load_design(menu, asset_directory);
-      menu->achievements.bind();
-      menu->accounts.bind();
-      menu->shaders.load(asset_directory, absolute_data_directory());
-      menu->slots.paint();
-      menu->slots.refresh();
-      menu->navigation.open();
-      menu->view.screens.set_footer_hint(rib::words::ContinueHint);
-      if (!menu->controls.loaded)
-      {
-         char defaults_path[PATH_MAX_LENGTH];
-         snprintf(defaults_path, sizeof(defaults_path),
-               "%s/controls-defaults.cfg", asset_directory);
-         if (!menu->controls.load_file(defaults_path, true))
-            RARCH_WARN("[RmlUi] Controls defaults not found at %s.\n",
-                  defaults_path);
-         if (data_directory && *data_directory)
-         {
-            snprintf(menu->controls.path, sizeof(menu->controls.path),
-                  "%s/controls.cfg", data_directory);
-            menu->controls.load_file(menu->controls.path, false);
-         }
-         menu->controls.loaded = true;
-      }
-      menu->controls.refresh();
-      menu->settings.attach();
-      rib::load_level_cue(asset_directory);
-      /* After the slots, so the lock from a switch replaces the slot count. */
-      menu->toggles.apply();
-      RARCH_LOG("[RmlUi] Loaded menu from %s.\n", asset_directory);
    }
 
    menu->achievements.update();
@@ -548,8 +401,9 @@ void rib_menu_frame(void *data, int width, int height)
           * We run the script first, because from it we learn whether we still
           * want frames after the overlays are done, and we can learn that only
           * after asking it. */
-         menu->script.run(menu, {menu->screens.current(), menu->slots.transfer_pending(),
-               menu->controls.capture_active, menu->controls.profile_id});
+         menu->script.run(menu, {menu->screens.current().c_str(), menu->slots.transfer_pending(),
+               menu->controls.capture_active, menu->controls.profile_id.c_str(),
+               menu->controls.binds_list()});
          menu->overlays.update(menu->script.wants_frames());
          menu->view.render(width, height);
          return;
@@ -589,9 +443,9 @@ void rib_menu_frame(void *data, int width, int height)
       float drag_fraction = 0.0f;
       if (!menu->view.parts.slider_drag(&drag_id, &drag_fraction)
             || !menu->settings.slide(drag_id, drag_fraction, false))
-         /* In the frame we show a screen, the layout of the track may not be
-          * finished, and a fill set from that width stays short after the track
-          * grows. We paint again in the next frames, with the width on screen. */
+         /* We measure a slider in pixels, which depend on the window and on the
+          * layout of the track, so we measure it each frame and write only
+          * what changed. */
          menu->settings.paint();
    }
 
@@ -602,8 +456,9 @@ void rib_menu_frame(void *data, int width, int height)
     * Fill it before the click from the script, or the click goes to a button
     * that is still display:none in the document. */
    menu->discs.sync();
-   menu->script.run(menu, {menu->screens.current(), menu->slots.transfer_pending(),
-               menu->controls.capture_active, menu->controls.profile_id});
+   menu->script.run(menu, {menu->screens.current().c_str(), menu->slots.transfer_pending(),
+               menu->controls.capture_active, menu->controls.profile_id.c_str(),
+               menu->controls.binds_list()});
    menu->script.restore_hover();
    /* Once we have put the pointer back after the script, we silently focus
     * the stop the pointer moved onto, before the click of this frame. We never
@@ -620,23 +475,11 @@ void rib_menu_frame(void *data, int width, int height)
    }
 
    menu->controls.poll_capture();
-
-   if (menu->view.reload_if_changed())
-   {
-      menu->achievements.context_lost();
-      load_design(menu, asset_directory);
-      menu->settings.attach();
-      menu->achievements.bind();
-      menu->accounts.bind();
-      menu->screens.show_screen(menu->screens.current());
-      menu->navigation.enter();
-   }
-   menu->slots.refresh();
+   menu->slots.follow();
    menu->controls.update_binds(pointer.x, pointer.y,
          !menu->script.wants_frames());
    settle_focus(menu);
    menu->view.render(width, height);
-
 }
 
 int rib_menu_key(void *data, enum rib_key action)

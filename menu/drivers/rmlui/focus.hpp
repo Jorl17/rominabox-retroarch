@@ -9,22 +9,6 @@
 #include <vector>
 
 namespace rib {
-static inline enum rib_rmlui_action map_menu_toggle(
-      bool controls_visible, bool capture_active)
-{
-   if (capture_active)
-      return RIB_RMLUI_ACTION_CONTROLS_CANCEL;
-   if (controls_visible)
-      return RIB_RMLUI_ACTION_CONTROLS_BACK;
-   return RIB_RMLUI_ACTION_RESUME;
-}
-
-static inline bool toggle_stays_in_menu(
-      bool controls_visible, bool capture_active)
-{
-   return capture_active || controls_visible;
-}
-
 /* A stop on the pad screen, as in Controls: a control by its catalog index,
  * or one of the buttons of the screen. */
 struct FocusTarget
@@ -74,14 +58,6 @@ public:
       Rml::Element *focused = current();
       return focused ? focused->GetId() : std::string();
    }
-   /* The id of the focused element, under its name in the pause row. We read
-    * it in test_rmlui_interaction.cpp. */
-   const std::string& pause_element()
-   {
-      last_id = current_id();
-      return last_id;
-   }
-
    /* Whether the element can be focused now. Element::Focus() ignores
     * tab-index, so we reject a disabled or hidden element here. */
    bool stop(Rml::Element *element) const
@@ -114,30 +90,32 @@ public:
       return document && id && *id && set(document->GetElementById(id));
    }
 
+   /* Every stop in `panel` that can take focus now, in document order. */
+   std::vector<Rml::Element*> stops(Rml::Element *panel) const
+   {
+      std::vector<Rml::Element*> found;
+      refresh();
+      if (!panel || !can_reach(panel))
+         return found;
+      walk(panel, [&](Rml::Element *element) {
+         if (!element->IsVisible() || element->GetComputedValues().focus() == Rml::Style::Focus::None)
+            return Walk::SkipChildren;
+         if (stoppable(element))
+            found.push_back(element);
+         return Walk::Continue;
+      });
+      return found;
+   }
+
    /* Where a panel starts: the stop the design marked `autofocus`, else the
     * first stop in document order. */
    Rml::Element *first(Rml::Element *panel) const
    {
-      Rml::Element *marked = nullptr;
-      Rml::Element *earliest = nullptr;
-      refresh();
-      if (!panel || !can_reach(panel))
-         return nullptr;
-      walk(panel, [&](Rml::Element *element) {
-         if (!element->IsVisible() || element->GetComputedValues().focus() == Rml::Style::Focus::None)
-            return Walk::SkipChildren;
-         if (!stoppable(element))
-            return Walk::Continue;
-         if (!earliest)
-            earliest = element;
+      const std::vector<Rml::Element*> found = stops(panel);
+      for (Rml::Element *element : found)
          if (element->HasAttribute("autofocus"))
-         {
-            marked = element;
-            return Walk::Stop;
-         }
-         return Walk::Continue;
-      });
-      return marked ? marked : earliest;
+            return element;
+      return found.empty() ? nullptr : found.front();
    }
 
    /* Paint the focused leaf in RmlUi, and only it, as `focused`, and put its
@@ -162,7 +140,7 @@ public:
    {
       for (auto& element : outside)
          if (element)
-            element->SetClass("nav-outside", false);
+            element->SetClass(document_contract::NavOutside, false);
       outside.clear();
       region = inside ? inside->GetObserverPtr() : Rml::ObserverPtr<Rml::Element>();
       for (Rml::Element *at = inside; at && at != document; at = at->GetParentNode())
@@ -170,7 +148,7 @@ public:
             for (int index = 0; index < parent->GetNumChildren(); ++index)
                if (Rml::Element *sibling = parent->GetChild(index); sibling != at)
                {
-                  sibling->SetClass("nav-outside", true);
+                  sibling->SetClass(document_contract::NavOutside, true);
                   outside.push_back(sibling->GetObserverPtr());
                }
    }
@@ -237,6 +215,5 @@ private:
    Rml::ObserverPtr<Rml::Element> painted, region;
    std::vector<Rml::ObserverPtr<Rml::Element>> outside;
    std::map<std::string, std::string> memory;
-   std::string last_id;
 };
 }

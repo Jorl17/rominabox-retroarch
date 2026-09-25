@@ -1,34 +1,36 @@
 #pragma once
 
-namespace rib::words {
-/* Built-in wording only. Text from design declarations stays in the design.
- * There is no override format or localization mechanism in this table. */
-inline constexpr char ContinueHint[] = "ESC  CONTINUE";
-inline constexpr char BackHint[] = "ESC  BACK";
-inline constexpr char CancelHint[] = "ESC  CANCEL";
-inline constexpr char ChooseControl[] = "SELECT A CONTROL TO REBIND";
-inline constexpr char BindingUnchanged[] = "BINDING UNCHANGED";
-inline constexpr char QuickSignInFailed[] = "COULD NOT USE THIS ACCOUNT";
-inline constexpr char CaptureFailed[] = "CAPTURE COULD NOT START";
-inline constexpr char CaptureStarted[] = "%s: PRESS AN INPUT (10)";
-inline constexpr char CaptureCountdown[] = "%s: PRESS AN INPUT (%d)";
-inline constexpr char BindingConflict[] = "SAVED; ALSO USED BY %s";
-inline constexpr char DefaultsLoadFailed[] = "DEFAULTS COULD NOT BE LOADED";
-inline constexpr char DefaultsSaveFailed[] = "DEFAULTS RESTORED; SAVE FAILED";
-inline constexpr char DefaultsRestored[] = "DEFAULTS RESTORED";
-inline constexpr char BindingSaveFailed[] = "BINDING ACTIVE; SAVE FAILED";
-inline constexpr char BindingSaved[] = "BINDING SAVED";
-inline constexpr char CaptureTimeout[] = "TIMED OUT; BINDING UNCHANGED";
-inline constexpr char PausedHeading[] = "GAME PAUSED";
-inline constexpr char ControlsHeading[] = "CONTROLS";
-inline constexpr char Unbound[] = "---";
-inline constexpr char SlotLabel[] = "SLOT ";
-inline constexpr char Occupied[] = "OCCUPIED";
-inline constexpr char Empty[] = "EMPTY";
-inline constexpr char SavingSlot[] = "SAVING SLOT %d...";
-inline constexpr char LoadingSlot[] = "LOADING SLOT %d...";
-inline constexpr char SavedSlot[] = "SLOT %d SAVED";
-inline constexpr char LoadedSlot[] = "SLOT %d LOADED";
-inline constexpr char SaveFailed[] = "SAVE FAILED";
-inline constexpr char LoadFailed[] = "LOAD FAILED";
+#include <cstddef>
+#include <initializer_list>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace rib {
+/* The words we write in the menu ourselves, as declared in words.inc. */
+enum class Word
+{
+#define RIB_WORD(name, id, english) name,
+#include "words.inc"
+};
+
+inline constexpr size_t kWordCount = 0
+#define RIB_WORD(name, id, english) + 1
+#include "words.inc"
+      ;
+
+/* The id for `word` in design.json and design.cfg. */
+const char *word_id(Word word);
+/* The word with the id `id`, or false when there is no word with that id. */
+bool word_named(const std::string& id, Word& word);
+
+/* The one lookup for every word in the menu: the wording in the loaded
+ * design, or else the English. */
+const std::string& say(Word word);
+/* `word` with each {name} in it replaced by its value. */
+std::string say(Word word, std::initializer_list<std::pair<const char *, std::string>> values);
+
+/* Put the words from the design over the English, word by word, and use
+ * the English for the rest. Once each time we load a design. */
+void use_words(const std::vector<std::pair<Word, std::string>>& given);
 }
