@@ -400,7 +400,8 @@ void rib_menu_frame(void *data, int width, int height)
           * want frames after the overlays are done, and we can learn that only
           * after asking it. */
          menu->script.run(menu, {menu->screens.current().c_str(), menu->slots.transfer_pending(),
-               menu->controls.capture_active, menu->controls.profile_id.c_str()});
+               menu->controls.capture_active, menu->controls.profile_id.c_str(),
+               menu->controls.binds_list()});
          menu->overlays.update(menu->script.wants_frames());
          menu->view.render(width, height);
          return;
@@ -454,7 +455,8 @@ void rib_menu_frame(void *data, int width, int height)
     * that is still display:none in the document. */
    menu->discs.sync();
    menu->script.run(menu, {menu->screens.current().c_str(), menu->slots.transfer_pending(),
-               menu->controls.capture_active, menu->controls.profile_id.c_str()});
+               menu->controls.capture_active, menu->controls.profile_id.c_str(),
+               menu->controls.binds_list()});
    menu->script.restore_hover();
    /* Once we have put the pointer back after the script, we silently focus
     * the stop the pointer moved onto, before the click of this frame. We never

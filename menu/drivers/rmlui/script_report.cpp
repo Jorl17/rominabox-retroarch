@@ -55,11 +55,19 @@ const char *rib::Script::report(const char *screen, bool menu_open,
    }
    report += ",\"text\":{";
    bool comma = false;
-   for (const char *id : {document_contract::Heading, document_contract::FooterHint, document_contract::Status,
-         document_contract::ControlsStatus, document_contract::ControlsDeviceCurrent, "volume-value", "shaders-page-count",
-         "achievements-page-count", document_contract::AchievementsState, "control-binds"})
+   /* The pagers of the filter and achievement lists, which we find by role. */
+   const auto page_count = [&](ScreenRole role) {
+      const std::string& screen = view.screens.with_role(role);
+      return screen.empty() ? std::string() : screen + document_contract::PageCountSuffix;
+   };
+   for (const std::string& id : {std::string(document_contract::Heading),
+         std::string(document_contract::FooterHint), std::string(document_contract::Status),
+         std::string(document_contract::ControlsStatus), std::string(document_contract::ControlsDeviceCurrent),
+         page_count(ScreenRole::Shaders), page_count(ScreenRole::Achievements),
+         std::string(document_contract::AchievementsState), binds_list})
    {
-      Rml::Element *element = view.document.root() ? view.document.root()->GetElementById(id) : nullptr;
+      Rml::Element *element = view.document.root() && !id.empty()
+            ? view.document.root()->GetElementById(id) : nullptr;
       if (!element || hidden(element)) continue;
       if (comma) report += ',';
       report += quote(id) + ':' + quote(element->GetInnerRML());
@@ -81,7 +89,8 @@ const char *rib::Script::report(const char *screen, bool menu_open,
       comma = true;
    }
    report += "},\"bindsBox\":[";
-   Rml::Element *binds = view.document.root() ? view.document.root()->GetElementById("control-binds") : nullptr;
+   Rml::Element *binds = view.document.root() && !binds_list.empty()
+         ? view.document.root()->GetElementById(binds_list) : nullptr;
    if (binds && !hidden(binds))
    {
       const auto at = binds->GetAbsoluteOffset(Rml::BoxArea::Border);

@@ -20,6 +20,8 @@ struct ScriptObservation
    bool transfer_pending;
    bool capture_active;
    const char *profile;
+   /* The list of the bindings of a control, as declared in the design. */
+   const char *binds_list;
 };
 
 #ifdef RIB_MENU_SCRIPT
@@ -48,6 +50,7 @@ private:
    int waiting = 0;
    int64_t wait_until = 0;
    std::string hover;
+   std::string binds_list;
 };
 #else
 /* A shipped player has no script to run. */

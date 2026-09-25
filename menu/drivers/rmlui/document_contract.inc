@@ -190,6 +190,7 @@ RIB_ELEMENT(StatusSuffix, "-status", Generated, Optional)
 RIB_ELEMENT(TitleSuffix, "-title", Generated, Optional)
 RIB_ELEMENT(DetailSuffix, "-detail", Generated, Optional)
 RIB_ELEMENT(StateSuffix, "-state", Generated, Optional)
+RIB_ELEMENT(PageCountSuffix, "-page-count", Generated, Optional)
 
 /* State classes the player sets. */
 RIB_CLASS(Focused, "focused", State, Optional)

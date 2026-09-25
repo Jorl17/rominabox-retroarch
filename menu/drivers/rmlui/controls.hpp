@@ -52,6 +52,8 @@ public:
    void choose_device(const char *chosen);
    void toggle_picker();
    void configure_binds(const BindsDeclaration& binds);
+   /* The list of the bindings of a control, as declared in the design. */
+   const char *binds_list() const { return binds.list.c_str(); }
    void update_binds(int x, int y, bool pointer_active);
 
    bool loaded = false;

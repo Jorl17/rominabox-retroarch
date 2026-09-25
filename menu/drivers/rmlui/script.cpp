@@ -129,6 +129,7 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
 
    if (!strncmp(id, "report:", 7))
    {
+      binds_list = observation.binds_list ? observation.binds_list : "";
       float volume_db = 0.0f;
       rib_host_setting("audio_volume", &volume_db);
       if (menu)
