@@ -262,36 +262,33 @@ void Controls::refresh()
    control_view.set_capturing(capture_active);
 }
 
-void Controls::cancel_capture(const char *status)
+void Controls::cancel_capture()
 {
    if (!capture_active)
       return;
    rib_host_capture_cancel();
    capture_active = false;
-   this->status.set_controls(status ? status : rib::words::BindingUnchanged);
-   screens.set_footer_hint(screens.showing(ScreenRole::Controls) ? rib::words::BackHint :
-                                                               rib::words::ContinueHint);
+   this->status.set_controls(say(Word::BindingUnchanged).c_str());
+   screens.restore_footer();
    refresh();
 }
 
 void Controls::start_capture(int index)
 {
-   char status[96];
    if (!active(index))
       return;
    if (!rib_host_capture_start(catalog.entries[index].bind_index,
             RIB_CONTROL_CAPTURE_SECONDS))
    {
-      this->status.set_controls(rib::words::CaptureFailed);
+      this->status.set_controls(say(Word::CaptureFailed).c_str());
       return;
    }
    capture_active = true;
    capture_control = index;
    capture_ignore_pointer = true;
-   snprintf(status, sizeof(status), rib::words::CaptureStarted,
-         console_name(index));
-   this->status.set_controls(status);
-   screens.set_footer_hint(rib::words::CancelHint);
+   this->status.set_controls(say(Word::CaptureCountdown, {{"control", console_name(index)},
+         {"seconds", std::to_string(RIB_CONTROL_CAPTURE_SECONDS)}}).c_str());
+   screens.set_footer_hint(say(Word::CancelHint).c_str());
    refresh();
 }
 
@@ -351,7 +348,7 @@ void Controls::callout_text(int index, char *out, size_t length) const
    out[0] = '\0';
    if (index < 0 || index >= catalog.count)
    {
-      strlcpy(out, rib::words::Unbound, length);
+      strlcpy(out, say(Word::Unbound).c_str(), length);
       return;
    }
    member_count = bind_members(index, members);
@@ -364,7 +361,7 @@ void Controls::callout_text(int index, char *out, size_t length) const
    }
    if (lines <= 0)
    {
-      strlcpy(out, rib::words::Unbound, length);
+      strlcpy(out, say(Word::Unbound).c_str(), length);
       return;
    }
    for (slot = 0; slot < lines; ++slot)
@@ -534,14 +531,14 @@ void Controls::choose_device(const char *chosen)
 void Controls::reset_defaults()
 {
    if (capture_active)
-      cancel_capture(NULL);
+      cancel_capture();
    device_picker_open = false;
    if (!apply(NULL, false))
-      this->status.set_controls(rib::words::DefaultsLoadFailed);
+      this->status.set_controls(say(Word::DefaultsLoadFailed).c_str());
    else if (!save())
-      this->status.set_controls(rib::words::DefaultsSaveFailed);
+      this->status.set_controls(say(Word::DefaultsSaveFailed).c_str());
    else
-      this->status.set_controls(rib::words::DefaultsRestored);
+      this->status.set_controls(say(Word::DefaultsRestored).c_str());
    refresh();
 }
 
@@ -549,7 +546,6 @@ void Controls::poll_capture()
 {
    if (capture_active)
    {
-      char capture_status[96];
       float remaining = 0.0f;
       enum rib_capture_result result = rib_host_capture_poll(
             !capture_ignore_pointer, &remaining);
@@ -558,38 +554,28 @@ void Controls::poll_capture()
          int conflict = find_conflict(capture_control);
          capture_active = false;
          rib_host_restore_keyboard_mapping();
-         if (conflict >= 0)
-         {
-            snprintf(capture_status, sizeof(capture_status),
-                  rib::words::BindingConflict,
-                  console_name(conflict));
-            if (!save())
-               strlcpy(capture_status, rib::words::BindingSaveFailed,
-                     sizeof(capture_status));
-            this->status.set_controls(capture_status);
-         }
-         else if (save())
-            this->status.set_controls(rib::words::BindingSaved);
+         const bool saved = save();
+         if (!saved)
+            this->status.set_controls(say(Word::BindingSaveFailed).c_str());
+         else if (conflict >= 0)
+            this->status.set_controls(say(Word::BindingConflict,
+                  {{"control", console_name(conflict)}}).c_str());
          else
-            this->status.set_controls(rib::words::BindingSaveFailed);
+            this->status.set_controls(say(Word::BindingSaved).c_str());
          refresh();
-         screens.set_footer_hint(rib::words::BackHint);
+         screens.restore_footer();
       }
       else if (result == RIB_CAPTURE_TIMED_OUT)
       {
          capture_active = false;
-         this->status.set_controls(rib::words::CaptureTimeout);
-         screens.set_footer_hint(rib::words::BackHint);
+         this->status.set_controls(say(Word::CaptureTimeout).c_str());
+         screens.restore_footer();
          refresh();
       }
       else
-      {
-         snprintf(capture_status, sizeof(capture_status),
-               "%s: PRESS AN INPUT (%u)",
-               console_name(capture_control),
-               (unsigned)(remaining + 0.999f));
-         this->status.set_controls(capture_status);
-      }
+         this->status.set_controls(say(Word::CaptureCountdown,
+               {{"control", console_name(capture_control)},
+                {"seconds", std::to_string((unsigned)(remaining + 0.999f))}}).c_str());
    }
 
 }
@@ -646,13 +632,12 @@ bool Controls::handle(const Event& event)
    {
       case RIB_RMLUI_ACTION_CONTROLS_CANCEL:
          play_action_sound(event.kind);
-         cancel_capture(rib::words::BindingUnchanged);
+         cancel_capture();
          return true;
       case RIB_RMLUI_ACTION_CONTROLS_BACK:
          /* Leaving the pad screen ends a capture. We choose the next
           * screen in the menu code. */
-         if (capture_active)
-            cancel_capture(rib::words::BindingUnchanged);
+         cancel_capture();
          return false;
       default:
          break;
@@ -694,11 +679,11 @@ void Controls::screen_shown(bool showing)
 {
    if (showing)
    {
-      status.set_controls(rib::words::ChooseControl);
+      status.set_controls(say(Word::ChooseControl).c_str());
       refresh();
    }
-   else if (capture_active)
-      cancel_capture(rib::words::BindingUnchanged);
+   else
+      cancel_capture();
 }
 
 

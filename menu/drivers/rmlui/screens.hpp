@@ -40,6 +40,8 @@ public:
    /* The panel of screen `id`, or "". */
    const std::string& screen_panel(const std::string& id) const;
    void set_footer_hint(const char *hint) const;
+   /* The footer declared for the screen showing now. */
+   void restore_footer() const;
 
 private:
    const ScreenDeclaration *find(const std::string& id) const;

@@ -5,6 +5,7 @@
 #include "focus.hpp"
 #include "sounds.hpp"
 #include <cstdio>
+#include <string>
 
 namespace rib {
 bool Slots::load_available() const
@@ -52,11 +53,9 @@ void Slots::request(Transfer kind)
    if (kind == Transfer::Load && !load_available()) return;
    if (!begin_transfer(kind)) return;
    rib_host_select_state_slot(selected_slot);
-   char message[64];
    const bool save = kind == Transfer::Save;
-   std::snprintf(message, sizeof(message),
-         save ? rib::words::SavingSlot : rib::words::LoadingSlot, selected_slot);
-   status.set_main(message);
+   status.set_main(say(save ? Word::SavingSlot : Word::LoadingSlot,
+         {{"slot", std::to_string(selected_slot)}}).c_str());
    const bool accepted = save ? rib_host_save_state() : rib_host_load_state();
    // With a synchronous host callback, the request may already be complete.
    if (!accepted && transfer.pending)
@@ -74,13 +73,11 @@ void Slots::notify_task(const char *path, int slot, bool is_save, bool success)
    refresh();
    if (success && is_save && !has_thumbnail(transfer.slot))
       awaiting = {transfer.slot, rib_host_time_us() + kPictureWaitUs};
-   char message[64];
    if (success)
-      std::snprintf(message, sizeof(message),
-            is_save ? rib::words::SavedSlot : rib::words::LoadedSlot, transfer.slot);
+      status.set_main(say(is_save ? Word::SavedSlot : Word::LoadedSlot,
+            {{"slot", std::to_string(transfer.slot)}}).c_str());
    else
-      std::snprintf(message, sizeof(message), is_save ? rib::words::SaveFailed : rib::words::LoadFailed);
-   status.set_main(message);
+      status.set_main(say(is_save ? Word::SaveFailed : Word::LoadFailed).c_str());
 }
 
 bool Slots::handle(const Event& event)

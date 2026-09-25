@@ -4,6 +4,7 @@
 #include "../../../input/alt_enter_fullscreen.h"
 #include "navigation.hpp"
 #include "sounds.hpp"
+#include "words.hpp"
 #include <libretro.h>
 #include <algorithm>
 #include <cstring>
@@ -33,14 +34,16 @@ Rml::Input::KeyIdentifier key_id(unsigned key)
       default: return KI_UNKNOWN;
    }
 }
+/* On the RetroArch keyboard the keys have symbols or English names. We name
+ * them with the words of the menu. */
 const char *key_label(const char *label)
 {
-   if (!std::strcmp(label, "\xe2\x87\xa6") || !std::strcmp(label, "Bksp")) return "DEL";
-   if (!std::strcmp(label, "\xe2\x8f\x8e") || !std::strcmp(label, "Enter")) return "OK";
-   if (!std::strcmp(label, "\xe2\x87\xa7") || !std::strcmp(label, "Upper")) return "ABC";
-   if (!std::strcmp(label, "\xe2\x87\xa9") || !std::strcmp(label, "Lower")) return "abc";
-   if (!std::strcmp(label, "\xe2\x8a\x95") || !std::strcmp(label, "Next")) return "#+=";
-   if (!std::strcmp(label, " ")) return "_";
+   if (!std::strcmp(label, "\xe2\x87\xa6") || !std::strcmp(label, "Bksp")) return say(Word::KeyDelete).c_str();
+   if (!std::strcmp(label, "\xe2\x8f\x8e") || !std::strcmp(label, "Enter")) return say(Word::KeyEnter).c_str();
+   if (!std::strcmp(label, "\xe2\x87\xa7") || !std::strcmp(label, "Upper")) return say(Word::KeyUpper).c_str();
+   if (!std::strcmp(label, "\xe2\x87\xa9") || !std::strcmp(label, "Lower")) return say(Word::KeyLower).c_str();
+   if (!std::strcmp(label, "\xe2\x8a\x95") || !std::strcmp(label, "Next")) return say(Word::KeySymbols).c_str();
+   if (!std::strcmp(label, " ")) return say(Word::KeySpace).c_str();
    return label;
 }
 }

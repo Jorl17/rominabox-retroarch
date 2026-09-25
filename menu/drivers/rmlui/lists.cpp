@@ -5,6 +5,7 @@
 #include "document.hpp"
 #include "elements.hpp"
 #include "events.h"
+#include "words.hpp"
 
 #include <RmlUi/Core/ElementUtilities.h>
 #include <RmlUi/Core/StringUtilities.h>
@@ -157,7 +158,8 @@ void Lists::show_page(Rml::Element *list, const std::vector<Rml::Element*>& page
    for (size_t index = 0; index < pages.size(); ++index)
       show(pages[index], (int)index == shown);
    if (Rml::Element *count = find_class(list, document_contract::ListPagerCount))
-      write_text(count, std::to_string(shown + 1) + "/" + std::to_string(pages.size()));
+      write_text(count, say(Word::PageCount, {{"page", std::to_string(shown + 1)},
+            {"pages", std::to_string(pages.size())}}));
    mark_pager(list, shown, (int)pages.size());
 }
 

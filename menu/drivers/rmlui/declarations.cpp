@@ -293,6 +293,13 @@ DesignDeclarations load_design(const char *asset_directory)
    design.binds.after_ms = number(config.get(), "binds_after", design.binds.after_ms);
    design.binds.hover_after_ms = number(config.get(), "binds_hover_after", design.binds.hover_after_ms);
    design.binds.width = number(config.get(), "binds_width", design.binds.width);
+   for (size_t index = 0; index < kWordCount; ++index)
+   {
+      const Word word = static_cast<Word>(index);
+      std::string text;
+      if (read(config.get(), std::string("word_") + word_id(word), text))
+         design.words.emplace_back(word, text);
+   }
    return design;
 }
 }

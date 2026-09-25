@@ -69,9 +69,9 @@ void Slots::paint() const
          element->SetClass(document_contract::Empty, !slots[index].occupied);
       }
       document.set_element_text((document_contract::SlotLabelPrefix + suffix).c_str(),
-            (rib::words::SlotLabel + suffix).c_str());
+            say(Word::Slot, {{"slot", suffix}}).c_str());
       document.set_element_text((document_contract::SlotStatePrefix + suffix).c_str(),
-            slots[index].occupied ? rib::words::Occupied : rib::words::Empty);
+            say(slots[index].occupied ? Word::Occupied : Word::Empty).c_str());
       if (auto *image = document.root()->GetElementById(document_contract::SlotImagePrefix + suffix))
       {
          const float height = std::min(138.0f, 230.0f / game_aspect);

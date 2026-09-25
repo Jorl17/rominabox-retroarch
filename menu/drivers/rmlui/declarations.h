@@ -7,6 +7,7 @@
 
 #ifdef __cplusplus
 #include "screen_role.hpp"
+#include "words.hpp"
 #include <string>
 #include <vector>
 
@@ -67,6 +68,8 @@ struct DesignDeclarations
    /* The font files staged next to the document, for drawing the menu. */
    std::vector<std::string> fonts;
    BindsDeclaration binds;
+   /* The words whose wording is in the design. */
+   std::vector<std::pair<Word, std::string>> words;
 };
 
 /* One read of `asset_directory`/design.cfg. For a missing file the declaration

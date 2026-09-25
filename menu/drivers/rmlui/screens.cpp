@@ -40,15 +40,15 @@ void Screens::built_in_screens()
    ScreenDeclaration pause;
    pause.id = role_word(ScreenRole::Pause);
    pause.panel = document_contract::PausePanel;
-   pause.heading = words::PausedHeading;
-   pause.footer = words::ContinueHint;
+   pause.heading = say(Word::PausedHeading);
+   pause.footer = say(Word::ContinueHint);
    pause.role = ScreenRole::Pause;
    declare_screen(pause);
    ScreenDeclaration controls;
    controls.id = role_word(ScreenRole::Controls);
    controls.panel = document_contract::ControlsPanel;
-   controls.heading = words::ControlsHeading;
-   controls.footer = words::BackHint;
+   controls.heading = say(Word::ControlsHeading);
+   controls.footer = say(Word::BackHint);
    controls.buttons = {document_contract::Controls};
    controls.role = ScreenRole::Controls;
    declare_screen(controls);
@@ -125,5 +125,12 @@ const std::string& Screens::screen_panel(const std::string& id) const
 void Screens::set_footer_hint(const char *hint) const
 {
    document.set_element_text(document_contract::FooterHint, hint ? hint : "");
+}
+
+void Screens::restore_footer() const
+{
+   const ScreenDeclaration *screen = find(active);
+   if (screen && !screen->footer.empty())
+      set_footer_hint(screen->footer.c_str());
 }
 }

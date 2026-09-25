@@ -102,7 +102,7 @@ bool SavedAccounts::choose(const char *row)
       return true;
    }
    if (!screen.empty())
-      document.set_element_text((screen + document_contract::StatusSuffix).c_str(), words::QuickSignInFailed);
+      document.set_element_text((screen + document_contract::StatusSuffix).c_str(), say(Word::QuickSignInFailed).c_str());
    return false;
 }
 

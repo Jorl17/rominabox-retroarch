@@ -2,6 +2,7 @@
 #include "lists.hpp"
 #include "document.hpp"
 #include "elements.hpp"
+#include "words.hpp"
 #include <algorithm>
 #include <unordered_map>
 
@@ -94,7 +95,8 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
    for (size_t index = page_count; index < pages.size(); ++index) list->RemoveChild(pages[index]);
    show(pager, page_count > 1);
    write_text(find_class(pager, document_contract::ListPagerCount),
-         std::to_string(current + 1) + "/" + std::to_string(page_count));
+         say(Word::PageCount, {{"page", std::to_string(current + 1)},
+               {"pages", std::to_string(page_count)}}));
    mark_pager(list, current, page_count);
    if (!resized.empty()) document.get_context()->Update();
    for (const auto *row : resized) fit_row_title(row->id.c_str(), row->title.c_str());

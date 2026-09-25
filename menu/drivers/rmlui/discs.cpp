@@ -3,6 +3,7 @@
 #include "document.hpp"
 #include "lists.hpp"
 #include "document_contract.hpp"
+#include "words.hpp"
 #include <retro_miscellaneous.h>
 #include <cstdio>
 #include <string>
@@ -65,10 +66,10 @@ void Discs::sync()
       char label[PATH_MAX_LENGTH];
       label[0] = '\0';
       rib_host_disc_label((unsigned)index, label, sizeof(label));
-      if (!label[0])
-         snprintf(label, sizeof(label), "Disc %u", (unsigned)index + 1);
+      const std::string title = label[0] ? std::string(label)
+            : say(Word::Disc, {{"number", std::to_string(index + 1)}});
       document.set_shown(row.c_str(), true);
-      lists.fit_row_title(row.c_str(), label);
+      lists.fit_row_title(row.c_str(), title.c_str());
    }
    /* The page shown is the one with the disc in the drive. */
    const std::string current_row = count > 0 && current < (unsigned)rows
@@ -77,11 +78,10 @@ void Discs::sync()
       lists.retarget_pages(rows_id.c_str(), current_row.empty() ? nullptr : current_row.c_str());
    if (!current_row.empty())
       lists.select_row(rows_id.c_str(), current_row.c_str(), mark.c_str(), "");
-   char status[64];
-   status[0] = '\0';
-   if (rows > 0 && count > (unsigned)rows)
-      snprintf(status, sizeof(status), "SHOWING %d OF %u", rows, count);
-   document.set_element_text((list_id + document_contract::StatusSuffix).c_str(), status);
+   const std::string status = rows > 0 && count > (unsigned)rows
+         ? say(Word::ShowingDiscs, {{"shown", std::to_string(rows)}, {"count", std::to_string(count)}})
+         : std::string();
+   document.set_element_text((list_id + document_contract::StatusSuffix).c_str(), status.c_str());
 }
 
 bool Discs::choose(const char *id)

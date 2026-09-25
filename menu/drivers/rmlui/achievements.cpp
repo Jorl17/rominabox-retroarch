@@ -6,6 +6,7 @@
 #include "../../../input/alt_enter_fullscreen.h"
 #include "navigation.hpp"
 #include "saved_accounts.hpp"
+#include "words.hpp"
 #include <algorithm>
 #include <cstring>
 #include <libretro.h>
@@ -21,11 +22,11 @@ const char *status_text(const rib_achievements_snapshot_t& snapshot)
 {
    if (snapshot.upload_failed) return snapshot.error;
    switch (snapshot.status) {
-      case RIB_ACHIEVEMENTS_SIGNING_IN: return "Signing in...";
-      case RIB_ACHIEVEMENTS_LOADING: return "Loading achievements...";
-      case RIB_ACHIEVEMENTS_ACTIVE: return snapshot.pending_upload ? "Earned achievements waiting to sync. Keep the game open." : "";
+      case RIB_ACHIEVEMENTS_SIGNING_IN: return say(Word::SigningIn).c_str();
+      case RIB_ACHIEVEMENTS_LOADING: return say(Word::LoadingAchievements).c_str();
+      case RIB_ACHIEVEMENTS_ACTIVE: return snapshot.pending_upload ? say(Word::WaitingToSync).c_str() : "";
       case RIB_ACHIEVEMENTS_UNAVAILABLE: case RIB_ACHIEVEMENTS_ERROR: return snapshot.error;
-      case RIB_ACHIEVEMENTS_OFF: return "Achievements are off.";
+      case RIB_ACHIEVEMENTS_OFF: return say(Word::AchievementsTurnedOff).c_str();
       default: return "";
    }
 }
@@ -110,7 +111,7 @@ void Achievements::show_form(bool show)
       text.disable();
       if (auto *password = field(document, document_contract::AchievementPassword)) password->SetValue("");
       mask_password(document, true);
-      document.set_element_text(document_contract::AchievementPasswordVisibility, "SHOW");
+      document.set_element_text(document_contract::AchievementPasswordVisibility, say(Word::ShowPassword).c_str());
    }
    paint();
 }
@@ -137,11 +138,11 @@ void Achievements::paint_rows()
    for (size_t index = 0; index < snapshot.count; ++index) {
       rib_achievement_row_t item{};
       if (!rib_achievements_get_row(index, &item)) continue;
-      const char *state = "LOCKED";
+      Word state = Word::Locked;
       switch (item.state) {
-         case RIB_ACHIEVEMENT_UNLOCKED: state = "EARNED"; break;
-         case RIB_ACHIEVEMENT_PENDING_UPLOAD: state = "SYNCING"; break;
-         case RIB_ACHIEVEMENT_UNSUPPORTED: state = "UNSUPPORTED"; break;
+         case RIB_ACHIEVEMENT_UNLOCKED: state = Word::Earned; break;
+         case RIB_ACHIEVEMENT_PENDING_UPLOAD: state = Word::Syncing; break;
+         case RIB_ACHIEVEMENT_UNSUPPORTED: state = Word::Unsupported; break;
          default: break;
       }
       Lists::Row::Badge badge = Lists::Row::Badge::None;
@@ -155,7 +156,8 @@ void Achievements::paint_rows()
          popup_waiting = 0;
       }
       rows.push_back({document_contract::AchievementRowPrefix + std::to_string(item.id), item.title, item.description,
-            std::to_string(item.points) + " PT / " + state, item.badge_path,
+            say(Word::AchievementPoints, {{"points", std::to_string(item.points)}, {"state", say(state)}}),
+            item.badge_path,
             item.state == RIB_ACHIEVEMENT_UNLOCKED || item.state == RIB_ACHIEVEMENT_PENDING_UPLOAD, badge});
    }
    lists.replace_rows(document_contract::AchievementsList, rows);
@@ -176,9 +178,11 @@ void Achievements::paint()
    document.set_shown(document_contract::AchievementsCatalog, !form && !signed_out);
    document.set_shown(document_contract::AchievementsSessionActions, !form && !signed_out);
    document.set_shown(document_contract::AchievementsBack, !form);
-   document.set_element_text(document_contract::AchievementsAccount, snapshot.account[0] ? snapshot.account : "RETROACHIEVEMENTS");
-   document.set_element_text(document_contract::AchievementsState, snapshot.status == RIB_ACHIEVEMENTS_ACTIVE ? "ON" : pending ? "CONNECTING" : "OFF");
-   document.set_element_text(document_contract::AchievementsEnabled, snapshot.status == RIB_ACHIEVEMENTS_OFF ? "TURN ON" : pending ? "CANCEL" : "TURN OFF");
+   document.set_element_text(document_contract::AchievementsAccount, snapshot.account[0] ? snapshot.account : say(Word::NoAccount).c_str());
+   document.set_element_text(document_contract::AchievementsState, say(snapshot.status == RIB_ACHIEVEMENTS_ACTIVE
+         ? Word::AchievementsOn : pending ? Word::AchievementsConnecting : Word::AchievementsOff).c_str());
+   document.set_element_text(document_contract::AchievementsEnabled, say(snapshot.status == RIB_ACHIEVEMENTS_OFF
+         ? Word::TurnOn : pending ? Word::CancelConnecting : Word::TurnOff).c_str());
    document.set_shown(document_contract::AchievementsEnabled, !failed);
    document.set_shown(document_contract::AchievementsRetry, failed);
    document.set_disabled(document_contract::AchievementsSubmit, pending);
@@ -191,11 +195,13 @@ void Achievements::paint()
       else text.enable(document_contract::AchievementsForm, document_contract::AchievementsSubmit, document_contract::AchievementsCancel);
    }
    document.set_shown(document_contract::AchievementsConfirmation, confirming);
-   document.set_element_text(document_contract::AchievementsEndSession, pending_exit == Exit::Quit ? "QUIT ANYWAY" : "SIGN OUT ANYWAY");
+   document.set_element_text(document_contract::AchievementsEndSession,
+         say(pending_exit == Exit::Quit ? Word::QuitAnyway : Word::SignOutAnyway).c_str());
    document.set_shown(document_contract::AchievementsStartup, snapshot.startup_waiting);
    document.set_shown(document_contract::AchievementsStartupRetry, snapshot.startup_waiting && failed);
    document.set_element_text(document_contract::AchievementsStartupStatus, failed ? snapshot.error :
-         (snapshot.startup_skipped || snapshot.status == RIB_ACHIEVEMENTS_ACTIVE) ? "Restoring your game..." : "Connecting to RetroAchievements...");
+         say((snapshot.startup_skipped || snapshot.status == RIB_ACHIEVEMENTS_ACTIVE)
+               ? Word::RestoringGame : Word::Connecting).c_str());
 }
 void Achievements::update()
 {
@@ -223,7 +229,7 @@ void Achievements::update()
          // For a popup queued behind another, the badge may already be on disk.
          const std::string badge = unlocked.badge_path[0] ? std::string(unlocked.badge_path)
                : ready_badge(snapshot, unlocked.id);
-         overlays.notify({unlocked.title, std::to_string(unlocked.points) + " points", badge});
+         overlays.notify({unlocked.title, say(Word::UnlockPoints, {{"points", std::to_string(unlocked.points)}}), badge});
          // Earned just now, so we are still downloading the colour badge.
          if (badge.empty()) popup_waiting = unlocked.id;
       }
@@ -236,12 +242,12 @@ void Achievements::sign_in()
    if (!username || !password || busy(snapshot.status)) return;
    std::string value = password->GetValue();
    if (username->GetValue().empty() || value.empty()) {
-      document.set_element_text(document_contract::AchievementsError, "Enter your username and password."); return;
+      document.set_element_text(document_contract::AchievementsError, say(Word::EnterDetails).c_str()); return;
    }
    const bool started = rib_achievements_sign_in(username->GetValue().c_str(), value.c_str());
    std::fill(value.begin(), value.end(), '\0');
    password->SetValue("");
-   if (!started) document.set_element_text(document_contract::AchievementsError, "Could not start sign in. Check your details and try again.");
+   if (!started) document.set_element_text(document_contract::AchievementsError, say(Word::SignInNotStarted).c_str());
    update();
 }
 bool Achievements::request_exit(Exit exit)
@@ -271,7 +277,8 @@ void Achievements::action(AccountAction wanted)
          if (auto *password = field(document, document_contract::AchievementPassword)) {
             const bool reveal = password->GetAttribute<std::string>("type", "password") == "password";
             mask_password(document, !reveal);
-            document.set_element_text(document_contract::AchievementPasswordVisibility, reveal ? "HIDE" : "SHOW");
+            document.set_element_text(document_contract::AchievementPasswordVisibility,
+                  say(reveal ? Word::HidePassword : Word::ShowPassword).c_str());
          }
          break;
       case AccountAction::Enable:

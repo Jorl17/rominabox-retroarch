@@ -189,7 +189,7 @@ static void reset_interaction(Menu *menu, bool opening)
       return;
    menu->achievements.leave_form();
    if (menu->controls.capture_active)
-      menu->controls.cancel_capture(NULL);
+      menu->controls.cancel_capture();
    menu->pointer_pressed = false;
    menu->controls.capture_ignore_pointer = false;
    menu->view.clear_intents();
@@ -292,7 +292,7 @@ void rib_menu_destroy(void *data)
    if (active_menu == data)
       active_menu = NULL;
    if (menu && menu->controls.capture_active)
-      menu->controls.cancel_capture(NULL);
+      menu->controls.cancel_capture();
    if (menu) menu->achievements.context_lost();
    rib::menu_view().shutdown();
    pending_overlay_start = false;
@@ -304,7 +304,7 @@ void rib_menu_context_destroy(void *data)
 {
    Menu *menu = (Menu*)data;
    if (menu && menu->controls.capture_active)
-      menu->controls.cancel_capture(NULL);
+      menu->controls.cancel_capture();
    if (menu) menu->achievements.context_lost();
    rib::menu_view().shutdown();
    if (menu)
@@ -329,6 +329,8 @@ static bool initialize(Menu *menu, const char *assets, int width, int height)
 {
    const char *data = absolute_data_directory();
    const rib::DesignDeclarations design = rib::load_design(assets);
+   /* Read the words of the design before we write any. */
+   rib::use_words(design.words);
    if (!menu->view.initialize(assets, design.fonts, width, height,
             rib_host_core_gl_context(), menu->controls.catalog))
    {

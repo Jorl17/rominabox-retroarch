@@ -45,7 +45,8 @@ public:
    void load(const char *assets, const char *data);
    void refresh();
    void focus(FocusTarget target);
-   void cancel_capture(const char *status);
+   /* End a capture that is waiting, and leave its binding as it was. */
+   void cancel_capture();
    void start_capture(int index);
    void poll_capture();
    void reset_defaults();
