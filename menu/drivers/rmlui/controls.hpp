@@ -88,8 +88,10 @@ private:
    int find_conflict(int changed_index) const;
    int bind_members(int index, int *members) const;
    bool same_bind_target(int left, int right) const;
-   void bind_anchor(int index, char *out, size_t length) const;
-   void callout_text(int index, char *out, size_t length) const;
+   /* The element next to which we show the list of bindings of a control. */
+   std::string bind_anchor(int index) const;
+   /* The bindings of a control, as we show them on its callout. */
+   std::string callout_text(int index) const;
    void show_binds(int index);
    void hide_binds();
    struct Binds

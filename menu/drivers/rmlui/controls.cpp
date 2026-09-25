@@ -240,24 +240,15 @@ void Controls::refresh()
          ? stop_id(catalog, FocusTarget::item(capture_control)) : std::string();
    for (index = 0; index < catalog.count; ++index)
    {
-      char display_label[NAME_MAX_LENGTH * 2];
-      char binding[4096];
-      char group_id[96];
-
       if (!active(index))
          continue;
-      strlcpy(display_label, catalog.entries[index].label,
-            sizeof(display_label));
-      callout_text(index, binding, sizeof(binding));
+      const std::string binding = callout_text(index);
       const std::string stop = stop_id(catalog, FocusTarget::item(index));
       control_view.set_control_state(stop.c_str(), catalog.entries[index].id,
-            display_label, binding, stop == captured);
+            catalog.entries[index].label, binding.c_str(), stop == captured);
       if (catalog.entries[index].group[0])
-      {
-         snprintf(group_id, sizeof(group_id), "%s%s", document_contract::ControlGroupBindingPrefix,
-               catalog.entries[index].group);
-         document.set_element_text(group_id, binding);
-      }
+         document.set_element_text((document_contract::ControlGroupBindingPrefix
+               + std::string(catalog.entries[index].group)).c_str(), binding.c_str());
    }
    control_view.set_capturing(capture_active);
 }
@@ -322,60 +313,35 @@ bool Controls::same_bind_target(int left, int right) const
    return group_left[0] && group_right[0] && string_is_equal(group_left, group_right);
 }
 
-void Controls::bind_anchor(int index, char *out, size_t length) const
+std::string Controls::bind_anchor(int index) const
 {
    if (catalog.entries[index].group[0])
    {
-      snprintf(out, length, "%s%s", document_contract::ControlGroupPrefix, catalog.entries[index].group);
-      if (document.has_element(out))
-         return;
+      const std::string group = document_contract::ControlGroupPrefix + std::string(catalog.entries[index].group);
+      if (document.has_element(group.c_str()))
+         return group;
    }
-   snprintf(out, length, "%s%s", document_contract::ControlPrefix, catalog.entries[index].id);
+   return document_contract::ControlPrefix + std::string(catalog.entries[index].id);
 }
 
-void Controls::callout_text(int index, char *out, size_t length) const
+std::string Controls::callout_text(int index) const
 {
    int members[RIB_CONTROL_MAX];
-   int member_count = 0;
    char details[RIB_HOST_BIND_LINE_MAX][64];
    char kinds[RIB_HOST_BIND_LINE_MAX][8];
    int lines = 0;
-   int slot;
-   size_t used = 0;
 
-   if (!out || !length)
-      return;
-   out[0] = '\0';
    if (index < 0 || index >= catalog.count)
-   {
-      strlcpy(out, say(Word::Unbound).c_str(), length);
-      return;
-   }
-   member_count = bind_members(index, members);
-
-   for (slot = 0; slot < member_count; ++slot)
-   {
-      const unsigned at = catalog.entries[members[slot]].bind_index;
-      rib_host_bind_lines(at,
-            details, kinds, &lines);
-   }
+      return say(Word::Unbound);
+   const int member_count = bind_members(index, members);
+   for (int member = 0; member < member_count; ++member)
+      rib_host_bind_lines(catalog.entries[members[member]].bind_index, details, kinds, &lines);
    if (lines <= 0)
-   {
-      strlcpy(out, say(Word::Unbound).c_str(), length);
-      return;
-   }
-   for (slot = 0; slot < lines; ++slot)
-   {
-      if (slot && used + 2 < length)
-      {
-         out[used++] = ',';
-         out[used++] = ' ';
-         out[used] = '\0';
-      }
-      used += strlcpy(out + used, details[slot], length - used);
-      if (used >= length)
-         break;
-   }
+      return say(Word::Unbound);
+   std::string text;
+   for (int line = 0; line < lines; ++line)
+      text += (line ? ", " : "") + std::string(details[line]);
+   return text;
 }
 
 void Controls::show_binds(int index)
@@ -389,7 +355,6 @@ void Controls::show_binds(int index)
    int rows;
    int slot;
    int member;
-   char anchor[96];
 
    member_count = bind_members(index, members);
 
@@ -431,8 +396,7 @@ void Controls::show_binds(int index)
       document.set_shown(row.c_str(), slot < lines);
    }
    lists.retarget_pages(binds.list.c_str());
-   bind_anchor(index, anchor, sizeof(anchor));
-   lists.place_list(binds.list.c_str(), anchor, binds.width);
+   lists.place_list(binds.list.c_str(), bind_anchor(index).c_str(), binds.width);
    binds.open = true;
 }
 
