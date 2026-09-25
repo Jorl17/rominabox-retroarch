@@ -2465,13 +2465,15 @@ ifeq ($(HAVE_NETWORKING), 1)
    ifeq ($(HAVE_CHEEVOS), 1)
       DEFINES += -DHAVE_CHEEVOS -DRC_CLIENT_SUPPORTS_HASH
       INCLUDE_DIRS += -Ideps/rcheevos/include
-      # ROM-in-a-Box's shared accounts store, which is not RetroArch code: the
-      # player's build script compiles it and names the folder it is in.
+      # ROM-in-a-Box's shared accounts store, which is not RetroArch code. The
+      # player's build script hands over its sources; they are compiled here,
+      # with RetroArch's own flags and macOS minimum.
       ifeq ($(RIB_ACCOUNTS_DIR),)
          $(error HAVE_CHEEVOS needs RIB_ACCOUNTS_DIR, the ROM-in-a-Box accounts store the player build script prepares)
       endif
-      INCLUDE_DIRS += -I$(RIB_ACCOUNTS_DIR)/include
-      LIBS += $(RIB_ACCOUNTS_DIR)/librominabox-accounts.a
+      INCLUDE_DIRS += -I$(RIB_ACCOUNTS_DIR)/accounts -I$(RIB_ACCOUNTS_DIR)/launcher
+      OBJ += $(RIB_ACCOUNTS_DIR)/accounts/accounts.o $(RIB_ACCOUNTS_DIR)/accounts/sealed.o \
+             $(RIB_ACCOUNTS_DIR)/launcher/portable_fs.o
 
       ifneq ($(HAVE_THREADS), 1)
          DEFINES += -DRC_NO_THREADS
