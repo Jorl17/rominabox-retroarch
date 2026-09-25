@@ -45,7 +45,8 @@ public:
    /* Read every slot from the host, when the menu opens and when a save or a
     * load finishes. Nothing else changes them. */
    void refresh();
-   /* Call once a frame. Returns the slot still waiting for its picture. */
+   /* Call once a frame. Returns the slot still waiting for the new picture of
+    * a save, if any. */
    void follow();
    void request(Transfer kind);
    /* Handle SAVE, LOAD and the choice of a slot, one transfer at a time. There
@@ -63,12 +64,18 @@ public:
 private:
    bool begin_transfer(Transfer kind);
    void look_at(int slot);
+   /* The picture on a slot, as its file and the version of that file. */
+   std::string shown_picture(int slot) const;
    /* How long we wait for the picture of a saved slot. */
    static constexpr int64_t kPictureWaitUs = 5000000;
+   /* A saved slot, which we follow until its picture differs from the one at
+    * the time of the save report, which is from the previous save or none. In
+    * RetroArch a save is reported before the new picture is written. */
    struct Awaiting
    {
       int slot = 0;
       int64_t until = 0;
+      std::string reported;
    } awaiting;
    struct Request
    {
