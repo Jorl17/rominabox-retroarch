@@ -21,8 +21,10 @@ public:
     * this way, empty while the document still has the exported scene. */
    bool set_scene(const char *profile, const char *markup);
    const char *scene_profile() const { return scene.c_str(); }
-   void set_control_state(const char *id, const char *label, const char *binding,
-         bool capturing);
+   /* The label and binding of a control, and whether `stop`, the element for
+    * it in the scene, is waiting for input. */
+   void set_control_state(const char *stop, const char *id, const char *label,
+         const char *binding, bool capturing);
    /* We show CANCEL, marked capturing, only while we capture a binding. */
    void set_capturing(bool capturing);
 private:

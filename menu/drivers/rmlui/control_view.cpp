@@ -143,13 +143,13 @@ bool ControlView::set_scene(const char *profile, const char *markup)
    return true;
 }
 
-void ControlView::set_control_state(const char *id,
+void ControlView::set_control_state(const char *stop, const char *id,
       const char *label, const char *binding, bool capturing)
 {
    if (!document.root() || !id)
       return;
    const std::string suffix(id);
-   if (Rml::Element *control = document.root()->GetElementById(document_contract::ControlPrefix + suffix))
+   if (Rml::Element *control = stop ? document.root()->GetElementById(stop) : nullptr)
       control->SetClass(document_contract::Capturing, capturing);
    if (Rml::Element *label_element =
          document.root()->GetElementById(document_contract::ControlLabelPrefix + suffix))

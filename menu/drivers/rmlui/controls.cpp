@@ -243,6 +243,10 @@ bool Controls::save()
 void Controls::refresh()
 {
    int index;
+   /* The stop being captured, which is the focused one, is marked capturing.
+    * All members of a stick use the box of their group. */
+   const std::string captured = capture_active
+         ? stop_id(catalog, FocusTarget::item(capture_control)) : std::string();
    for (index = 0; index < catalog.count; ++index)
    {
       char display_label[NAME_MAX_LENGTH * 2];
@@ -254,9 +258,9 @@ void Controls::refresh()
       strlcpy(display_label, catalog.entries[index].label,
             sizeof(display_label));
       callout_text(index, binding, sizeof(binding));
-      control_view.set_control_state(catalog.entries[index].id,
-            display_label, binding,
-            capture_active && capture_control == index);
+      const std::string stop = stop_id(catalog, FocusTarget::item(index));
+      control_view.set_control_state(stop.c_str(), catalog.entries[index].id,
+            display_label, binding, stop == captured);
       if (catalog.entries[index].group[0])
       {
          snprintf(group_id, sizeof(group_id), "%s%s", document_contract::ControlGroupBindingPrefix,
