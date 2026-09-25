@@ -287,16 +287,13 @@ void rib_host_level_sound(bool up)
 #ifdef HAVE_AUDIOMIXER
    settings_t *settings = config_get_ptr();
    const unsigned slot  = up ? AUDIO_MIXER_SYSTEM_SLOT_UP : AUDIO_MIXER_SYSTEM_SLOT_DOWN;
-   float db;
    if (!settings)
-      return;
-   db = rib_host_volume_now(settings);
-   if (db <= AUDIO_VOLUME_MIN_DB)
       return;
    audio_driver_mixer_play_menu_sound(slot);
    /* A new voice starts at unity. We set its level before the next mixer
-    * run, on this thread, so no sample of it plays louder. */
-   audio_driver_mixer_set_stream_volume(slot, db);
+    * run, on this thread, so no sample of it plays louder. In the menu we
+    * play no cue at the silent bottom (sounds.cpp). */
+   audio_driver_mixer_set_stream_volume(slot, rib_host_volume_now(settings));
 #else
    (void)up;
 #endif

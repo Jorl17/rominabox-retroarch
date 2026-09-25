@@ -25,6 +25,11 @@ void play_move_sound(bool up)
 void play_level_sound(bool up)
 {
 #ifdef HAVE_AUDIOMIXER
+   /* We play the cue at the volume of the game. At the bottom step there is
+    * silence, so we do not call the host. */
+   float db = AUDIO_VOLUME_MAX_DB;
+   if (rib_host_setting(RIB_SETTING_AudioVolume, &db) && db <= AUDIO_VOLUME_MIN_DB)
+      return;
    rib_host_level_sound(up);
 #else
    (void)up;

@@ -70,7 +70,8 @@ bool rib_host_setting(enum rib_setting_key key, float *value);
 bool rib_host_set_setting(enum rib_setting_key key, float value);
 void rib_host_scroll_sound(bool up);
 /* Play the movement cue at the volume of the game, so the player hears a
- * change of level at the new level. */
+ * change of level at the new level. We do not call this at the lowest,
+ * silent level. */
 void rib_host_level_sound(bool up);
 /* When a game has no menu sound pack, we export it with a cue for a change
  * of level and use that as the movement cue. Navigation stays silent. */
