@@ -190,7 +190,6 @@ void screens(config_file_t *config, rib::DesignDeclarations& design)
       screen.footer = value(config, "screen_footer_" + id);
       screen.buttons = ids(value(config, "screen_button_" + id));
       screen.images = value(config, "screen_images_" + id);
-      screen.mark = value(config, "screen_mark_" + id);
       std::string role;
       if (read(config, "screen_role_" + id, role))
       {
@@ -223,8 +222,6 @@ void settings(config_file_t *config, rib::DesignDeclarations& design)
       else if (kind == "switch")
       {
          setting.kind = rib::SettingKind::Switch;
-         setting.on = value(config, "setting_on_" + id);
-         setting.off = value(config, "setting_off_" + id);
          setting.inverted = value(config, "setting_inverted_" + id) == "true";
       }
       else
@@ -317,10 +314,6 @@ void rib_load_shaders(const char *asset_directory, rib_shader_catalog *catalog)
    config_file_t *config = config_file_new_from_path_to_string(path);
    if (!config)
       return;
-   config_get_array(config, "shader_state_on", catalog->state_on,
-         sizeof(catalog->state_on));
-   config_get_array(config, "shader_state_off", catalog->state_off,
-         sizeof(catalog->state_off));
    each_id<1024>(config, "shader_ids", [&](const char *id) {
       if (catalog->count >= RIB_SHADER_MAX)
       {

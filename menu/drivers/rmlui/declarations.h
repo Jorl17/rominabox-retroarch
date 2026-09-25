@@ -21,8 +21,6 @@ struct ScreenDeclaration
    std::vector<std::string> buttons;
    /* The screen we show instead when the core has loaded several images. */
    std::string images;
-   /* The word on the row that is in the tray. */
-   std::string mark;
    ScreenRole role = ScreenRole::None;
 };
 
@@ -46,8 +44,8 @@ struct SettingDeclaration
     * between them, both ends included. */
    float low = 0.0f, high = 0.0f;
    int positions = 0;
-   /* A switch: its words, and whether on is the key's false. */
-   std::string on, off;
+   /* A switch: whether on is the key's false. The words for it are in the
+    * menu (Word::SwitchOn, Word::SwitchOff). */
    bool inverted = false;
 };
 
@@ -97,8 +95,6 @@ typedef struct rib_shader_catalog
 {
    rib_shader_declaration entries[RIB_SHADER_MAX];
    int count;
-   char state_on[32];
-   char state_off[32];
 } rib_shader_catalog;
 
 /* Controls and controller variants in the exported declaration order. We

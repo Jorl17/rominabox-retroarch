@@ -6,6 +6,7 @@
 #include "parts.hpp"
 #include "slots.hpp"
 #include "sounds.hpp"
+#include "words.hpp"
 #include "../../../verbosity.h"
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
@@ -101,7 +102,8 @@ void PlayerSettings::paint() const
       else
       {
          const bool on = switched_on(setting, current);
-         lists.set_toggle(setting.control.c_str(), (on ? setting.on : setting.off).c_str(), on);
+         lists.set_toggle(setting.control.c_str(),
+               say(on ? Word::SwitchOn : Word::SwitchOff).c_str(), on);
       }
    }
 }

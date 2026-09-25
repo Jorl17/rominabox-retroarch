@@ -1,6 +1,7 @@
 #include "shaders.hpp"
 #include "host.h"
 #include "lists.hpp"
+#include "words.hpp"
 #include "../rmlui_shader_mark.h"
 #include "../../../verbosity.h"
 #include <streams/file_stream.h>
@@ -25,7 +26,7 @@ void Shaders::show_running() const
       relatives[index] = catalog.entries[index].preset;
    const int matched = rib_shader_mark_index(rib_host_current_shader(), relatives, catalog.count);
    lists.mark_row(matched < 0 ? "" : catalog.entries[matched].id,
-         catalog.state_on, catalog.state_off);
+         say(Word::ShaderMark).c_str(), "");
 }
 
 bool Shaders::choose(const char *id)
