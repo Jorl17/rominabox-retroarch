@@ -12,6 +12,7 @@
 #include <file/config_file.h>
 #include <streams/file_stream.h>
 #include "../../../verbosity.h"
+#include "../../../rominabox_environment.h"
 #include "../rmlui_bridge.h"
 #include "menu_api.h"
 #include "files.h"
@@ -111,16 +112,6 @@ static rib::ListOwner *showing_list(Menu *menu)
       if (role != rib::ScreenRole::None && owner->role() == role)
          return owner;
    return nullptr;
-}
-
-/* As in libretro, on Windows a path with a drive letter or share is absolute. */
-static const char *absolute_data_directory(void)
-{
-   const char *data = getenv("ROMINABOX_DATA_DIR");
-
-   if (!path_is_absolute(data))
-      return NULL;
-   return data;
 }
 
 /* Prepare a screen after we show it, apart from its focus. We call this for
@@ -333,7 +324,8 @@ void rib_menu_context_reset(void *data)
  * game that we show in the menu, once for each document. */
 static bool initialize(Menu *menu, const char *assets, int width, int height)
 {
-   const char *data = absolute_data_directory();
+   const rib_environment_value data_directory = rib_owned(rib_data_directory());
+   const char *data = data_directory.get();
    const rib::DesignDeclarations design = rib::load_design(assets);
    /* Read the words of the design before we write any. */
    rib::use_words(design.words);
@@ -376,9 +368,9 @@ void rib_menu_frame(void *data, int width, int height)
 
    if (!menu->initialized)
    {
-      const char *assets = getenv("ROMINABOX_RML_ASSETS");
+      const rib_environment_value assets = rib_owned(rib_environment("ROMINABOX_RML_ASSETS"));
       menu->initialized = initialize(menu,
-            assets && *assets ? assets : RIB_RMLUI_DEFAULT_ASSETS, width, height);
+            assets && *assets ? assets.get() : RIB_RMLUI_DEFAULT_ASSETS, width, height);
       if (!menu->initialized)
          return;
    }

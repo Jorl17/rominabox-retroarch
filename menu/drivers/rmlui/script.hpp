@@ -42,7 +42,9 @@ private:
    void shot();
    View& view;
    std::string report_text;
-   const char *script = nullptr;
+   /* ROMINABOX_MENU_SCRIPT, when it is set. */
+   std::string steps;
+   bool scripted = false;
    size_t at = 0;
    bool started = false;
    bool running = false;
