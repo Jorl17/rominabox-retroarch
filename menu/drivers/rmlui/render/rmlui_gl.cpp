@@ -5,8 +5,10 @@
 #include <RmlUi_Renderer_GL2.cpp>
 #include <RmlUi_Renderer_GL3.h>
 #include "../../third_party/lodepng.h"
+#include <streams/file_stream.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <type_traits>
 #include <vector>
 
@@ -149,10 +151,23 @@ struct CoreGlState
 Rml::TextureHandle load_png(Rml::RenderInterface& backend,
       Rml::Vector2i& dimensions, const Rml::String& source)
 {
+   /* We read through the libretro file layer, with UTF-8 paths on every
+    * platform. The fopen in lodepng takes ANSI code page paths on Windows, so
+    * with it we could not open a slot picture under a non-ASCII folder name. */
+   void *file = nullptr;
+   int64_t size = 0;
+   if (!filestream_read_file(source.c_str(), &file, &size))
+   {
+      Rml::Log::Message(Rml::Log::LT_ERROR,
+            "Could not read PNG texture %s", source.c_str());
+      return {};
+   }
    std::vector<unsigned char> rgba;
    unsigned width = 0;
    unsigned height = 0;
-   const unsigned error = lodepng::decode(rgba, width, height, source);
+   const unsigned error = lodepng::decode(rgba, width, height,
+         static_cast<const unsigned char*>(file), static_cast<size_t>(size));
+   free(file);
    if (error)
    {
       Rml::Log::Message(Rml::Log::LT_ERROR,
