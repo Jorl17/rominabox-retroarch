@@ -15,6 +15,8 @@ class Parts
 public:
    Parts(Document& document, EventQueue& events) : document(document), events(events) {}
 
+   /* The toggle part, and any other element we mark `switch` in composition,
+    * such as a player setting drawn as an Options entry. */
    void wire_part_toggles();
    void wire_arrows();
    void set_slider(const char *id, float fraction, const char *readout);
@@ -34,7 +36,6 @@ private:
    float fraction_at(Rml::Element *slider, int x) const;
    void paint_slider(Rml::Element *slider, float fraction, const char *readout);
    void remember_slider(const std::string& id, float fraction);
-   static void note_slider_move(float before, float after);
 
    Document& document;
    EventQueue& events;
@@ -43,6 +44,5 @@ private:
    Rml::Element *drag_element = nullptr;
    std::string drag_id;
    float drag_fraction = 0.0f;
-   float drag_origin = 0.0f;
 };
 }

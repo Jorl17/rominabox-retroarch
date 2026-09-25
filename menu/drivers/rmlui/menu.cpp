@@ -27,7 +27,6 @@
 #include "controls.hpp"
 #include "slots.hpp"
 #include "view.hpp"
-#include "../../../audio/volume_range.h"
 #include "navigation.hpp"
 #include "sounds.hpp"
 
@@ -50,7 +49,7 @@ struct Menu
     * the screen showing, which we find by the declared role of the screen. */
    rib::ListOwner *const owners[3] = {&discs, &shaders, &accounts};
    rib::Toggles toggles{view.lists, view.slots};
-   rib::Volume volume{view.parts};
+   rib::PlayerSettings settings{view.parts, view.lists};
    rib::Focus& focus = view.focus;
    rib::Screens& screens = view.screens;
    rib::Controls controls{focus, screens, view.document, view.controls,
@@ -140,6 +139,7 @@ static void load_design(Menu *menu, const char *assets)
             screen->footer, screen->button, rib::screen_role(screen->role));
    }
    menu->toggles.load(*design, absolute_data_directory());
+   menu->settings.load(*design, absolute_data_directory());
    menu->overlays.load(*design);
    menu->controls.configure_binds(*design);
    rib_design_free(loaded);
@@ -225,7 +225,7 @@ static void screen_shown(Menu *menu)
    /* We measure the slider from the box of the track. While the panel is
     * hidden its width is zero, so painting leaves the thumb at its position in
     * the stylesheet, at the low end. Paint again now that we show the screen. */
-   menu->volume.paint();
+   menu->settings.paint();
    menu->shaders.show_running();
    if (rib::ListOwner *owner = showing_list(menu))
       owner->shown();
@@ -266,9 +266,7 @@ static void perform_action(Menu *menu, const rib::Event& event)
    if (action == RIB_RMLUI_ACTION_SLIDER)
    {
       rib::play_action_sound(action);
-      if (string_is_equal(event.id.c_str(), RIB_VOLUME_SLIDER_ID))
-         menu->volume.set(
-               rib_volume_db_from_fraction(event.fraction), true);
+      menu->settings.slide(event.id.c_str(), event.fraction, true);
       return;
    }
    if (action == RIB_RMLUI_ACTION_LIST_CHOOSE || action == RIB_RMLUI_ACTION_LIST_ACTION)
@@ -296,6 +294,7 @@ static void perform_action(Menu *menu, const rib::Event& event)
    if (action == RIB_RMLUI_ACTION_PART_TOGGLE)
    {
       rib::play_action_sound(action);
+      menu->settings.toggle(event.id.c_str());
       return;
    }
    if (action == RIB_RMLUI_ACTION_TOGGLE)
@@ -513,13 +512,13 @@ void rib_menu_frame(void *data, int width, int height)
          {
             snprintf(menu->controls.path, sizeof(menu->controls.path),
                   "%s/controls.cfg", data_directory);
-            menu->volume.configure_path(data_directory);
             menu->controls.load_file(menu->controls.path, false);
          }
          menu->controls.loaded = true;
       }
       menu->controls.refresh();
-      menu->volume.initialize();
+      menu->settings.attach();
+      rib::load_level_cue(asset_directory);
       /* After the slots, so the lock from a switch replaces the slot count. */
       menu->toggles.apply();
       RARCH_LOG("[RmlUi] Loaded menu from %s.\n", asset_directory);
@@ -588,15 +587,12 @@ void rib_menu_frame(void *data, int width, int height)
    {
       const char *drag_id = NULL;
       float drag_fraction = 0.0f;
-      if (menu->view.parts.slider_drag(&drag_id, &drag_fraction) && drag_id
-            && string_is_equal(drag_id, RIB_VOLUME_SLIDER_ID))
-         menu->volume.set(
-               rib_volume_db_from_fraction(drag_fraction), false);
-      /* In the frame where a screen appears, the track may not be laid out yet,
-       * and a fill set from that width stays too short after the track grows.
-       * We paint again on the next frames, with the width the player sees. */
-      else
-         menu->volume.paint();
+      if (!menu->view.parts.slider_drag(&drag_id, &drag_fraction)
+            || !menu->settings.slide(drag_id, drag_fraction, false))
+         /* In the frame we show a screen, the layout of the track may not be
+          * finished, and a fill set from that width stays short after the track
+          * grows. We paint again in the next frames, with the width on screen. */
+         menu->settings.paint();
    }
 
    /* Before we empty the queue, so we handle a scripted click in this frame,
@@ -629,6 +625,7 @@ void rib_menu_frame(void *data, int width, int height)
    {
       menu->achievements.context_lost();
       load_design(menu, asset_directory);
+      menu->settings.attach();
       menu->achievements.bind();
       menu->accounts.bind();
       menu->screens.show_screen(menu->screens.current());

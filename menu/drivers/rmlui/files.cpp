@@ -1,6 +1,5 @@
 #include "files.h"
 
-#include "../../../audio/volume_range.h"
 #include <file/file_path.h>
 #include <retro_miscellaneous.h>
 #include <streams/file_stream.h>
@@ -70,15 +69,15 @@ bool rib_write_menu_config(config_file_t *config, const char *path)
    return replace_file(temporary, path);
 }
 
-bool rib_write_menu_volume(const char *path, float db)
+bool rib_write_player_setting(const char *path, const char *key, const char *value)
 {
    char temporary[PATH_MAX_LENGTH];
-   if (!temporary_path(temporary, path))
+   if (!key || !*key || !value || !temporary_path(temporary, path))
       return false;
    FILE *file = fopen(temporary, "w");
    if (!file)
       return false;
-   fprintf(file, "%s = \"%.1f\"\n", RIB_VOLUME_KEY, db);
+   fprintf(file, "%s = \"%s\"\n", key, value);
    if (fclose(file) != 0)
    {
       filestream_delete(temporary);

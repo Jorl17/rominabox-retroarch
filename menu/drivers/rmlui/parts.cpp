@@ -4,7 +4,6 @@
 #include "document.hpp"
 #include "elements.hpp"
 #include "events.h"
-#include "host.h"
 
 #include <RmlUi/Core/StringUtilities.h>
 #include <algorithm>
@@ -64,7 +63,9 @@ private:
 void Parts::wire_part_toggles()
 {
    walk(document.root(), [&](Rml::Element *element) {
-      if (element->IsClassSet(document_contract::Toggle) && !element->GetId().empty())
+      if ((element->IsClassSet(document_contract::Toggle)
+               || element->IsClassSet(document_contract::Switch))
+            && !element->GetId().empty())
          element->AddEventListener(Rml::EventId::Click,
                new PartToggleListener(events, element->GetId()));
       return Walk::Continue;
@@ -133,17 +134,6 @@ void Parts::remember_slider(const std::string& id, float fraction)
    events.push({RIB_RMLUI_ACTION_SLIDER, id, clamp_fraction(fraction)});
 }
 
-void Parts::note_slider_move(float before, float after)
-{
-   const float delta = after - before;
-#ifdef HAVE_AUDIOMIXER
-   if (delta > 0.0001f || delta < -0.0001f)
-      rib_host_scroll_sound(delta > 0.0f);
-#else
-   (void)delta;
-#endif
-}
-
 void Parts::set_slider(const char *id, float fraction, const char *readout)
 {
    if (!document.root() || !id) return;
@@ -173,13 +163,8 @@ bool Parts::commit_slider(const char *id, float fraction)
    if (!document.root() || !id) return false;
    auto *slider = document.root()->GetElementById(id);
    if (!slider || !slider->IsClassSet(document_contract::Slider)) return false;
-   float before = 0.0f;
-   const auto found = slider_fraction.find(slider->GetId());
-   if (found != slider_fraction.end()) before = found->second;
-   const float after = clamp_fraction(fraction);
    paint_slider(slider, fraction, nullptr);
    remember_slider(slider->GetId(), fraction);
-   note_slider_move(before, after);
    return true;
 }
 
@@ -204,9 +189,6 @@ void Parts::begin_drag(Rml::Element *hovered, int x)
    if (!slider) return;
    drag_element = slider;
    drag_id = slider->GetId();
-   drag_origin = 0.0f;
-   const auto painted = slider_fraction.find(slider->GetId());
-   if (painted != slider_fraction.end()) drag_origin = painted->second;
    slider->SetClass(document_contract::Dragging, true);
    drag_to(x);
 }
@@ -222,9 +204,7 @@ void Parts::end_drag()
 {
    if (!drag_element) return;
    drag_element->SetClass(document_contract::Dragging, false);
-   const float after = clamp_fraction(drag_fraction);
    remember_slider(drag_id, drag_fraction);
-   note_slider_move(drag_origin, after);
    drag_element = nullptr;
 }
 

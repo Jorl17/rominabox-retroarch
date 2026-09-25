@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 /* The exported format's fixed bounds. */
-enum { RIB_OVERLAY_MAX = 8, RIB_TOGGLE_MAX = 8 };
+enum { RIB_OVERLAY_MAX = 8, RIB_TOGGLE_MAX = 8, RIB_SETTING_MAX = 8 };
 enum { RIB_SHADER_MAX = 32, RIB_CONTROL_MAX = 48, RIB_DEVICE_MAX = 8 };
 enum rib_toggle_guard { RIB_TOGGLE_GUARD_NONE, RIB_TOGGLE_GUARD_SAVES };
 
@@ -24,6 +24,30 @@ typedef struct rib_toggle
    enum rib_toggle_guard guard;
    bool state;
 } rib_toggle_t;
+
+/* A setting the player changes in the Options of the game, for one RetroArch
+ * key. We declare every one at export. In the menu we show it in `control`,
+ * apply it at once and store it in `file`, in the game's data, and at the
+ * next launch we apply that file in the launcher. */
+enum rib_setting_kind { RIB_SETTING_LEVEL, RIB_SETTING_SWITCH };
+
+typedef struct rib_setting_declaration
+{
+   char id[32];
+   char control[64];
+   char key[64];
+   char file[64];
+   enum rib_setting_kind kind;
+   /* A level: the key's value at each end, and how many positions lie
+    * between them, both ends included. */
+   float low;
+   float high;
+   int positions;
+   /* A switch: its words, and whether on is the key's false. */
+   char on[32];
+   char off[32];
+   bool inverted;
+} rib_setting_declaration;
 
 typedef struct rib_screen_declaration
 {
@@ -57,6 +81,8 @@ typedef struct rib_design_data
    int overlay_count;
    rib_toggle_t toggles[RIB_TOGGLE_MAX];
    int toggle_count;
+   rib_setting_declaration settings[RIB_SETTING_MAX];
+   int setting_count;
    char binds_list[64];
    int binds_after_ms;       /* after a key reaches a control */
    int binds_hover_after_ms; /* after the pointer comes to rest on one */

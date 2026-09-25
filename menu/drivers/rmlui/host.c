@@ -11,6 +11,9 @@
 #include "../../../disk_control_interface.h"
 #include "../../../file_path_special.h"
 #include "../../../runloop.h"
+#ifdef HAVE_AUDIOMIXER
+#include "../../../tasks/task_audio_mixer.h"
+#endif
 #include "../../../gfx/gfx_thumbnail.h"
 #include "../../../gfx/video_driver.h"
 #include "../../../gfx/video_shader_parse.h"
@@ -211,27 +214,83 @@ void rib_host_apply_device(const char *id, unsigned device)
       RARCH_LOG("[RIB] controller '%s' applied as device %u.\n", id, applied);
 }
 
-float rib_host_volume(void)
-{
-   settings_t *settings = config_get_ptr();
-   return settings ? settings->floats.audio_volume : AUDIO_VOLUME_DEFAULT_DB;
-}
-
-bool rib_host_muted(void)
+/* The player settings that we apply in RetroArch while the game runs, by
+ * config key. The quiet end of the volume is silence, so for a muted game we
+ * show the quiet end, and choosing a level turns mute off. */
+static float rib_host_volume_now(settings_t *settings)
 {
    bool *muted = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
-   return muted && *muted;
+   return muted && *muted ? AUDIO_VOLUME_MIN_DB : settings->floats.audio_volume;
 }
 
-void rib_host_set_volume(float db)
+bool rib_host_setting(const char *key, float *value)
 {
    settings_t *settings = config_get_ptr();
-   bool *muted = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
-   if (muted)
-      *muted = false;
-   if (settings)
-      configuration_set_float(settings, settings->floats.audio_volume, db);
-   audio_set_float(AUDIO_ACTION_VOLUME_GAIN, db);
+   if (!settings || !key || !value)
+      return false;
+   if (string_is_equal(key, "audio_volume"))
+      *value = rib_host_volume_now(settings);
+   else if (string_is_equal(key, "pause_nonactive"))
+      *value = settings->bools.pause_nonactive ? 1.0f : 0.0f;
+   else
+      return false;
+   return true;
+}
+
+bool rib_host_set_setting(const char *key, float value)
+{
+   settings_t *settings = config_get_ptr();
+   if (!settings || !key)
+      return false;
+   if (string_is_equal(key, "audio_volume"))
+   {
+      bool *muted = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
+      if (muted)
+         *muted = false;
+      configuration_set_float(settings, settings->floats.audio_volume, value);
+      audio_set_float(AUDIO_ACTION_VOLUME_GAIN, value);
+   }
+   else if (string_is_equal(key, "pause_nonactive"))
+   {
+      configuration_set_bool(settings, settings->bools.pause_nonactive, value != 0.0f);
+   }
+   else
+      return false;
+   return true;
+}
+
+void rib_host_level_sound(bool up)
+{
+#ifdef HAVE_AUDIOMIXER
+   settings_t *settings = config_get_ptr();
+   const unsigned slot  = up ? AUDIO_MIXER_SYSTEM_SLOT_UP : AUDIO_MIXER_SYSTEM_SLOT_DOWN;
+   float db;
+   if (!settings)
+      return;
+   db = rib_host_volume_now(settings);
+   if (db <= AUDIO_VOLUME_MIN_DB)
+      return;
+   audio_driver_mixer_play_menu_sound(slot);
+   /* A new voice starts at unity. We set its level before the next mixer
+    * run, on this thread, so no sample of it plays louder. */
+   audio_driver_mixer_set_stream_volume(slot, db);
+#else
+   (void)up;
+#endif
+}
+
+void rib_host_load_level_cue(const char *path)
+{
+#ifdef HAVE_AUDIOMIXER
+   if (!path || !path_is_valid(path))
+      return;
+   task_push_audio_mixer_load(path, NULL, NULL, true,
+         AUDIO_MIXER_SLOT_SELECTION_MANUAL, AUDIO_MIXER_SYSTEM_SLOT_UP);
+   task_push_audio_mixer_load(path, NULL, NULL, true,
+         AUDIO_MIXER_SLOT_SELECTION_MANUAL, AUDIO_MIXER_SYSTEM_SLOT_DOWN);
+#else
+   (void)path;
+#endif
 }
 
 void rib_host_scroll_sound(bool up)

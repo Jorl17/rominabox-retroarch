@@ -219,6 +219,70 @@ void toggles(config_file_t *config, rib_design_data &data)
    });
 }
 
+void settings(config_file_t *config, rib_design_data &data)
+{
+   each_id<256>(config, "settings", [&](const char *id) {
+      if (data.setting_count >= RIB_SETTING_MAX)
+      {
+         RARCH_ERR("[RIB] more than %d player settings are declared; '%s' and "
+               "any after it will not work.\n", RIB_SETTING_MAX, id);
+         return false;
+      }
+      char key[128];
+      char value[64] = {};
+      rib_setting_declaration setting{};
+      strlcpy(setting.id, id, sizeof(setting.id));
+      snprintf(key, sizeof(key), "setting_control_%s", id);
+      config_get_array(config, key, setting.control, sizeof(setting.control));
+      snprintf(key, sizeof(key), "setting_key_%s", id);
+      config_get_array(config, key, setting.key, sizeof(setting.key));
+      snprintf(key, sizeof(key), "setting_file_%s", id);
+      config_get_array(config, key, setting.file, sizeof(setting.file));
+      snprintf(key, sizeof(key), "setting_kind_%s", id);
+      config_get_array(config, key, value, sizeof(value));
+      if (string_is_equal(value, "level"))
+      {
+         setting.kind = RIB_SETTING_LEVEL;
+         snprintf(key, sizeof(key), "setting_low_%s", id);
+         if (config_get_array(config, key, value, sizeof(value)))
+            setting.low = strtof(value, NULL);
+         snprintf(key, sizeof(key), "setting_high_%s", id);
+         if (config_get_array(config, key, value, sizeof(value)))
+            setting.high = strtof(value, NULL);
+         snprintf(key, sizeof(key), "setting_positions_%s", id);
+         config_get_int(config, key, &setting.positions);
+      }
+      else if (string_is_equal(value, "switch"))
+      {
+         setting.kind = RIB_SETTING_SWITCH;
+         snprintf(key, sizeof(key), "setting_on_%s", id);
+         config_get_array(config, key, setting.on, sizeof(setting.on));
+         snprintf(key, sizeof(key), "setting_off_%s", id);
+         config_get_array(config, key, setting.off, sizeof(setting.off));
+         snprintf(key, sizeof(key), "setting_inverted_%s", id);
+         value[0] = '\0';
+         config_get_array(config, key, value, sizeof(value));
+         setting.inverted = string_is_equal(value, "true");
+      }
+      else
+      {
+         RARCH_ERR("[RIB] the setting '%s' is a '%s', which this player does "
+               "not implement; it will not be shown.\n", id, value);
+         return true;
+      }
+      if (!*setting.control || !*setting.key || !*setting.file
+            || (setting.kind == RIB_SETTING_LEVEL
+               && (setting.positions < 2 || setting.high == setting.low)))
+      {
+         RARCH_ERR("[RIB] the setting '%s' is declared without its control, "
+               "key, file or range; it will not be shown.\n", id);
+         return true;
+      }
+      data.settings[data.setting_count++] = setting;
+      return true;
+   });
+}
+
 void overlays(config_file_t *config, const char *assets, rib_design_data &data)
 {
    each_id<512>(config, "overlays", [&](const char *id) {
@@ -278,6 +342,7 @@ rib_design_declarations *rib_load_design(const char *asset_directory)
    }
    screens(config.get(), *design);
    toggles(config.get(), design->data);
+   settings(config.get(), design->data);
    overlays(config.get(), asset_directory, design->data);
    if (!config_get_array(config.get(), "binds_list", design->data.binds_list,
          sizeof(design->data.binds_list)))
