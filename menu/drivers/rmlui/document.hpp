@@ -49,6 +49,9 @@ public:
 #ifdef RIB_RMLUI_HEADLESS
    void advance(double seconds) { system.clock_offset += seconds; }
    unsigned texture_loads() const { return texture_count; }
+   /* How much geometry we have built. In a frame with no change we build
+    * none. */
+   unsigned geometry_compiled() const { return geometry_count; }
 #endif
 
 private:
@@ -79,6 +82,7 @@ private:
    time_t rcss_mtime = 0;
 #ifdef RIB_RMLUI_HEADLESS
    unsigned texture_count = 0;
+   unsigned geometry_count = 0;
 #endif
 };
 }

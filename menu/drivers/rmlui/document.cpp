@@ -23,7 +23,8 @@ namespace
 class HeadlessRenderer : public RominaboxRenderer
 {
 public:
-   explicit HeadlessRenderer(unsigned &texture_count) : texture_count(texture_count) {}
+   HeadlessRenderer(unsigned &texture_count, unsigned &geometry_count)
+      : texture_count(texture_count), geometry_count(geometry_count) {}
    void SetViewport(int, int) override {}
    void BeginFrame() override {}
    void EndFrame() override {}
@@ -31,7 +32,7 @@ public:
    Rml::CompiledGeometryHandle CompileGeometry(
          Rml::Span<const Rml::Vertex>, Rml::Span<const int>) override
    {
-      return ++geometry;
+      return ++geometry_count;
    }
    void RenderGeometry(Rml::CompiledGeometryHandle, Rml::Vector2f,
          Rml::TextureHandle) override {}
@@ -54,7 +55,9 @@ public:
 
 private:
    unsigned &texture_count;
-   Rml::CompiledGeometryHandle geometry = 0;
+   /* The count of geometry pieces built in RmlUi. After a change, only what
+    * must be laid out or drawn again is built again. */
+   unsigned &geometry_count;
 };
 
 #endif
@@ -102,7 +105,7 @@ bool Document::initialize(
    asset_dir = asset_directory;
 #ifdef RIB_RMLUI_HEADLESS
    (void)core_context;
-   renderer = std::make_unique<HeadlessRenderer>(texture_count);
+   renderer = std::make_unique<HeadlessRenderer>(texture_count, geometry_count);
 #else
    renderer = rib_menu_renderer(core_context);
 #endif
