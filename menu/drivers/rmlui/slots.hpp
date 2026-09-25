@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <vector>
 #include "events.h"
+#include <RmlUi/Core/Element.h>
 #include <retro_miscellaneous.h>
 
 namespace rib {
@@ -53,7 +54,13 @@ public:
     * is nothing to load from an empty slot. False for anything else. */
    bool handle(const Event& event);
    void notify_task(const char *path, int slot, bool is_save, bool success);
-   void paint() const;
+   void paint();
+   /* We fit the picture of each slot, with the aspect ratio of the game, in
+    * the box `.slot-picture` from the stylesheet of the design, as large as
+    * fits and centred. We size only the picture, and only when the aspect
+    * ratio or the box has changed. Call once a frame, because a box on a
+    * hidden screen has no size until we show it. */
+   void fit_pictures();
    void set_selected_slot(int slot);
    void set_slot_state(int slot, bool occupied, const char *thumbnail_path);
    void set_game_aspect(float aspect);
@@ -109,5 +116,13 @@ private:
    float game_aspect = 4.0f / 3.0f;
    int selected_slot = 1;
    SlotState slots[kSlotCount];
+   /* The picture we fitted last, its box in dp, and the aspect ratio we used.
+    * After a document reload, the picture is a different element. */
+   struct Fitted
+   {
+      Rml::ObserverPtr<Rml::Element> image;
+      float width = 0.0f, height = 0.0f, aspect = 0.0f;
+   };
+   Fitted fits[kSlotCount];
 };
 }

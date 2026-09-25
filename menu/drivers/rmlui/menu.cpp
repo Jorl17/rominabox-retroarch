@@ -482,6 +482,7 @@ void rib_menu_frame(void *data, int width, int height)
 
    menu->controls.poll_capture();
    menu->slots.follow();
+   menu->slots.fit_pictures();
    menu->controls.update_binds(pointer.x, pointer.y,
          !menu->script.wants_frames());
    settle_focus(menu);

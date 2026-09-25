@@ -59,7 +59,7 @@ std::string Slots::quoted_css_path(const std::string& path)
    return result;
 }
 
-void Slots::paint() const
+void Slots::paint()
 {
    if (!document.root()) return;
 
@@ -80,14 +80,6 @@ void Slots::paint() const
             say(slots[index].occupied ? Word::Occupied : Word::Empty).c_str());
       if (auto *image = document.root()->GetElementById(document_contract::SlotImagePrefix + suffix))
       {
-         const float height = std::min(138.0f, 230.0f / game_aspect);
-         if (auto *picture = image->GetParentNode())
-         {
-            picture->SetProperty("width", std::to_string(height * game_aspect) + "dp");
-            picture->SetProperty("height", std::to_string(height) + "dp");
-            picture->SetProperty("margin-top", std::to_string((138.0f - height) / 2) + "dp");
-            picture->SetProperty("margin-bottom", std::to_string((138.0f - height) / 2) + "dp");
-         }
          if (slots[index].occupied && !slots[index].thumbnail_path.empty())
             image->SetProperty("decorator", "image(\"" +
                   quoted_css_path(slots[index].thumbnail_path) + "\" fill)");
@@ -100,6 +92,43 @@ void Slots::paint() const
    document.show_fact(document_contract::ChosenSlotFact, std::to_string(selected_slot));
    paint_status_line(document.root()->GetElementById(document_contract::Status),
          status.main_text());
+   fit_pictures();
+}
+
+void Slots::fit_pictures()
+{
+   Rml::Context *context = document.get_context();
+   if (!document.root() || !context)
+      return;
+   context->Update();
+   const float dp = context->GetDensityIndependentPixelRatio();
+   if (!(dp > 0.0f))
+      return;
+   for (int index = 0; index < kSlotCount; ++index)
+   {
+      Rml::Element *image = document.root()->GetElementById(
+            document_contract::SlotImagePrefix + std::to_string(index + 1));
+      Rml::Element *box = image ? image->GetParentNode() : nullptr;
+      if (!box)
+         continue;
+      /* In dp, which are the same in a window of any size. A box with no size
+       * has no layout yet, for example while its screen is hidden. */
+      const Rml::Vector2f room = box->GetBox().GetSize(Rml::BoxArea::Content) / dp;
+      if (!(room.x > 0.0f && room.y > 0.0f))
+         continue;
+      Fitted& fitted = fits[index];
+      if (fitted.image.get() == image && fitted.width == room.x && fitted.height == room.y
+            && fitted.aspect == game_aspect)
+         continue;
+      fitted = {image->GetObserverPtr(), room.x, room.y, game_aspect};
+      const float width = std::min(room.x, room.y * game_aspect);
+      const float height = std::min(room.y, room.x / game_aspect);
+      const auto in_dp = [](float value) { return std::to_string(value) + "dp"; };
+      image->SetProperty("width", in_dp(width));
+      image->SetProperty("height", in_dp(height));
+      image->SetProperty("margin-left", in_dp((room.x - width) / 2));
+      image->SetProperty("margin-top", in_dp((room.y - height) / 2));
+   }
 }
 
 void Slots::set_selected_slot(int slot)
