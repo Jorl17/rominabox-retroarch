@@ -23,9 +23,9 @@ void Shaders::show_running() const
    if (catalog.count <= 0)
       return;
    for (int index = 0; index < catalog.count; ++index)
-      relatives[index] = catalog.entries[index].preset;
+      relatives[index] = catalog.entries[index].preset.c_str();
    const int matched = rib_shader_mark_index(rib_host_current_shader(), relatives, catalog.count);
-   lists.mark_row(matched < 0 ? "" : catalog.entries[matched].id,
+   lists.mark_row(matched < 0 ? "" : catalog.entries[matched].id.c_str(),
          say(Word::ShaderMark).c_str(), "");
 }
 
@@ -41,9 +41,9 @@ bool Shaders::choose(const char *id)
    if (!id || !*id || !rib_host_has_settings())
       return false;
    for (index = 0; index < catalog.count; ++index)
-      if (string_is_equal(catalog.entries[index].id, id))
+      if (catalog.entries[index].id == id)
       {
-         relative = catalog.entries[index].preset;
+         relative = catalog.entries[index].preset.c_str();
          known = true;
          break;
       }

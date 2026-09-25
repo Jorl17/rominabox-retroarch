@@ -8,137 +8,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <memory>
 #include <vector>
 
 namespace
 {
-/* The sizes of the list buffers are limits on the input we accept here. */
-template<size_t Capacity, typename Visit>
-void each_id(config_file_t *config, const char *key, Visit visit)
-{
-   char list[Capacity];
-   if (!config_get_array(config, key, list, sizeof(list)))
-      return;
-   char *cursor = list;
-   while (char *id = strtok_r(cursor, " ", &cursor))
-      if (*id && !visit(id))
-         break;
-}
-
-bool control_belongs(const char *list, const char *id)
-{
-   const char *at;
-   size_t length;
-
-   if (!list || !*list)
-      return true;
-   length = strlen(id);
-   for (at = list; (at = strstr(at, id)); at += length)
-   {
-      const bool starts = (at == list) || at[-1] == ' ';
-      const bool ends = at[length] == '\0' || at[length] == ' ';
-      if (starts && ends)
-         return true;
-   }
-   return false;
-}
-
-void discover_controls(config_file_t *config, const char *profile_id,
-      rib_controls_catalog *catalog,
-      bool (*bind_index_resolver)(const char *, unsigned *))
-{
-   struct config_file_entry entry;
-   bool present;
-   char key[96];
-   char belonging[1024];
-
-   catalog->count = 0;
-   belonging[0] = '\0';
-   if (profile_id[0])
-   {
-      snprintf(key, sizeof(key), "controls_variant_controls_%s", profile_id);
-      if (!config_get_array(config, key, belonging, sizeof(belonging)))
-         belonging[0] = '\0';
-   }
-   for (present = config_get_entry_list_head(config, &entry); present;
-        present = config_get_entry_list_next(&entry))
-   {
-      const char *id;
-      unsigned bind_index;
-
-      if (!entry.key || strncmp(entry.key, "rib_label_", 10))
-         continue;
-      id = entry.key + 10;
-      if (!*id)
-         continue;
-      if (!control_belongs(belonging, id))
-         continue;
-      if (!bind_index_resolver(id, &bind_index))
-      {
-         RARCH_WARN("[RIB] '%s' is not a libretro bind; the menu will not show "
-               "it. Check the id against DECLARE_BIND in configuration.c.\n", id);
-         continue;
-      }
-      if (catalog->count >= RIB_CONTROL_MAX)
-      {
-         /* We log this, so that a control left out, such as a DualShock
-          * stick, appears in the log. */
-         RARCH_ERR("[RIB] more than %d controls declared; '%s' and anything "
-               "after it are unreachable.\n", RIB_CONTROL_MAX, id);
-         return;
-      }
-      strlcpy(catalog->entries[catalog->count].id, id,
-            sizeof(catalog->entries[catalog->count].id));
-      catalog->entries[catalog->count].group[0] = '\0';
-      {
-         char group_key[96];
-         snprintf(group_key, sizeof(group_key), "rib_group_%s", id);
-         config_get_array(config, group_key,
-               catalog->entries[catalog->count].group,
-               sizeof(catalog->entries[catalog->count].group));
-      }
-      catalog->entries[catalog->count].bind_index = bind_index;
-      ++catalog->count;
-   }
-}
-
-void discover_devices(config_file_t *config, rib_controls_catalog *catalog)
-{
-   catalog->device_count = 0;
-   each_id<512>(config, "controls_variants", [&](const char *token) {
-      char key[96];
-      char name[NAME_MAX_LENGTH];
-
-      if (catalog->device_count >= RIB_DEVICE_MAX)
-      {
-         RARCH_ERR("[RIB] more than %d controllers offered; '%s' and any after "
-               "it cannot be chosen.\n", RIB_DEVICE_MAX, token);
-         return false;
-      }
-      strlcpy(catalog->devices[catalog->device_count].id, token,
-            sizeof(catalog->devices[catalog->device_count].id));
-      snprintf(key, sizeof(key), "controls_variant_device_%s", token);
-      catalog->devices[catalog->device_count].libretro = 0;
-      {
-         char device[32];
-         if (config_get_array(config, key, device, sizeof(device)))
-            catalog->devices[catalog->device_count].libretro =
-               (unsigned)strtoul(device, NULL, 10);
-      }
-      snprintf(key, sizeof(key), "controls_variant_name_%s", token);
-      if (config_get_array(config, key, name, sizeof(name)))
-         strlcpy(catalog->devices[catalog->device_count].name, name,
-               sizeof(catalog->devices[catalog->device_count].name));
-      else
-         strlcpy(catalog->devices[catalog->device_count].name, token,
-               sizeof(catalog->devices[catalog->device_count].name));
-      ++catalog->device_count;
-      return true;
-   });
-}
-
-/* A value as it is in design.cfg, whole. */
+/* A value as it is in its file, whole. */
 bool read(config_file_t *config, const std::string& key, std::string& out)
 {
    const struct config_entry_list *entry = config_get_entry(config, key.c_str());
@@ -176,6 +52,75 @@ std::vector<std::string> ids(const std::string& list)
       at = end == std::string::npos ? list.size() : end;
    }
    return found;
+}
+
+void discover_controls(config_file_t *config, const std::string& profile_id,
+      rib_controls_catalog *catalog,
+      bool (*bind_index_resolver)(const char *, unsigned *))
+{
+   struct config_file_entry entry;
+   bool present;
+   /* The controls of a pad, when the defaults list them, or else every control. */
+   std::vector<std::string> belonging;
+   if (!profile_id.empty())
+      belonging = ids(value(config, "controls_variant_controls_" + profile_id));
+
+   catalog->count = 0;
+   for (present = config_get_entry_list_head(config, &entry); present;
+        present = config_get_entry_list_next(&entry))
+   {
+      const char *id;
+      unsigned bind_index;
+
+      if (!entry.key || strncmp(entry.key, "rib_label_", 10))
+         continue;
+      id = entry.key + 10;
+      if (!*id)
+         continue;
+      if (!belonging.empty()
+            && std::find(belonging.begin(), belonging.end(), id) == belonging.end())
+         continue;
+      if (!bind_index_resolver(id, &bind_index))
+      {
+         RARCH_WARN("[RIB] '%s' is not a libretro bind; the menu will not show "
+               "it. Check the id against DECLARE_BIND in configuration.c.\n", id);
+         continue;
+      }
+      if (catalog->count >= RIB_CONTROL_MAX)
+      {
+         /* We log this, so that a control left out, such as a DualShock
+          * stick, appears in the log. */
+         RARCH_ERR("[RIB] more than %d controls declared; '%s' and anything "
+               "after it are unreachable.\n", RIB_CONTROL_MAX, id);
+         return;
+      }
+      rib_control_declaration& control = catalog->entries[catalog->count];
+      control.id = id;
+      control.group = value(config, std::string("rib_group_") + id);
+      control.bind_index = bind_index;
+      ++catalog->count;
+   }
+}
+
+void discover_devices(config_file_t *config, rib_controls_catalog *catalog)
+{
+   catalog->device_count = 0;
+   for (const std::string& id : ids(value(config, "controls_variants")))
+   {
+      if (catalog->device_count >= RIB_DEVICE_MAX)
+      {
+         RARCH_ERR("[RIB] more than %d controllers offered; '%s' and any after "
+               "it cannot be chosen.\n", RIB_DEVICE_MAX, id.c_str());
+         return;
+      }
+      rib_device_declaration& device = catalog->devices[catalog->device_count];
+      device.id = id;
+      device.libretro = (unsigned)strtoul(
+            value(config, "controls_variant_device_" + id).c_str(), NULL, 10);
+      if (!read(config, "controls_variant_name_" + id, device.name))
+         device.name = id;
+      ++catalog->device_count;
+   }
 }
 
 void screens(config_file_t *config, rib::DesignDeclarations& design)
@@ -342,49 +287,39 @@ void rib_load_shaders(const char *asset_directory, rib_shader_catalog *catalog)
    if (!asset_directory || !*asset_directory)
       return;
 
-   char path[PATH_MAX_LENGTH];
-   snprintf(path, sizeof(path), "%s/shaders.cfg", asset_directory);
-   config_file_t *config = config_file_new_from_path_to_string(path);
+   const std::string path = std::string(asset_directory) + "/shaders.cfg";
+   std::unique_ptr<config_file_t, decltype(&config_file_free)> config(
+         config_file_new_from_path_to_string(path.c_str()), config_file_free);
    if (!config)
       return;
-   each_id<1024>(config, "shader_ids", [&](const char *id) {
+   for (const std::string& id : ids(value(config.get(), "shader_ids")))
+   {
       if (catalog->count >= RIB_SHADER_MAX)
       {
-         RARCH_ERR("[RIB] shader list has more than %d entries; the rest "
-               "are not offered.\n", RIB_SHADER_MAX);
-         return false;
+         RARCH_ERR("[RIB] shader list has more than %d entries; '%s' and the "
+               "rest are not offered.\n", RIB_SHADER_MAX, id.c_str());
+         break;
       }
-      char key[96];
-      char preset[PATH_MAX_LENGTH];
-      rib_shader_declaration &shader = catalog->entries[catalog->count];
-      strlcpy(shader.id, id, sizeof(shader.id));
-      snprintf(key, sizeof(key), "shader_preset_%s", id);
-      preset[0] = '\0';
-      config_get_array(config, key, preset, sizeof(preset));
-      strlcpy(shader.preset, preset, sizeof(shader.preset));
-      ++catalog->count;
-      return true;
-   });
-   config_file_free(config);
+      rib_shader_declaration& shader = catalog->entries[catalog->count++];
+      shader.id = id;
+      shader.preset = value(config.get(), "shader_preset_" + id);
+   }
 }
 
 config_file_t *rib_open_controls(const char *path, bool defaults,
-      char profile_id[32], rib_controls_catalog *catalog,
+      std::string& profile_id, rib_controls_catalog *catalog,
       bool *profile_present, bool (*bind_index)(const char *, unsigned *))
 {
-   if (!path || !profile_id || !catalog || !profile_present || !bind_index)
+   if (!path || !catalog || !profile_present || !bind_index)
       return nullptr;
    config_file_t *config = config_file_new_from_path_to_string(path);
    if (!config)
       return nullptr;
 
-   char profile[32] = {0};
-   const bool complete = config_get_array(config, "controls_profile", profile,
-         sizeof(profile));
-   // For an oversized override, we still repaint the picker with the old id.
-   *profile_present = profile[0] != '\0';
-   if (complete && *profile_present)
-      strlcpy(profile_id, profile, 32);
+   const std::string profile = value(config, "controls_profile");
+   *profile_present = !profile.empty();
+   if (*profile_present)
+      profile_id = profile;
    if (defaults)
    {
       discover_controls(config, profile_id, catalog, bind_index);
@@ -400,7 +335,7 @@ bool rib_controls_discover(config_file_t *defaults, const char *profile,
       return false;
    bool offered = false;
    for (int index = 0; index < catalog->device_count; ++index)
-      offered = offered || string_is_equal(catalog->devices[index].id, profile);
+      offered = offered || catalog->devices[index].id == profile;
    if (offered)
       discover_controls(defaults, profile, catalog, bind_index);
    return offered;
@@ -411,30 +346,19 @@ void rib_controls_read_enabled(config_file_t *config,
 {
    for (int index = 0; index < catalog->count; ++index)
    {
-      char key[96];
-      const char *suffixes[] = {"", "_btn", "_axis", "_mbtn"};
-      unsigned suffix_index;
-      catalog->entries[index].enabled = false;
-      for (suffix_index = 0; suffix_index < ARRAY_SIZE(suffixes);
-            ++suffix_index)
-      {
-         snprintf(key, sizeof(key), "input_player1_%s%s",
-               catalog->entries[index].id, suffixes[suffix_index]);
-         if (config_get_entry(config, key))
+      rib_control_declaration& control = catalog->entries[index];
+      control.enabled = false;
+      for (const char *suffix : {"", "_btn", "_axis", "_mbtn"})
+         if (config_get_entry(config, ("input_player1_" + control.id + suffix).c_str()))
          {
-            catalog->entries[index].enabled = true;
+            control.enabled = true;
             break;
          }
-      }
    }
 }
 
 void rib_controls_read_label(config_file_t *config,
       rib_control_declaration *control)
 {
-   char key[64];
-   char label[NAME_MAX_LENGTH] = {0};
-   snprintf(key, sizeof(key), "rib_label_%s", control->id);
-   if (config_get_array(config, key, label, sizeof(label)))
-      strlcpy(control->label, label, sizeof(control->label));
+   read(config, "rib_label_" + control->id, control->label);
 }
