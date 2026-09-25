@@ -112,11 +112,12 @@ static rib::ListOwner *showing_list(Menu *menu)
    return nullptr;
 }
 
+/* As in libretro, on Windows a path with a drive letter or share is absolute. */
 static const char *absolute_data_directory(void)
 {
    const char *data = getenv("ROMINABOX_DATA_DIR");
 
-   if (!data || data[0] != '/')
+   if (!path_is_absolute(data))
       return NULL;
    return data;
 }
