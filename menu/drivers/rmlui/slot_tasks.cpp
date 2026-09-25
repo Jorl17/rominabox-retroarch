@@ -28,12 +28,19 @@ void Slots::refresh()
       look_at(slot);
 }
 
+std::string Slots::shown_picture(int slot) const
+{
+   const SlotState& state = slots[slot - 1];
+   return state.thumbnail_path + '\n' + state.thumbnail_version;
+}
+
 void Slots::follow()
 {
    if (!awaiting.slot)
       return;
    look_at(awaiting.slot);
-   if (has_thumbnail(awaiting.slot) || rib_host_time_us() >= awaiting.until)
+   if (shown_picture(awaiting.slot) != awaiting.reported
+         || rib_host_time_us() >= awaiting.until)
       awaiting = {};
 }
 
@@ -69,10 +76,12 @@ void Slots::notify_task(const char *path, int slot, bool is_save, bool success)
          path, slot, is_save)) return;
    transfer.pending = false;
    /* Read the slots after the task. The picture of a save comes after the
-    * state, so we follow that slot until its picture arrives. */
+    * state, so we follow that slot until its new picture arrives, in place of
+    * the picture of the previous save, if any. */
    refresh();
-   if (success && is_save && !has_thumbnail(transfer.slot))
-      awaiting = {transfer.slot, rib_host_time_us() + kPictureWaitUs};
+   if (success && is_save && valid_slot(transfer.slot))
+      awaiting = {transfer.slot, rib_host_time_us() + kPictureWaitUs,
+            shown_picture(transfer.slot)};
    if (success)
       status.set_main(say(is_save ? Word::SavedSlot : Word::LoadedSlot,
             {{"slot", std::to_string(transfer.slot)}}).c_str());

@@ -29,7 +29,7 @@ private:
    Document& document;
    Lists& lists;
    /* The disc list's screen, the buttons that open it and its tray word. */
-   std::string list_id, mark;
+   std::string list_id;
    std::vector<std::string> list_buttons;
    /* A screen in the design that opens the disc list instead. */
    std::string redirect_from, redirect_to;

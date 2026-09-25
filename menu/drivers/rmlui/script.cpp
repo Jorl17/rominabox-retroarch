@@ -7,6 +7,7 @@
 #include "elements.hpp"
 #include <cmath>
 #include "../../../verbosity.h"
+#include "../../../rominabox_environment.h"
 #include <string/stdstring.h>
 #include <climits>
 #include <cstdio>
@@ -15,7 +16,8 @@
 
 void rib::Script::shot()
 {
-   const char *path       = getenv("ROMINABOX_MENU_SHOT");
+   const rib_environment_value shot_path = rib_owned(rib_environment("ROMINABOX_MENU_SHOT"));
+   const char *path = shot_path.get();
 
    if (!path || !*path || !rib_host_prepare_script_shot())
    {
@@ -47,14 +49,18 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
 
    if (!started)
    {
-      script  = getenv("ROMINABOX_MENU_SCRIPT");
+      const rib_environment_value given = rib_owned(rib_environment("ROMINABOX_MENU_SCRIPT"));
       started = true;
-      running = script != NULL;
-      if (script)
-         RARCH_LOG("[RIB] menu script: %s\n", *script ? script : "(none)");
+      running = scripted = given != nullptr;
+      if (given)
+      {
+         steps = given.get();
+         RARCH_LOG("[RIB] menu script: %s\n", steps.empty() ? "(none)" : steps.c_str());
+      }
    }
-   if (!script)
+   if (!scripted)
       return;
+   const char *script = steps.c_str();
 
    if (wait_until)
    {
@@ -131,7 +137,7 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
    {
       binds_list = observation.binds_list ? observation.binds_list : "";
       float volume_db = 0.0f;
-      rib_host_setting("audio_volume", &volume_db);
+      rib_host_setting(RIB_SETTING_AudioVolume, &volume_db);
       if (menu)
          fprintf(stderr, "[RIB] checkpoint %s %s\n", id + 7,
                report(observation.screen, rib_host_menu_open(),

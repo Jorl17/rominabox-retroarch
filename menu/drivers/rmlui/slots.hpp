@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <vector>
 #include "events.h"
+#include <RmlUi/Core/Element.h>
 #include <retro_miscellaneous.h>
 
 namespace rib {
@@ -45,14 +46,21 @@ public:
    /* Read every slot from the host, when the menu opens and when a save or a
     * load finishes. Nothing else changes them. */
    void refresh();
-   /* Call once a frame. Returns the slot still waiting for its picture. */
+   /* Call once a frame. Returns the slot still waiting for the new picture of
+    * a save, if any. */
    void follow();
    void request(Transfer kind);
    /* Handle SAVE, LOAD and the choice of a slot, one transfer at a time. There
     * is nothing to load from an empty slot. False for anything else. */
    bool handle(const Event& event);
    void notify_task(const char *path, int slot, bool is_save, bool success);
-   void paint() const;
+   void paint();
+   /* We fit the picture of each slot, with the aspect ratio of the game, in
+    * the box `.slot-picture` from the stylesheet of the design, as large as
+    * fits and centred. We size only the picture, and only when the aspect
+    * ratio or the box has changed. Call once a frame, because a box on a
+    * hidden screen has no size until we show it. */
+   void fit_pictures();
    void set_selected_slot(int slot);
    void set_slot_state(int slot, bool occupied, const char *thumbnail_path);
    void set_game_aspect(float aspect);
@@ -63,12 +71,18 @@ public:
 private:
    bool begin_transfer(Transfer kind);
    void look_at(int slot);
+   /* The picture on a slot, as its file and the version of that file. */
+   std::string shown_picture(int slot) const;
    /* How long we wait for the picture of a saved slot. */
    static constexpr int64_t kPictureWaitUs = 5000000;
+   /* A saved slot, which we follow until its picture differs from the one at
+    * the time of the save report, which is from the previous save or none. In
+    * RetroArch a save is reported before the new picture is written. */
    struct Awaiting
    {
       int slot = 0;
       int64_t until = 0;
+      std::string reported;
    } awaiting;
    struct Request
    {
@@ -102,5 +116,13 @@ private:
    float game_aspect = 4.0f / 3.0f;
    int selected_slot = 1;
    SlotState slots[kSlotCount];
+   /* The picture we fitted last, its box in dp, and the aspect ratio we used.
+    * After a document reload, the picture is a different element. */
+   struct Fitted
+   {
+      Rml::ObserverPtr<Rml::Element> image;
+      float width = 0.0f, height = 0.0f, aspect = 0.0f;
+   };
+   Fitted fits[kSlotCount];
 };
 }

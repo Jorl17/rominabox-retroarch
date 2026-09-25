@@ -22,7 +22,8 @@ inline Sound action_sound(int action)
 }
 void play_action_sound(int action);
 void play_move_sound(bool up);
-/* The player moved a level. Play the movement cue at the volume of the game. */
+/* The player moved a level. Play the movement cue at the volume of the game,
+ * and none while that volume is at its silent bottom. */
 void play_level_sound(bool up);
 /* The cue for a change of level that we add to an export without a menu
  * sound pack. */

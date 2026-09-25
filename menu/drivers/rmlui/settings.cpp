@@ -6,6 +6,7 @@
 #include "parts.hpp"
 #include "slots.hpp"
 #include "sounds.hpp"
+#include "words.hpp"
 #include "../../../verbosity.h"
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
@@ -47,6 +48,18 @@ bool switched_on(const SettingDeclaration& setting, float value)
 {
    return (value != 0.0f) != setting.inverted;
 }
+
+/* A value as we write it in the file of the setting, for RetroArch to read
+ * back: a level to one decimal, and a switch as true or false. */
+std::string file_text(const SettingDeclaration& setting, float value)
+{
+   char text[32];
+   if (setting.kind == SettingKind::Level)
+      snprintf(text, sizeof(text), "%.1f", value);
+   else
+      strlcpy(text, value != 0.0f ? "true" : "false", sizeof(text));
+   return text;
+}
 }
 
 void PlayerSettings::load(const DesignDeclarations& design, const char *data_directory)
@@ -69,7 +82,7 @@ const SettingDeclaration *PlayerSettings::owning(const char *control,
 float PlayerSettings::value(const SettingDeclaration& setting) const
 {
    float current = setting.kind == SettingKind::Level ? setting.high : 0.0f;
-   rib_host_setting(setting.key.c_str(), &current);
+   rib_host_setting(setting.key, &current);
    return current;
 }
 
@@ -81,10 +94,12 @@ void PlayerSettings::attach()
          continue;
       parts.set_slider_step(setting.control.c_str(), 1.0f / (float)last_position(setting));
       /* We move a level between positions, from a file or a hotkey, to the
-       * nearest one and store it there. */
+       * nearest one and store it there. The file has one decimal, so a level
+       * from it is at a position when it matches to one decimal, and we do not
+       * write a level that is already at a position. */
       const float current = value(setting);
       const float nearest = value_at(setting, position_of(setting, current));
-      if (nearest != current)
+      if (file_text(setting, nearest) != file_text(setting, current))
          set(setting, nearest, true);
    }
    paint();
@@ -101,32 +116,29 @@ void PlayerSettings::paint() const
       else
       {
          const bool on = switched_on(setting, current);
-         lists.set_toggle(setting.control.c_str(), (on ? setting.on : setting.off).c_str(), on);
+         lists.set_toggle(setting.control.c_str(),
+               say(on ? Word::SwitchOn : Word::SwitchOff).c_str(), on);
       }
    }
 }
 
 void PlayerSettings::set(const SettingDeclaration& setting, float chosen, bool persist)
 {
-   char text[32];
-
-   if (!rib_host_set_setting(setting.key.c_str(), chosen))
+   if (!rib_host_set_setting(setting.key, chosen))
    {
       RARCH_ERR("[RIB] the setting '%s' drives '%s', which this player cannot "
-            "change while the game runs.\n", setting.id.c_str(), setting.key.c_str());
+            "change while the game runs.\n", setting.id.c_str(),
+            setting_key_name(setting.key));
       return;
    }
    if (!persist || data.empty())
       return;
-   if (setting.kind == SettingKind::Level)
-      snprintf(text, sizeof(text), "%.1f", chosen);
-   else
-      strlcpy(text, chosen != 0.0f ? "true" : "false", sizeof(text));
+   const std::string text = file_text(setting, chosen);
    const std::string path = data + "/" + setting.file;
-   if (!rib_write_player_setting(path.c_str(), setting.key.c_str(), text))
+   if (!rib_write_player_setting(path.c_str(), setting_key_name(setting.key), text.c_str()))
       RARCH_ERR("[RIB] '%s' is %s now, but %s could not be written, so the "
             "next launch will start from the export's default.\n",
-            setting.id.c_str(), text, path.c_str());
+            setting.id.c_str(), text.c_str(), path.c_str());
 }
 
 bool PlayerSettings::slide(const char *control, float fraction, bool persist)

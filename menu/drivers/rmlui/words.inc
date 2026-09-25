@@ -1,5 +1,6 @@
 /* The words the menu writes itself, over whatever the design's markup says:
- * statuses, prompts, the words on slots and lists. A design gives its own
+ * statuses, prompts, the words on slots and lists, and the words composition
+ * writes for the player's settings. A design gives its own
  * wording in design.json "words", by the id below; the exporter writes each
  * to design.cfg as word_<id>, and a word a design does not give is the
  * English here. {name} is a value the menu puts in: a design's words may use
@@ -41,6 +42,19 @@ RIB_WORD(PageCount, "page-count", "{page}/{pages}")
 RIB_WORD(Disc, "disc", "Disc {number}")
 RIB_WORD(ShowingDiscs, "showing-discs", "SHOWING {shown} OF {count}")
 RIB_WORD(QuickSignInFailed, "quick-sign-in-failed", "COULD NOT USE THIS ACCOUNT")
+/* A list's mark on its current row: the filter that is running, the disc in
+ * the tray. */
+RIB_WORD(ShaderMark, "shader-mark", "ON")
+RIB_WORD(DiscMark, "disc-mark", "IN")
+
+/* The player's settings in Options. Composition writes a setting's name and
+ * a level's ends into the document; the menu keeps a switch's state current. */
+RIB_WORD(Volume, "volume", "VOLUME")
+RIB_WORD(PlayInBackground, "play-in-background", "PLAY IN BACKGROUND")
+RIB_WORD(LevelLow, "level-low", "LOW")
+RIB_WORD(LevelHigh, "level-high", "HIGH")
+RIB_WORD(SwitchOn, "switch-on", "ON")
+RIB_WORD(SwitchOff, "switch-off", "OFF")
 
 /* The achievements screen and its dialogs. */
 RIB_WORD(NoAccount, "no-account", "RETROACHIEVEMENTS")

@@ -207,12 +207,12 @@ void Parts::drag_to(int x)
    paint_slider(drag_element, drag_fraction, nullptr);
 }
 
-void Parts::end_drag()
+Event Parts::end_drag()
 {
-   if (!drag_element) return;
+   if (!drag_element) return {};
    drag_element->SetClass(document_contract::Dragging, false);
-   remember_slider(drag_id, drag_fraction);
    drag_element = nullptr;
+   return {RIB_RMLUI_ACTION_SLIDER, drag_id, clamp_fraction(drag_fraction)};
 }
 
 void Parts::forget()

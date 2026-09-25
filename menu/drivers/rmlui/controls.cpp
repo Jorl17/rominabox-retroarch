@@ -21,7 +21,7 @@ namespace rib {
 int Controls::index_of(const char *id) const
 {
    for (int index = 0; id && index < catalog.count; ++index)
-      if (string_is_equal(catalog.entries[index].id, id)) return index;
+      if (catalog.entries[index].id == id) return index;
    return -1;
 }
 
@@ -33,9 +33,9 @@ bool Controls::active(int index) const
 
 const char * Controls::console_name(int index) const
 {
-   if (catalog.entries[index].label[0])
-      return catalog.entries[index].label;
-   return catalog.entries[index].id;
+   if (!catalog.entries[index].label.empty())
+      return catalog.entries[index].label.c_str();
+   return catalog.entries[index].id.c_str();
 }
 
 FocusTarget Controls::first() const
@@ -57,9 +57,9 @@ std::string stop_id(const rib_controls_catalog& catalog, FocusTarget target)
       case FocusTarget::Kind::Item: break;
    }
    const auto& entry = catalog.entries[target.index];
-   if (entry.group[0])
-      return document_contract::ControlGroupPrefix + std::string(entry.group);
-   return document_contract::ControlPrefix + std::string(entry.id);
+   if (!entry.group.empty())
+      return document_contract::ControlGroupPrefix + entry.group;
+   return document_contract::ControlPrefix + entry.id;
 }
 
 /* The focused stop in RmlUi, as a stop of the pad screen, with an item index
@@ -123,7 +123,7 @@ bool Controls::read_defaults(const char *wanted)
 
    /* We find the author's pad when we open the defaults. For a pad that this
     * game does not offer, we use the author's pad instead. */
-   char exported[32] = "";
+   std::string exported;
    if (!(config = rib_open_controls(defaults_path.c_str(), true, exported,
                &catalog, &present, rib_host_bind_index)))
       return false;
@@ -137,10 +137,10 @@ bool Controls::read_defaults(const char *wanted)
    {
       if (!active(index))
          continue;
-      catalog.entries[index].label[0] = '\0';
+      catalog.entries[index].label.clear();
       rib_host_clear_bind(catalog.entries[index].bind_index);
       rib_controls_read_label(config, &catalog.entries[index]);
-      rib_host_load_bind(config, catalog.entries[index].id, catalog.entries[index].bind_index);
+      rib_host_load_bind(config, catalog.entries[index].id.c_str(), catalog.entries[index].bind_index);
    }
    rib_host_restore_keyboard_mapping();
    config_file_free(config);
@@ -150,7 +150,7 @@ bool Controls::read_defaults(const char *wanted)
 /* The pad in the player's file, empty when there is none. */
 std::string Controls::player_profile()
 {
-   char named[32] = "";
+   std::string named;
    bool present = false;
    if (!path.empty())
       if (config_file_t *config = rib_open_controls(path.c_str(), false, named, &catalog,
@@ -161,7 +161,7 @@ std::string Controls::player_profile()
 
 bool Controls::read_player_file()
 {
-   char named[32] = "";
+   std::string named;
    bool present = false;
    config_file_t *config;
    int index;
@@ -174,7 +174,7 @@ bool Controls::read_player_file()
       if (!active(index))
          continue;
       rib_controls_read_label(config, &catalog.entries[index]);
-      rib_host_load_bind(config, catalog.entries[index].id, catalog.entries[index].bind_index);
+      rib_host_load_bind(config, catalog.entries[index].id.c_str(), catalog.entries[index].bind_index);
    }
    rib_host_restore_keyboard_mapping();
    config_file_free(config);
@@ -216,14 +216,11 @@ bool Controls::save()
    config_set_string(config, "controls_profile", profile_id.c_str());
    for (index = 0; index < catalog.count; ++index)
    {
-      char key[96];
-
       if (!active(index))
          continue;
-      snprintf(key, sizeof(key), "rib_label_%s", catalog.entries[index].id);
-      config_set_string(config, key, catalog.entries[index].label);
-
-      rib_host_write_bind(config, catalog.entries[index].id, catalog.entries[index].bind_index);
+      const rib_control_declaration& control = catalog.entries[index];
+      config_set_string(config, ("rib_label_" + control.id).c_str(), control.label.c_str());
+      rib_host_write_bind(config, control.id.c_str(), control.bind_index);
    }
 
    saved = rib_write_menu_config(config, path.c_str());
@@ -244,11 +241,11 @@ void Controls::refresh()
          continue;
       const std::string binding = callout_text(index);
       const std::string stop = stop_id(catalog, FocusTarget::item(index));
-      control_view.set_control_state(stop.c_str(), catalog.entries[index].id,
-            catalog.entries[index].label, binding.c_str(), stop == captured);
-      if (catalog.entries[index].group[0])
+      control_view.set_control_state(stop.c_str(), catalog.entries[index].id.c_str(),
+            catalog.entries[index].label.c_str(), binding.c_str(), stop == captured);
+      if (!catalog.entries[index].group.empty())
          document.set_element_text((document_contract::ControlGroupBindingPrefix
-               + std::string(catalog.entries[index].group)).c_str(), binding.c_str());
+               + catalog.entries[index].group).c_str(), binding.c_str());
    }
    control_view.set_capturing(capture_active);
 }
@@ -301,27 +298,24 @@ int Controls::find_conflict(int changed_index) const
 
 bool Controls::same_bind_target(int left, int right) const
 {
-   const char *group_left;
-   const char *group_right;
    if (left == right)
       return true;
    if (left < 0 || right < 0
          || left >= catalog.count || right >= catalog.count)
       return false;
-   group_left = catalog.entries[left].group;
-   group_right = catalog.entries[right].group;
-   return group_left[0] && group_right[0] && string_is_equal(group_left, group_right);
+   const std::string& group_left = catalog.entries[left].group;
+   return !group_left.empty() && group_left == catalog.entries[right].group;
 }
 
 std::string Controls::bind_anchor(int index) const
 {
-   if (catalog.entries[index].group[0])
+   if (!catalog.entries[index].group.empty())
    {
-      const std::string group = document_contract::ControlGroupPrefix + std::string(catalog.entries[index].group);
+      const std::string group = document_contract::ControlGroupPrefix + catalog.entries[index].group;
       if (document.has_element(group.c_str()))
          return group;
    }
-   return document_contract::ControlPrefix + std::string(catalog.entries[index].id);
+   return document_contract::ControlPrefix + catalog.entries[index].id;
 }
 
 std::string Controls::callout_text(int index) const
@@ -350,7 +344,7 @@ void Controls::show_binds(int index)
    int member_count = 0;
    char details[RIB_HOST_BIND_LINE_MAX][64];
    char kinds[RIB_HOST_BIND_LINE_MAX][8];
-   char titles[RIB_HOST_BIND_LINE_MAX][NAME_MAX_LENGTH];
+   std::string titles[RIB_HOST_BIND_LINE_MAX];
    int lines = 0;
    int rows;
    int slot;
@@ -365,12 +359,7 @@ void Controls::show_binds(int index)
       rib_host_bind_lines(at,
             details, kinds, &lines);
       for (slot = before; slot < lines; ++slot)
-      {
-         const char *label = catalog.entries[members[member]].label;
-         if (!label[0])
-            label = catalog.entries[members[member]].id;
-         strlcpy(titles[slot], label, sizeof(titles[slot]));
-      }
+         titles[slot] = console_name(members[member]);
    }
 
    /* With one binding, the callout already shows it. A list that repeated it
@@ -385,14 +374,14 @@ void Controls::show_binds(int index)
    if (lines > rows)
       RARCH_ERR("[RIB] '%s' has %d binds and the menu was built with %d rows; "
             "the rest are not shown.\n",
-            catalog.entries[index].id, lines, rows);
+            catalog.entries[index].id.c_str(), lines, rows);
    for (slot = 0; slot < rows; ++slot)
    {
       const std::string row = lists.row_in(binds.list.c_str(), slot);
       if (row.empty())
          break;
       if (slot < lines)
-         lists.set_row_text(row.c_str(), titles[slot], details[slot], kinds[slot]);
+         lists.set_row_text(row.c_str(), titles[slot].c_str(), details[slot], kinds[slot]);
       document.set_shown(row.c_str(), slot < lines);
    }
    lists.retarget_pages(binds.list.c_str());
@@ -476,7 +465,7 @@ void Controls::choose_device(const char *chosen)
        * connect nothing. At the next launch we read the device from the
        * remap and not from the per-game override. */
       for (index = 0; index < catalog.device_count; ++index)
-         if (string_is_equal(catalog.devices[index].id, chosen))
+         if (catalog.devices[index].id == chosen)
          {
             rib_host_apply_device(chosen, catalog.devices[index].libretro);
             break;
@@ -653,14 +642,14 @@ void Controls::screen_shown(bool showing)
 
 int Controls::bind_members(int index, int *members) const
 {
-   if (!catalog.entries[index].group[0])
+   if (catalog.entries[index].group.empty())
    {
       members[0] = index;
       return 1;
    }
    int found = 0;
    for (int cursor = 0; cursor < catalog.count; ++cursor)
-      if (active(cursor) && string_is_equal(catalog.entries[cursor].group, catalog.entries[index].group))
+      if (active(cursor) && catalog.entries[cursor].group == catalog.entries[index].group)
          members[found++] = cursor;
    return found;
 }

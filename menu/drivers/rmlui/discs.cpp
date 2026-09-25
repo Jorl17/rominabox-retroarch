@@ -13,7 +13,6 @@ void Discs::configure(const DesignDeclarations& design)
 {
    list_id.clear();
    list_buttons.clear();
-   mark.clear();
    redirect_from.clear();
    redirect_to.clear();
    synced = false;
@@ -23,7 +22,6 @@ void Discs::configure(const DesignDeclarations& design)
       {
          list_id = screen.id;
          list_buttons = screen.buttons;
-         mark = screen.mark;
       }
       else if (!screen.images.empty())
       {
@@ -77,7 +75,7 @@ void Discs::sync()
    if (rows > 0)
       lists.retarget_pages(rows_id.c_str(), current_row.empty() ? nullptr : current_row.c_str());
    if (!current_row.empty())
-      lists.select_row(rows_id.c_str(), current_row.c_str(), mark.c_str(), "");
+      lists.select_row(rows_id.c_str(), current_row.c_str(), say(Word::DiscMark).c_str(), "");
    const std::string status = rows > 0 && count > (unsigned)rows
          ? say(Word::ShowingDiscs, {{"shown", std::to_string(rows)}, {"count", std::to_string(count)}})
          : std::string();

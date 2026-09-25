@@ -107,14 +107,22 @@ public:
       return found;
    }
 
+   /* The stop in a panel the design marked `autofocus`, if it marked one. */
+   Rml::Element *marked(Rml::Element *panel) const
+   {
+      for (Rml::Element *element : stops(panel))
+         if (element->HasAttribute("autofocus"))
+            return element;
+      return nullptr;
+   }
+
    /* Where a panel starts: the stop the design marked `autofocus`, else the
     * first stop in document order. */
    Rml::Element *first(Rml::Element *panel) const
    {
+      if (Rml::Element *start = marked(panel))
+         return start;
       const std::vector<Rml::Element*> found = stops(panel);
-      for (Rml::Element *element : found)
-         if (element->HasAttribute("autofocus"))
-            return element;
       return found.empty() ? nullptr : found.front();
    }
 

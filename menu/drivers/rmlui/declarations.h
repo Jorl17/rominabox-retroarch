@@ -6,6 +6,7 @@
 #include <retro_miscellaneous.h>
 
 #ifdef __cplusplus
+#include "host.h"
 #include "screen_role.hpp"
 #include "words.hpp"
 #include <string>
@@ -21,8 +22,6 @@ struct ScreenDeclaration
    std::vector<std::string> buttons;
    /* The screen we show instead when the core has loaded several images. */
    std::string images;
-   /* The word on the row that is in the tray. */
-   std::string mark;
    ScreenRole role = ScreenRole::None;
 };
 
@@ -32,22 +31,31 @@ struct OverlayDeclaration
    int after_ms = 0, hold_ms = 0, leave_ms = 0;
 };
 
+/* How a player setting is shown, as settings.inc declares the kinds. */
+enum class SettingKind
+{
+#define RIB_SETTING_KIND(name, word) name,
+#include "settings.inc"
+};
+
+/* A key's RetroArch config name, as settings.inc declares it. */
+const char *setting_key_name(rib_setting_key key);
+
 /* A setting the player changes in the Options of the game, for one RetroArch
  * key. We declare every one at export. In the menu we show it in `control`,
  * apply it at once and store it in `file`, in the game's data, and at the
  * next launch we apply that file in the launcher. */
-enum class SettingKind { Level, Switch };
-
 struct SettingDeclaration
 {
-   std::string id, control, key, file;
+   std::string id, control, file;
+   rib_setting_key key = RIB_SETTING_KEY_COUNT;
    SettingKind kind = SettingKind::Level;
    /* A level: the key's value at each end, and how many positions lie
     * between them, both ends included. */
    float low = 0.0f, high = 0.0f;
    int positions = 0;
-   /* A switch: its words, and whether on is the key's false. */
-   std::string on, off;
+   /* A switch: whether on is the key's false. The words for it are in the
+    * menu (Word::SwitchOn, Word::SwitchOff). */
    bool inverted = false;
 };
 
@@ -79,62 +87,59 @@ DesignDeclarations load_design(const char *asset_directory);
 #endif
 
 #ifdef __cplusplus
-extern "C" {
-#endif
-
-/* The exported format's fixed bounds. */
+/* The fixed bounds of the exported format: the maximum count of each item.
+ * We read every id, name and list in full, whatever its length. */
 enum { RIB_SHADER_MAX = 32, RIB_CONTROL_MAX = 48, RIB_DEVICE_MAX = 8 };
 
 /* One exported shader id and its preset. We keep the order of the shader
- * file and the fixed bounds of the format, and we include empty presets. */
-typedef struct rib_shader_declaration
+ * file, and we include empty presets. */
+struct rib_shader_declaration
 {
-   char id[64];
-   char preset[PATH_MAX_LENGTH];
-} rib_shader_declaration;
+   std::string id;
+   std::string preset;
+};
 
-typedef struct rib_shader_catalog
+struct rib_shader_catalog
 {
    rib_shader_declaration entries[RIB_SHADER_MAX];
-   int count;
-   char state_on[32];
-   char state_off[32];
-} rib_shader_catalog;
+   int count = 0;
+};
 
 /* Controls and controller variants in the exported declaration order. We
  * borrow this catalog in the view and never call into the menu for items. */
-typedef struct rib_control_declaration
+struct rib_control_declaration
 {
-   char id[32];
-   char group[32];
-   unsigned bind_index;
-   bool enabled;
-   char label[NAME_MAX_LENGTH];
-} rib_control_declaration;
+   std::string id;
+   std::string group;
+   unsigned bind_index = 0;
+   bool enabled = false;
+   std::string label;
+};
 
-typedef struct rib_device_declaration
+struct rib_device_declaration
 {
-   char id[32];
-   char name[NAME_MAX_LENGTH];
-   unsigned libretro;
-} rib_device_declaration;
+   std::string id;
+   std::string name;
+   unsigned libretro = 0;
+};
 
-typedef struct rib_controls_catalog
+struct rib_controls_catalog
 {
    rib_control_declaration entries[RIB_CONTROL_MAX];
-   int count;
+   int count = 0;
    rib_device_declaration devices[RIB_DEVICE_MAX];
-   int device_count;
-} rib_controls_catalog;
+   int device_count = 0;
+};
 
 struct config_file;
 /* Open one controls file and read its profile and, for defaults, its declared
  * controls/devices. Keep the file open during host bind loading, and free it
  * with config_file_free. We look up only exported bind ids in the fixed host
  * table for bind_index. Existing catalog slots keep their ordinal state, apart
- * from the fields that discovery writes again. */
+ * from the fields that discovery writes again. `profile_id` is the pad in the
+ * file, unchanged when there is none. */
 struct config_file *rib_open_controls(const char *path, bool defaults,
-      char profile_id[32], rib_controls_catalog *catalog,
+      std::string& profile_id, rib_controls_catalog *catalog,
       bool *profile_present, bool (*bind_index)(const char *, unsigned *));
 /* Read the open defaults again, for another pad in them. Returns false, with
  * the catalog unchanged, when there is no `profile` in them. */
@@ -150,8 +155,5 @@ void rib_controls_read_label(struct config_file *config,
 /* Read shaders.cfg when the menu loads. With a missing file or a missing
  * shader_ids field, the catalog is empty and we log no diagnostic. */
 void rib_load_shaders(const char *asset_directory, rib_shader_catalog *catalog);
-
-#ifdef __cplusplus
-}
 #endif
 #endif

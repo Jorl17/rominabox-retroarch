@@ -1,6 +1,7 @@
 /* Per-game credential and badge paths for the managed achievements session. */
 #include "rominabox_storage.h"
 #include "portable_fs.h" /* ROM-in-a-Box's file layer, shared with the launcher */
+#include "../rominabox_environment.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,37 +10,32 @@
 #include <file/file_path.h>
 #include <retro_miscellaneous.h>
 
-static const char *rib_data_directory(void)
+/* `name` inside the game's data directory, when that is a directory that
+ * exists and the whole path fits in `capacity`. */
+static bool rib_storage_path(char *path, size_t capacity, const char *name)
 {
-   const char *path = getenv("ROMINABOX_DATA_DIR");
-   if (!path || !*path || !path_is_absolute(path) || !path_is_directory(path))
-      return NULL;
-   return path;
+   char *directory = rib_data_directory();
+   int length = -1;
+   if (directory && path && capacity && path_is_directory(directory))
+      length = snprintf(path, capacity, "%s/%s", directory, name);
+   free(directory);
+   return length > 0 && (size_t)length < capacity;
 }
 
 bool rib_storage_available(void)
 {
-   return rib_data_directory() != NULL;
+   char path[PATH_MAX_LENGTH];
+   return rib_storage_path(path, sizeof(path), "");
 }
 
 static bool rib_storage_session_path(char path[PATH_MAX_LENGTH])
 {
-   const char *directory = rib_data_directory();
-   int length;
-   if (!directory)
-      return false;
-   length = snprintf(path, PATH_MAX_LENGTH, "%s/achievements.session", directory);
-   return length > 0 && length < PATH_MAX_LENGTH;
+   return rib_storage_path(path, PATH_MAX_LENGTH, "achievements.session");
 }
 
 bool rib_storage_badge_directory(char *path, size_t capacity)
 {
-   const char *directory = rib_data_directory();
-   int length;
-   if (!directory || !path || !capacity)
-      return false;
-   length = snprintf(path, capacity, "%s/achievements-badges", directory);
-   return length > 0 && (size_t)length < capacity;
+   return rib_storage_path(path, capacity, "achievements-badges");
 }
 
 bool rib_storage_badge_name_valid(const char *name)

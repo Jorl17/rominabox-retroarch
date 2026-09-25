@@ -8,6 +8,15 @@
 struct config_file;
 enum { RIB_HOST_BIND_LINE_MAX = 64 };
 
+/* The RetroArch settings that player settings control, as declared in
+ * settings.inc. */
+enum rib_setting_key
+{
+#define RIB_SETTING_KEY(name, key) RIB_SETTING_##name,
+#include "settings.inc"
+   RIB_SETTING_KEY_COUNT
+};
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -55,14 +64,14 @@ bool rib_host_load_state(void);
 void rib_host_open_menu(void);
 void rib_host_resume(void);
 void rib_host_quit(void);
-/* Read or change, by its config key, a RetroArch setting that a player
- * setting controls, while the game runs. A switch is 1 or 0. Returns false for
- * a key that we do not apply while the game runs. */
-bool rib_host_setting(const char *key, float *value);
-bool rib_host_set_setting(const char *key, float value);
+/* Read or change a RetroArch setting that a player setting controls, while
+ * the game runs. A switch is 1 or 0. Returns false if there are no settings. */
+bool rib_host_setting(enum rib_setting_key key, float *value);
+bool rib_host_set_setting(enum rib_setting_key key, float value);
 void rib_host_scroll_sound(bool up);
 /* Play the movement cue at the volume of the game, so the player hears a
- * change of level at the new level. */
+ * change of level at the new level. We do not call this at the lowest,
+ * silent level. */
 void rib_host_level_sound(bool up);
 /* When a game has no menu sound pack, we export it with a cue for a change
  * of level and use that as the movement cue. Navigation stays silent. */

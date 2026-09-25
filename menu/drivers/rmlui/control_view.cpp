@@ -20,8 +20,8 @@ Event control_at(Rml::Element *element, Rml::Element *scene, const rib_controls_
       for (int index = 0; index < catalog.count; ++index)
       {
          const rib_control_declaration& control = catalog.entries[index];
-         if (id == document_contract::ControlPrefix + std::string(control.id)
-               || (control.group[0] && id == document_contract::ControlGroupPrefix + std::string(control.group)))
+         if (id == document_contract::ControlPrefix + control.id
+               || (!control.group.empty() && id == document_contract::ControlGroupPrefix + control.group))
          {
             if (element->HasAttribute("disabled") || element->IsClassSet(document_contract::Disabled))
                return {};
@@ -108,19 +108,18 @@ void ControlView::set_device_picker(const rib_controls_catalog& catalog, bool op
    document.set_shown(document_contract::ControlsDeviceList, open);
    for (int index = 0; index < catalog.device_count; ++index)
    {
-      const char *id = catalog.devices[index].id;
-      if (!id || !*id)
+      const std::string& id = catalog.devices[index].id;
+      if (id.empty())
          continue;
       if (Rml::Element *option =
-            document.root()->GetElementById(document_contract::ControlsDeviceOptionPrefix + std::string(id)))
-         option->SetClass(document_contract::Selected, chosen && !std::strcmp(chosen, id));
+            document.root()->GetElementById(document_contract::ControlsDeviceOptionPrefix + id))
+         option->SetClass(document_contract::Selected, chosen && id == chosen);
    }
    if (Rml::Element *current = document.root()->GetElementById(document_contract::ControlsDeviceCurrent))
       for (int index = 0; index < catalog.device_count; ++index)
-         if (chosen && !std::strcmp(chosen, catalog.devices[index].id))
+         if (chosen && catalog.devices[index].id == chosen)
          {
-            const char *name = catalog.devices[index].name;
-            write_text(current, name ? name : chosen);
+            write_text(current, catalog.devices[index].name);
             break;
          }
 }

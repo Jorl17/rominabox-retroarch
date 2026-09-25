@@ -214,49 +214,72 @@ void rib_host_apply_device(const char *id, unsigned device)
       RARCH_LOG("[RIB] controller '%s' applied as device %u.\n", id, applied);
 }
 
-/* The player settings that we apply in RetroArch while the game runs, by
- * config key. The quiet end of the volume is silence, so for a muted game we
- * show the quiet end, and choosing a level turns mute off. */
+/* The player settings that we apply in RetroArch while the game runs: for
+ * each key declared in settings.inc, how we read it and how we apply it.
+ *
+ * The quiet end of the volume is silence, so for a muted game we show the
+ * quiet end, and choosing a level turns mute off. */
 static float rib_host_volume_now(settings_t *settings)
 {
    bool *muted = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
    return muted && *muted ? AUDIO_VOLUME_MIN_DB : settings->floats.audio_volume;
 }
 
-bool rib_host_setting(const char *key, float *value)
+static float rib_host_read_AudioVolume(settings_t *settings)
 {
-   settings_t *settings = config_get_ptr();
-   if (!settings || !key || !value)
-      return false;
-   if (string_is_equal(key, "audio_volume"))
-      *value = rib_host_volume_now(settings);
-   else if (string_is_equal(key, "pause_nonactive"))
-      *value = settings->bools.pause_nonactive ? 1.0f : 0.0f;
-   else
-      return false;
-   return true;
+   return rib_host_volume_now(settings);
 }
 
-bool rib_host_set_setting(const char *key, float value)
+static void rib_host_apply_AudioVolume(settings_t *settings, float value)
+{
+   bool *muted = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
+   if (muted)
+      *muted = false;
+   configuration_set_float(settings, settings->floats.audio_volume, value);
+   audio_set_float(AUDIO_ACTION_VOLUME_GAIN, value);
+}
+
+static float rib_host_read_PauseNonactive(settings_t *settings)
+{
+   return settings->bools.pause_nonactive ? 1.0f : 0.0f;
+}
+
+static void rib_host_apply_PauseNonactive(settings_t *settings, float value)
+{
+   configuration_set_bool(settings, settings->bools.pause_nonactive, value != 0.0f);
+}
+
+/* Every key declared in settings.inc has its pair of functions above. For a
+ * key declared there and not handled here, the build stops on the name of a
+ * function that does not exist. */
+bool rib_host_setting(enum rib_setting_key key, float *value)
 {
    settings_t *settings = config_get_ptr();
-   if (!settings || !key)
+   if (!settings || !value)
       return false;
-   if (string_is_equal(key, "audio_volume"))
+   switch (key)
    {
-      bool *muted = audio_get_bool_ptr(AUDIO_ACTION_MUTE_ENABLE);
-      if (muted)
-         *muted = false;
-      configuration_set_float(settings, settings->floats.audio_volume, value);
-      audio_set_float(AUDIO_ACTION_VOLUME_GAIN, value);
+#define RIB_SETTING_KEY(name, retroarch) \
+      case RIB_SETTING_##name: *value = rib_host_read_##name(settings); return true;
+#include "settings.inc"
+      default:
+         return false;
    }
-   else if (string_is_equal(key, "pause_nonactive"))
-   {
-      configuration_set_bool(settings, settings->bools.pause_nonactive, value != 0.0f);
-   }
-   else
+}
+
+bool rib_host_set_setting(enum rib_setting_key key, float value)
+{
+   settings_t *settings = config_get_ptr();
+   if (!settings)
       return false;
-   return true;
+   switch (key)
+   {
+#define RIB_SETTING_KEY(name, retroarch) \
+      case RIB_SETTING_##name: rib_host_apply_##name(settings, value); return true;
+#include "settings.inc"
+      default:
+         return false;
+   }
 }
 
 void rib_host_level_sound(bool up)
@@ -264,16 +287,13 @@ void rib_host_level_sound(bool up)
 #ifdef HAVE_AUDIOMIXER
    settings_t *settings = config_get_ptr();
    const unsigned slot  = up ? AUDIO_MIXER_SYSTEM_SLOT_UP : AUDIO_MIXER_SYSTEM_SLOT_DOWN;
-   float db;
    if (!settings)
-      return;
-   db = rib_host_volume_now(settings);
-   if (db <= AUDIO_VOLUME_MIN_DB)
       return;
    audio_driver_mixer_play_menu_sound(slot);
    /* A new voice starts at unity. We set its level before the next mixer
-    * run, on this thread, so no sample of it plays louder. */
-   audio_driver_mixer_set_stream_volume(slot, db);
+    * run, on this thread, so no sample of it plays louder. In the menu we
+    * play no cue at the silent bottom (sounds.cpp). */
+   audio_driver_mixer_set_stream_volume(slot, rib_host_volume_now(settings));
 #else
    (void)up;
 #endif
