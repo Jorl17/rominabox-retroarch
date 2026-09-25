@@ -138,14 +138,14 @@ static void screen_shown(Menu *menu)
 
 /* Give each feature what the design declares for it. We declare screens on
  * the loaded document, so call this after the document loads. */
-static void apply_design(Menu *menu, const rib::DesignDeclarations& design)
+static void apply_design(Menu *menu, const rib::DesignDeclarations& design, const char *data)
 {
    menu->screens.clear_screens();
    for (const rib::ScreenDeclaration& screen : design.screens)
       menu->screens.declare_screen(screen);
    menu->discs.configure(design);
    menu->accounts.configure(design);
-   menu->settings.load(design, absolute_data_directory());
+   menu->settings.load(design, data);
    menu->overlays.load(design);
    menu->controls.configure_binds(design.binds);
 }
@@ -327,6 +327,7 @@ void rib_menu_context_reset(void *data)
  * game that we show in the menu, once for each document. */
 static bool initialize(Menu *menu, const char *assets, int width, int height)
 {
+   const char *data = absolute_data_directory();
    const rib::DesignDeclarations design = rib::load_design(assets);
    if (!menu->view.initialize(assets, design.fonts, width, height,
             rib_host_core_gl_context(), menu->controls.catalog))
@@ -338,24 +339,16 @@ static bool initialize(Menu *menu, const char *assets, int width, int height)
       return false;
    }
    /* Declare the screens and overlays of the design before we show any. */
-   apply_design(menu, design);
+   apply_design(menu, design, data);
    menu->achievements.bind();
    menu->accounts.bind();
-   menu->shaders.load(assets, absolute_data_directory());
+   menu->shaders.load(assets, data);
    menu->slots.paint();
    menu->slots.refresh();
    menu->navigation.open();
    if (!menu->controls.loaded)
    {
-      const std::string defaults = std::string(assets) + "/controls-defaults.cfg";
-      if (!menu->controls.load_file(defaults.c_str(), true))
-         RARCH_WARN("[RmlUi] Controls defaults not found at %s.\n", defaults.c_str());
-      if (const char *data = absolute_data_directory())
-      {
-         snprintf(menu->controls.path, sizeof(menu->controls.path),
-               "%s/controls.cfg", data);
-         menu->controls.load_file(menu->controls.path, false);
-      }
+      menu->controls.load(assets, data);
       menu->controls.loaded = true;
    }
    menu->controls.refresh();
@@ -407,7 +400,7 @@ void rib_menu_frame(void *data, int width, int height)
           * want frames after the overlays are done, and we can learn that only
           * after asking it. */
          menu->script.run(menu, {menu->screens.current().c_str(), menu->slots.transfer_pending(),
-               menu->controls.capture_active, menu->controls.profile_id});
+               menu->controls.capture_active, menu->controls.profile_id.c_str()});
          menu->overlays.update(menu->script.wants_frames());
          menu->view.render(width, height);
          return;
@@ -461,7 +454,7 @@ void rib_menu_frame(void *data, int width, int height)
     * that is still display:none in the document. */
    menu->discs.sync();
    menu->script.run(menu, {menu->screens.current().c_str(), menu->slots.transfer_pending(),
-               menu->controls.capture_active, menu->controls.profile_id});
+               menu->controls.capture_active, menu->controls.profile_id.c_str()});
    menu->script.restore_hover();
    /* Once we have put the pointer back after the script, we silently focus
     * the stop the pointer moved onto, before the click of this frame. We never

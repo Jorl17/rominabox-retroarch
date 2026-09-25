@@ -40,7 +40,9 @@ public:
     * it closes, we focus the button that opens it again. */
    void focus_picker();
    void close_picker();
-   bool load_file(const char *path, bool defaults);
+   /* Read the author's pad from `assets`, then the player's file in `data`,
+    * once per menu. */
+   void load(const char *assets, const char *data);
    void refresh();
    void focus(FocusTarget target);
    void cancel_capture(const char *status);
@@ -56,11 +58,10 @@ public:
    bool capture_active = false;
    int capture_control = 0;
    bool capture_ignore_pointer = false;
-   char profile_id[32]{};
+   /* The pad applied now. */
+   std::string profile_id;
    bool device_picker_open = false;
    rib_controls_catalog catalog{};
-   char path[PATH_MAX_LENGTH]{};
-   char defaults_path[PATH_MAX_LENGTH]{};
 
 private:
    Focus& focus_state;
@@ -70,7 +71,10 @@ private:
    Lists& lists;
    Status& status;
    const Event& hovered;
-   char exported_profile[32]{};
+   /* Where the author's defaults and scenes are, and the player's file. */
+   std::string assets, defaults_path, path;
+   /* The pad the game was exported with. */
+   std::string exported_profile;
    bool apply(const char *wanted, bool player_file);
    bool read_defaults(const char *wanted);
    bool read_player_file();

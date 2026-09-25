@@ -74,7 +74,7 @@ private:
       bool pending = false;
       Transfer kind = Transfer::Load;
       int slot = 0;
-      char path[PATH_MAX_LENGTH]{};
+      std::string path;
    } transfer;
    struct SlotState
    {

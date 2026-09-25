@@ -492,6 +492,8 @@ rib_pointer rib_host_pointer(void)
    return result;
 }
 
+#ifdef RIB_MENU_SCRIPT
+/* The test script driver's picture and exit, in a test build only. */
 bool rib_host_prepare_script_shot(void)
 {
    settings_t *settings = config_get_ptr();
@@ -513,3 +515,4 @@ void rib_host_script_finished(void)
 {
    disk_control_log_core_image(&runloop_state_get_ptr()->system.disk_control, "menu script done");
 }
+#endif

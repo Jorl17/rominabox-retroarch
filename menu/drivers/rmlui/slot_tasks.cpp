@@ -39,9 +39,8 @@ void Slots::follow()
 bool Slots::begin_transfer(Transfer kind)
 {
    if (transfer.pending) return false;
-   transfer.path[0] = '\0';
-   if (!rib_host_state_path(selected_slot, transfer.path, sizeof(transfer.path)))
-      transfer.path[0] = '\0';
+   char path[PATH_MAX_LENGTH];
+   transfer.path = rib_host_state_path(selected_slot, path, sizeof(path)) ? path : "";
    transfer.kind = kind;
    transfer.slot = selected_slot;
    transfer.pending = true;
@@ -61,13 +60,13 @@ void Slots::request(Transfer kind)
    const bool accepted = save ? rib_host_save_state() : rib_host_load_state();
    // With a synchronous host callback, the request may already be complete.
    if (!accepted && transfer.pending)
-      notify_task(transfer.path, transfer.slot, save, false);
+      notify_task(transfer.path.c_str(), transfer.slot, save, false);
 }
 
 void Slots::notify_task(const char *path, int slot, bool is_save, bool success)
 {
    if (!state_task_matches(transfer.pending,
-         transfer.kind == Transfer::Save, transfer.path, transfer.slot,
+         transfer.kind == Transfer::Save, transfer.path.c_str(), transfer.slot,
          path, slot, is_save)) return;
    transfer.pending = false;
    /* Read the slots after the task. The picture of a save comes after the

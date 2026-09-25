@@ -17,10 +17,6 @@
 #include <cstring>
 #include <string>
 
-#ifndef RIB_RMLUI_DEFAULT_ASSETS
-#define RIB_RMLUI_DEFAULT_ASSETS "."
-#endif
-
 namespace rib {
 int Controls::index_of(const char *id) const
 {
@@ -82,21 +78,23 @@ FocusTarget focused_stop(const rib_controls_catalog& catalog, const std::string&
 /* At startup we read the author's defaults, then the player's file. When the
  * player chose another pad, we use that pad. Otherwise we only put the
  * player's labels and bindings over the author's. */
-bool Controls::load_file(const char *file, bool defaults)
+void Controls::load(const char *assets, const char *data)
 {
-   if (defaults)
-   {
-      strlcpy(defaults_path, file, sizeof(defaults_path));
-      return apply(NULL, false);
-   }
-   if (file != path)
-      strlcpy(path, file, sizeof(path));
+   this->assets = assets ? assets : "";
+   defaults_path = this->assets + "/controls-defaults.cfg";
+   path = data && *data ? std::string(data) + "/controls.cfg" : std::string();
+   if (!apply(NULL, false))
+      RARCH_WARN("[RmlUi] Controls defaults not found at %s.\n", defaults_path.c_str());
+   if (path.empty())
+      return;
    const std::string chosen = player_profile();
    if (!chosen.empty() && chosen != profile_id)
-      return apply(chosen.c_str(), true);
-   const bool read = read_player_file();
-   show_pad();
-   return read;
+      apply(chosen.c_str(), true);
+   else
+   {
+      read_player_file();
+      show_pad();
+   }
 }
 
 /* The one way we apply a pad: its controls, labels and bindings from the
@@ -123,22 +121,17 @@ bool Controls::read_defaults(const char *wanted)
    bool present = false;
    int index;
 
-   if (!defaults_path[0])
-   {
-      const char *assets = getenv("ROMINABOX_RML_ASSETS");
-      snprintf(defaults_path, sizeof(defaults_path), "%s/controls-defaults.cfg",
-            assets && *assets ? assets : RIB_RMLUI_DEFAULT_ASSETS);
-   }
    /* We find the author's pad when we open the defaults. For a pad that this
     * game does not offer, we use the author's pad instead. */
-   exported_profile[0] = '\0';
-   if (!(config = rib_open_controls(defaults_path, true, exported_profile,
+   char exported[32] = "";
+   if (!(config = rib_open_controls(defaults_path.c_str(), true, exported,
                &catalog, &present, rib_host_bind_index)))
       return false;
+   exported_profile = exported;
    if (!wanted || !*wanted
          || !rib_controls_discover(config, wanted, &catalog, rib_host_bind_index))
-      wanted = exported_profile;
-   strlcpy(profile_id, wanted, sizeof(profile_id));
+      wanted = exported_profile.c_str();
+   profile_id = wanted;
    rib_controls_read_enabled(config, &catalog);
    for (index = 0; index < catalog.count; ++index)
    {
@@ -159,8 +152,8 @@ std::string Controls::player_profile()
 {
    char named[32] = "";
    bool present = false;
-   if (path[0])
-      if (config_file_t *config = rib_open_controls(path, false, named, &catalog,
+   if (!path.empty())
+      if (config_file_t *config = rib_open_controls(path.c_str(), false, named, &catalog,
                &present, rib_host_bind_index))
          config_file_free(config);
    return named;
@@ -173,7 +166,7 @@ bool Controls::read_player_file()
    config_file_t *config;
    int index;
 
-   if (!path[0] || !(config = rib_open_controls(path, false, named, &catalog,
+   if (path.empty() || !(config = rib_open_controls(path.c_str(), false, named, &catalog,
                &present, rib_host_bind_index)))
       return false;
    for (index = 0; index < catalog.count; ++index)
@@ -193,26 +186,22 @@ bool Controls::read_player_file()
  * its scene in the export. */
 void Controls::show_pad()
 {
-   const char *drawn = control_view.scene_profile();
-   if (!*drawn)
-      drawn = exported_profile;
-   if (!string_is_equal(drawn, profile_id))
+   const std::string drawn = *control_view.scene_profile()
+         ? control_view.scene_profile() : exported_profile;
+   if (drawn != profile_id)
    {
-      const char *assets = getenv("ROMINABOX_RML_ASSETS");
-      char scene[PATH_MAX_LENGTH];
+      const std::string scene = assets + "/scene-" + profile_id + ".rml";
       int64_t length = 0;
       void *markup = NULL;
-      snprintf(scene, sizeof(scene), "%s/scene-%s.rml",
-            assets && *assets ? assets : RIB_RMLUI_DEFAULT_ASSETS, profile_id);
-      if (filestream_read_file(scene, &markup, &length) && markup
-            && control_view.set_scene(profile_id, (const char*)markup))
-         RARCH_LOG("[RIB] drawing '%s' from %s.\n", profile_id, scene);
+      if (filestream_read_file(scene.c_str(), &markup, &length) && markup
+            && control_view.set_scene(profile_id.c_str(), (const char*)markup))
+         RARCH_LOG("[RIB] drawing '%s' from %s.\n", profile_id.c_str(), scene.c_str());
       else
          RARCH_ERR("[RIB] no scene for '%s' at %s; the pad on screen "
-               "is still the one the game was exported with.\n", profile_id, scene);
+               "is still the one the game was exported with.\n", profile_id.c_str(), scene.c_str());
       free(markup);
    }
-   control_view.set_device_picker(catalog, device_picker_open, profile_id);
+   control_view.set_device_picker(catalog, device_picker_open, profile_id.c_str());
 }
 
 bool Controls::save()
@@ -221,10 +210,10 @@ bool Controls::save()
    bool saved;
    int index;
 
-   if (!path[0] || !(config = config_file_new_alloc()))
+   if (path.empty() || !(config = config_file_new_alloc()))
       return false;
 
-   config_set_string(config, "controls_profile", profile_id);
+   config_set_string(config, "controls_profile", profile_id.c_str());
    for (index = 0; index < catalog.count; ++index)
    {
       char key[96];
@@ -237,7 +226,7 @@ bool Controls::save()
       rib_host_write_bind(config, catalog.entries[index].id, catalog.entries[index].bind_index);
    }
 
-   saved = rib_write_menu_config(config, path);
+   saved = rib_write_menu_config(config, path.c_str());
    config_file_free(config);
    return saved;
 }
@@ -509,11 +498,11 @@ void Controls::update_binds(int x, int y, bool pointer_active)
 void Controls::choose_device(const char *chosen)
 {
    device_picker_open = false;
-   if (chosen && *chosen && !string_is_equal(chosen, profile_id))
+   if (chosen && *chosen && profile_id != chosen)
    {
       int index;
 
-      strlcpy(profile_id, chosen, sizeof(profile_id));
+      profile_id = chosen;
       /* The pad belongs to the player who picks it, so we write it to the
        * per-game override and never to the author's fixed defaults. */
       save();
@@ -535,11 +524,11 @@ void Controls::choose_device(const char *chosen)
       if (!apply(chosen, true))
          RARCH_ERR("[RIB] could not re-read controls from %s after changing "
                "controller; the menu still lists the previous pad.\n",
-               defaults_path);
+               defaults_path.c_str());
       focus(first());
       refresh();
    }
-   control_view.set_device_picker(catalog, false, profile_id);
+   control_view.set_device_picker(catalog, false, profile_id.c_str());
 }
 
 void Controls::reset_defaults()
@@ -616,7 +605,7 @@ void Controls::configure_binds(const BindsDeclaration& declared)
 void Controls::toggle_picker()
 {
    device_picker_open = !device_picker_open;
-   control_view.set_device_picker(catalog, device_picker_open, profile_id);
+   control_view.set_device_picker(catalog, device_picker_open, profile_id.c_str());
 }
 
 void Controls::close_picker()

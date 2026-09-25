@@ -1,5 +1,7 @@
 #include "document_contract.hpp"
 #include "script.hpp"
+
+#ifdef RIB_MENU_SCRIPT
 #include "view.hpp"
 #include "elements.hpp"
 #include <cmath>
@@ -119,3 +121,4 @@ const char *rib::Script::report(const char *screen, bool menu_open,
    report += '}';
    return report.c_str();
 }
+#endif

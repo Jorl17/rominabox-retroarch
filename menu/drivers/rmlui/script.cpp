@@ -1,4 +1,6 @@
 #include "script.hpp"
+
+#ifdef RIB_MENU_SCRIPT
 #include "menu_api.h"
 #include "host.h"
 #include "view.hpp"
@@ -40,7 +42,6 @@ void rib::Script::shot()
 
 void rib::Script::run(void *menu, const ScriptObservation& observation)
 {
-   char id[128];
    const char *comma;
    size_t length;
 
@@ -87,10 +88,8 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
 
    comma  = strchr(script + at, ',');
    length = comma ? (size_t)(comma - (script + at)) : strlen(script + at);
-   if (length >= sizeof(id))
-      length = sizeof(id) - 1;
-   memcpy(id, script + at, length);
-   id[length] = '\0';
+   const std::string command(script + at, length);
+   const char *id = command.c_str();
    at += length + (comma ? 1 : 0);
 
    if (!strncmp(id, "wait:", 5))
@@ -151,25 +150,25 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
 
    if (!strncmp(id, "hover:", 6))
    {
-      strlcpy(hover, id + 6, sizeof(hover));
-      if (!view.move_pointer_to(hover))
+      hover = id + 6;
+      if (!view.move_pointer_to(hover.c_str()))
       {
          RARCH_ERR("[RIB] menu script cannot hover '%s'; stopping so no "
-               "screenshot is taken of the wrong screen.\n", hover);
+               "screenshot is taken of the wrong screen.\n", hover.c_str());
          rib_host_quit();
       }
       return;
    }
 
    {
-      char *mark = strchr(id, '@');
-      if (mark)
+      const size_t mark = command.find('@');
+      if (mark != std::string::npos)
       {
-         *mark = '\0';
-         if (!view.parts.commit_slider(id, (float)strtof(mark + 1, NULL)))
+         const std::string slider = command.substr(0, mark);
+         if (!view.parts.commit_slider(slider.c_str(), (float)strtof(id + mark + 1, NULL)))
          {
             RARCH_ERR("[RIB] menu script names no slider '%s'; stopping so no "
-                  "screenshot is taken of the wrong screen.\n", id);
+                  "screenshot is taken of the wrong screen.\n", slider.c_str());
             rib_host_quit();
          }
          return;
@@ -188,6 +187,7 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
 
 void rib::Script::restore_hover() const
 {
-   if (running && hover[0])
-      view.move_pointer_to(hover);
+   if (running && !hover.empty())
+      view.move_pointer_to(hover.c_str());
 }
+#endif
