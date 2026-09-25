@@ -53,6 +53,7 @@ void SavedAccounts::fill()
       Lists::Row row;
       row.id = "account-" + std::to_string(index);
       row.title = found[index].display_name;
+      row.line = true;
       rows.push_back(row);
    }
    if (!screen.empty())

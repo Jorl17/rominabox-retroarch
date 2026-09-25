@@ -24,6 +24,9 @@ public:
       std::string id, title, detail, state, icon;
       bool selected = false;
       Badge badge = Badge::None;
+      /* A row without a picture or second line. We mark it `line`, as we do
+       * for such rows in the lists we write in the exporter. */
+      bool line = false;
    };
    // Replace generated data through the staged prototype from the design, and
    // keep the current page where possible. We leave static lists unchanged.

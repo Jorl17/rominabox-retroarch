@@ -60,6 +60,7 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
             }
          }
          row->SetClass("selected", data.selected);
+         row->SetClass("line", data.line);
          const struct { const char *name; const std::string& text; } fields[] = {
             {"list-row-title", data.title}, {"list-row-detail", data.detail}, {"list-row-state", data.state}
          };
