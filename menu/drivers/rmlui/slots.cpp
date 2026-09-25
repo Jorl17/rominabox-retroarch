@@ -7,8 +7,10 @@
 #include "focus.hpp"
 #include "status.hpp"
 #include <RmlUi/Core/StringUtilities.h>
-#include <sys/stat.h>
+#include <encodings/crc32.h>
+#include <streams/file_stream.h>
 #include <algorithm>
+#include <cstdlib>
 #include <vector>
 
 #ifndef RIB_RMLUI_HEADLESS
@@ -16,28 +18,32 @@
 #endif
 
 namespace rib {
-std::string Slots::thumbnail_version(const std::string& path)
+Slots::Picture Slots::read_picture(const std::string& path)
 {
-   struct stat info = {};
-   if (path.empty() || stat(path.c_str(), &info) != 0) return {};
-   long nanoseconds = 0;
-#if defined(__APPLE__)
-   nanoseconds = info.st_mtimespec.tv_nsec;
-#elif !defined(_WIN32)
-   nanoseconds = info.st_mtim.tv_nsec;
-#endif
-   return std::to_string(info.st_mtime) + ":" +
-      std::to_string(nanoseconds) + ":" + std::to_string(info.st_size);
+   Picture picture;
+   void *bytes = nullptr;
+   int64_t size = 0;
+   if (path.empty() || !filestream_read_file(path.c_str(), &bytes, &size))
+      return picture;
+   picture.bytes.assign(static_cast<unsigned char*>(bytes),
+         static_cast<unsigned char*>(bytes) + size);
+   free(bytes);
+   picture.version = std::to_string(size) + ":" + std::to_string(
+         encoding_crc32(0, picture.bytes.data(), picture.bytes.size()));
+   return picture;
 }
 
-bool Slots::thumbnail_ready(const std::string& path)
+bool Slots::picture_ready(const std::string& path, const Picture& picture)
 {
 #ifndef RIB_RMLUI_HEADLESS
-   /* Decode async screenshots before their texture goes into the RmlUi cache. */
+   /* Decode a picture written while the game runs before its texture goes
+    * into the RmlUi cache. */
+   (void)path;
    std::vector<unsigned char> pixels;
    unsigned width = 0, height = 0;
-   return lodepng::decode(pixels, width, height, path) == 0;
+   return lodepng::decode(pixels, width, height, picture.bytes) == 0;
 #else
+   (void)picture;
    return !path.empty();
 #endif
 }
@@ -108,12 +114,12 @@ void Slots::set_slot_state(int slot, bool occupied, const char *thumbnail_path)
    if (!valid_slot(slot)) return;
    SlotState& state = slots[slot - 1];
    const std::string next_path = thumbnail_path ? thumbnail_path : "";
-   const std::string version = thumbnail_version(next_path);
+   const Picture picture = read_picture(next_path);
    if (state.occupied == occupied && state.thumbnail_path == next_path &&
-         state.thumbnail_version == version)
+         state.thumbnail_version == picture.version)
       return;
    state.occupied = occupied;
-   if (!next_path.empty() && !thumbnail_ready(next_path))
+   if (!next_path.empty() && !picture_ready(next_path, picture))
    {
       paint();
       return;
@@ -121,7 +127,7 @@ void Slots::set_slot_state(int slot, bool occupied, const char *thumbnail_path)
    if (!state.thumbnail_path.empty())
       document.release_texture(state.thumbnail_path);
    state.thumbnail_path = next_path;
-   state.thumbnail_version = version;
+   state.thumbnail_version = picture.version;
    paint();
 }
 

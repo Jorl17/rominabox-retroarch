@@ -63,7 +63,7 @@ public:
    /* What we do in the menu after we show any screen. */
    void on_shown(std::function<void()> shown) { this->shown = std::move(shown); }
    Event key(rib_key action);
-   /* We open the menu on Pause, with CONTINUE highlighted. */
+   /* We open the menu on Pause, at the start marked in the design. */
    void open();
    /* On close, we take Pause as showing, because we reopen the menu there. */
    void close();

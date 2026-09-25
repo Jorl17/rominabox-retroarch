@@ -27,9 +27,6 @@ public:
    }
    /* Take `id` as the screen showing, without showing it. */
    void remember(const std::string& id) { active = id; }
-   /* For a document without design declarations, declare the Pause and
-    * Controls screens of Native, as for a design. */
-   void built_in_screens();
    void clear_screens();
    void declare_screen(const ScreenDeclaration& screen);
    /* The declared role of screen `id`, None when it has none. */

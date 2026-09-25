@@ -68,8 +68,7 @@ void Navigation::open()
    before_dialog.clear();
    controls.close_picker();
    close();
-   if (present(screens.current()))
-      focus.set(document_contract::Resume);
+   present(screens.current());
 }
 
 void Navigation::close()

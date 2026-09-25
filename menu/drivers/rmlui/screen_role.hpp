@@ -25,16 +25,4 @@ inline ScreenRole screen_role(const std::string& word)
          return known.role;
    return ScreenRole::None;
 }
-
-/* The word for `role` in design.cfg, or empty for None. */
-inline const char *role_word(ScreenRole role)
-{
-   switch (role)
-   {
-#define RIB_ROLE(name, word) case ScreenRole::name: return word;
-#include "document_contract.inc"
-      case ScreenRole::None: break;
-   }
-   return "";
-}
 }

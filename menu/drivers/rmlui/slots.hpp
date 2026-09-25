@@ -4,6 +4,7 @@
 #include <string>
 #include <cstring>
 #include <cstdint>
+#include <vector>
 #include "events.h"
 #include <retro_miscellaneous.h>
 
@@ -82,8 +83,18 @@ private:
       std::string thumbnail_path;
       std::string thumbnail_version;
    };
-   static std::string thumbnail_version(const std::string& path);
-   static bool thumbnail_ready(const std::string& path);
+   /* The picture of a slot, read through the libretro file layer, with UTF-8
+    * paths on every platform. stat and the fopen in lodepng take ANSI code
+    * page paths on Windows. Its version is its size and a CRC of its bytes,
+    * which change when the player saves a new picture over the old one. Both
+    * are empty when there is no file. */
+   struct Picture
+   {
+      std::vector<unsigned char> bytes;
+      std::string version;
+   };
+   static Picture read_picture(const std::string& path);
+   static bool picture_ready(const std::string& path, const Picture& picture);
    static std::string quoted_css_path(const std::string& path);
    Document& document;
    Focus& focus;

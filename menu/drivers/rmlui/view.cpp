@@ -87,10 +87,6 @@ void View::wire_document()
    parts.wire_part_toggles();
    parts.wire_arrows();
    lists.wire_lists();
-   /* When a design declares screens, we replace these before the first frame,
-    * and when it declares none we keep them. In both cases we attach the
-    * listeners to the buttons before the player can press anything. */
-   screens.built_in_screens();
 
    slots.paint();
    document.show();
