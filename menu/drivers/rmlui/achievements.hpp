@@ -23,9 +23,10 @@ public:
    bool physical(bool down, unsigned key, uint32_t character, uint16_t modifiers);
    void leave_form();
    void context_lost();
-   /* The screen has just been shown. The player may have saved an account
-    * for QUICK SIGN IN in another game since we last painted it. */
-   void shown();
+   /* A screen has just been shown, this one when `showing`. The player may
+    * have saved an account for QUICK SIGN IN in another game since we last
+    * painted it. When any other screen is shown, we leave the sign-in form. */
+   void screen_shown(bool showing);
    bool request_exit(Exit exit);
    bool allow_quit();
    bool modal() const { return confirming || snapshot.startup_waiting; }
@@ -46,7 +47,6 @@ private:
    uint32_t popup_waiting = 0;
    bool form = false, confirming = false, exit_approved = false;
    Exit pending_exit = Exit::Quit;
-   int modal_focus = 0;
    std::string account, confirmation_focus;
 };
 }

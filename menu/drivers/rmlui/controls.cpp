@@ -6,6 +6,8 @@
 #include "control_view.hpp"
 #include "lists.hpp"
 #include "status.hpp"
+#include "sounds.hpp"
+#include "elements.hpp"
 #include "../../../verbosity.h"
 #include <file/config_file.h>
 #include <streams/file_stream.h>
@@ -278,8 +280,8 @@ void Controls::cancel_capture(const char *status)
    rib_host_capture_cancel();
    capture_active = false;
    this->status.set_controls(status ? status : rib::words::BindingUnchanged);
-   screens.set_footer_hint(screens.controls_visible() ? rib::words::BackHint :
-                                                       rib::words::ContinueHint);
+   screens.set_footer_hint(screens.showing(ScreenRole::Controls) ? rib::words::BackHint :
+                                                               rib::words::ContinueHint);
    refresh();
 }
 
@@ -428,36 +430,30 @@ void Controls::show_binds(int index)
       return;
    }
 
-   rows = lists.rows_in(binds.list);
+   rows = lists.rows_in(binds.list.c_str());
    if (lines > rows)
       RARCH_ERR("[RIB] '%s' has %d binds and the menu was built with %d rows; "
             "the rest are not shown.\n",
             catalog.entries[index].id, lines, rows);
    for (slot = 0; slot < rows; ++slot)
    {
-      const char *id = lists.row_in(binds.list, slot);
-      char row[64];
-      if (!id || !*id)
+      const std::string row = lists.row_in(binds.list.c_str(), slot);
+      if (row.empty())
          break;
-      strlcpy(row, id, sizeof(row));
       if (slot < lines)
-      {
-         lists.set_row_text(row, titles[slot], details[slot], kinds[slot]);
-         document.set_shown(row, true);
-      }
-      else
-         document.set_shown(row, false);
+         lists.set_row_text(row.c_str(), titles[slot], details[slot], kinds[slot]);
+      document.set_shown(row.c_str(), slot < lines);
    }
-   lists.retarget_pages(binds.list);
+   lists.retarget_pages(binds.list.c_str());
    bind_anchor(index, anchor, sizeof(anchor));
-   lists.place_list(binds.list, anchor, binds.width);
+   lists.place_list(binds.list.c_str(), anchor, binds.width);
    binds.open = true;
 }
 
 void Controls::hide_binds()
 {
-   if (binds.list[0])
-      document.set_shown(binds.list, false);
+   if (!binds.list.empty())
+      document.set_shown(binds.list.c_str(), false);
    binds.open = false;
 }
 
@@ -472,7 +468,7 @@ void Controls::update_binds(int x, int y, bool pointer_active)
    int current = -1;
    int64_t now;
 
-   if (!binds.list[0] || !screens.controls_visible()
+   if (binds.list.empty() || !screens.showing(ScreenRole::Controls)
          || capture_active || device_picker_open)
    {
       hide_binds();
@@ -481,7 +477,7 @@ void Controls::update_binds(int x, int y, bool pointer_active)
    }
 
    if (pointer_active
-         && document.pointer_inside(binds.list, x, y)
+         && document.pointer_inside(binds.list.c_str(), x, y)
          && binds.control >= 0)
       current = binds.control;
    const auto target = focused_stop(catalog, focus_state.current_id());
@@ -609,18 +605,111 @@ void Controls::poll_capture()
 
 }
 
-void Controls::configure_binds(const rib_design_data& design)
+void Controls::configure_binds(const BindsDeclaration& declared)
 {
-   strlcpy(binds.list, design.binds_list, sizeof(binds.list));
-   binds.after_ms = design.binds_after_ms;
-   binds.hover_after_ms = design.binds_hover_after_ms;
-   binds.width = design.binds_width;
+   binds.list = declared.list;
+   binds.after_ms = declared.after_ms;
+   binds.hover_after_ms = declared.hover_after_ms;
+   binds.width = declared.width;
 }
 
 void Controls::toggle_picker()
 {
    device_picker_open = !device_picker_open;
    control_view.set_device_picker(catalog, device_picker_open, profile_id);
+}
+
+void Controls::close_picker()
+{
+   if (device_picker_open)
+      toggle_picker();
+}
+
+void Controls::focus_picker()
+{
+   Rml::Element *box = document.root()
+         ? document.root()->GetElementById(document_contract::ControlsDevice) : nullptr;
+   if (device_picker_open && box)
+   {
+      focus_state.trap(box);
+      Rml::Element *chosen = nullptr;
+      walk(box, [&](Rml::Element *option) {
+         if (option->IsClassSet(document_contract::Selected)
+               && option->GetId().rfind(document_contract::ControlsDeviceOptionPrefix, 0) == 0)
+         {
+            chosen = option;
+            return Walk::Stop;
+         }
+         return Walk::Continue;
+      });
+      if (!focus_state.set(chosen))
+         focus_state.set(focus_state.first(
+               document.root()->GetElementById(document_contract::ControlsDeviceList)));
+      return;
+   }
+   focus_state.trap(nullptr);
+   focus_state.set(document_contract::ControlsDeviceCurrent);
+}
+
+bool Controls::handle(const Event& event)
+{
+   switch (event.kind)
+   {
+      case RIB_RMLUI_ACTION_CONTROLS_CANCEL:
+         play_action_sound(event.kind);
+         cancel_capture(rib::words::BindingUnchanged);
+         return true;
+      case RIB_RMLUI_ACTION_CONTROLS_BACK:
+         /* Leaving the pad screen ends a capture. We choose the next
+          * screen in the menu code. */
+         if (capture_active)
+            cancel_capture(rib::words::BindingUnchanged);
+         return false;
+      default:
+         break;
+   }
+   /* While we capture a binding, the player cannot press anything else. */
+   if (capture_active)
+      return true;
+   switch (event.kind)
+   {
+      case RIB_RMLUI_ACTION_DEVICE_PICKER_TOGGLE:
+         toggle_picker();
+         focus_picker();
+         return true;
+      case RIB_RMLUI_ACTION_DEVICE_PICKER_CHOOSE:
+         choose_device(event.id.c_str());
+         focus_picker();
+         return true;
+      case RIB_RMLUI_ACTION_CONTROL:
+      {
+         const int index = index_of(event.id.c_str());
+         if (active(index))
+         {
+            play_action_sound(event.kind);
+            focus(FocusTarget::item(index));
+            start_capture(index);
+         }
+         return true;
+      }
+      case RIB_RMLUI_ACTION_CONTROLS_RESET:
+         play_action_sound(event.kind);
+         reset_defaults();
+         return true;
+      default:
+         return false;
+   }
+}
+
+void Controls::screen_shown(bool showing)
+{
+   if (showing)
+   {
+      status.set_controls(rib::words::ChooseControl);
+      refresh();
+   }
+   else if (capture_active)
+      cancel_capture(rib::words::BindingUnchanged);
 }
 
 

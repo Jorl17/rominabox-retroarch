@@ -114,9 +114,10 @@ void Achievements::show_form(bool show)
    }
    paint();
 }
-void Achievements::shown()
+void Achievements::screen_shown(bool showing)
 {
-   if (document.has_element(document_contract::AchievementsPanel)) paint();
+   if (!showing) leave_form();
+   else if (document.has_element(document_contract::AchievementsPanel)) paint();
 }
 void Achievements::leave_form()
 {
@@ -153,7 +154,7 @@ void Achievements::paint_rows()
          overlays.show_badge(item.badge_path);
          popup_waiting = 0;
       }
-      rows.push_back({"achievement-" + std::to_string(item.id), item.title, item.description,
+      rows.push_back({document_contract::AchievementRowPrefix + std::to_string(item.id), item.title, item.description,
             std::to_string(item.points) + " PT / " + state, item.badge_path,
             item.state == RIB_ACHIEVEMENT_UNLOCKED || item.state == RIB_ACHIEVEMENT_PENDING_UPLOAD, badge});
    }

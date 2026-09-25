@@ -7,16 +7,17 @@ View& menu_view()
    static View view;
    return view;
 }
-bool View::initialize(const char *assets, int width, int height, bool core_context,
-      const rib_controls_catalog& controls)
+bool View::initialize(const char *assets, const std::vector<std::string>& fonts,
+      int width, int height, bool core_context, const rib_controls_catalog& controls)
 {
    catalog = &controls;
    if (document.get_context()) return true;
-   if (!document.initialize(assets, width, height, core_context)) return false;
+   if (!document.initialize(assets, fonts, width, height, core_context)) return false;
    wire_document();
    document.settle();
    return true;
 }
+
 void View::shutdown()
 {
    document.shutdown();
@@ -30,12 +31,6 @@ void View::render(int width, int height)
    if (!document.get_context()) return;
    status.expire();
    document.render(width, height);
-}
-void View::wire_toggles()
-{
-   if (!document.root()) return;
-   lists.wire_toggles();
-   parts.wire_part_toggles();
 }
 void View::clear_intents()
 {
@@ -59,7 +54,6 @@ void View::wire_document()
       {document_contract::Resume, RIB_RMLUI_ACTION_RESUME, false},
       {document_contract::Save, RIB_RMLUI_ACTION_SAVE, false},
       {document_contract::Load, RIB_RMLUI_ACTION_LOAD, false},
-      {document_contract::Controls, RIB_RMLUI_ACTION_CONTROLS, true},
       {document_contract::Quit, RIB_RMLUI_ACTION_QUIT, false},
       {document_contract::ControlsBack, RIB_RMLUI_ACTION_CONTROLS_BACK, true},
       {document_contract::ControlsReset, RIB_RMLUI_ACTION_CONTROLS_RESET, false},
@@ -90,7 +84,7 @@ void View::wire_document()
       }
 
    controls.wire(*catalog);
-   wire_toggles();
+   parts.wire_part_toggles();
    parts.wire_arrows();
    lists.wire_lists();
    /* When a design declares screens, we replace these before the first frame,

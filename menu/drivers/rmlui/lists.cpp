@@ -15,44 +15,31 @@
 
 namespace rib {
 namespace {
+/* The player chose a row or turned a page by `direction`, -1 back or 1 on. */
 class ListListener : public Rml::EventListener
 {
 public:
-   enum Kind { Choose, Page };
-   ListListener(EventQueue& events, Kind kind, std::string page)
-      : events(events), kind(kind), page(std::move(page)) {}
+   ListListener(EventQueue& events, int direction)
+      : events(events), direction(direction) {}
    void ProcessEvent(Rml::Event& event) override
    {
       auto *element = event.GetCurrentElement();
       if (!element || element->HasAttribute("disabled") ||
             element->IsClassSet(document_contract::Disabled))
          return;
-      events.push({kind == Choose ? RIB_RMLUI_ACTION_LIST_CHOOSE
-            : RIB_RMLUI_ACTION_LIST_PAGE,
-            kind == Choose ? std::string(element->GetId()) : page});
-   }
-   void OnDetach(Rml::Element*) override { delete this; }
-private:
-   EventQueue& events;
-   Kind kind;
-   std::string page;
-};
-
-class ToggleListener : public Rml::EventListener
-{
-public:
-   explicit ToggleListener(EventQueue& events) : events(events) {}
-   void ProcessEvent(Rml::Event& event) override
-   {
-      auto *element = event.GetCurrentElement();
-      if (!element || element->HasAttribute("disabled") ||
-            element->IsClassSet(document_contract::Disabled))
+      if (!direction)
+      {
+         events.push({RIB_RMLUI_ACTION_LIST_CHOOSE, std::string(element->GetId())});
          return;
-      events.push({RIB_RMLUI_ACTION_TOGGLE, element->GetId()});
+      }
+      Event page(RIB_RMLUI_ACTION_LIST_PAGE);
+      page.direction = direction;
+      events.push(page);
    }
    void OnDetach(Rml::Element*) override { delete this; }
 private:
    EventQueue& events;
+   int direction;
 };
 
 int utf8_len(unsigned char lead)
@@ -100,27 +87,16 @@ void Lists::wire_lists(Rml::Element *scope)
    std::vector<Rml::Element*> rows;
    collect(scope, document_contract::ListRow, rows);
    for (auto *row : rows)
-      if (!row->GetParentNode()->IsClassSet("list-prototype")) row->AddEventListener(Rml::EventId::Click,
-            new ListListener(events, ListListener::Choose, ""));
+      if (!row->GetParentNode()->IsClassSet(document_contract::ListPrototype))
+         row->AddEventListener(Rml::EventId::Click, new ListListener(events, 0));
    std::vector<Rml::Element*> previous;
    collect(scope, document_contract::ListPagerPrev, previous);
    for (auto *button : previous)
-      button->AddEventListener(Rml::EventId::Click,
-            new ListListener(events, ListListener::Page, "prev"));
+      button->AddEventListener(Rml::EventId::Click, new ListListener(events, -1));
    std::vector<Rml::Element*> next;
    collect(scope, document_contract::ListPagerNext, next);
    for (auto *button : next)
-      button->AddEventListener(Rml::EventId::Click,
-            new ListListener(events, ListListener::Page, "next"));
-}
-
-void Lists::wire_toggles()
-{
-   if (!document.root()) return;
-   std::vector<Rml::Element*> toggles;
-   collect(document.root(), document_contract::ListToggle, toggles);
-   for (auto *toggle : toggles)
-      toggle->AddEventListener(Rml::EventId::Click, new ToggleListener(events));
+      button->AddEventListener(Rml::EventId::Click, new ListListener(events, 1));
 }
 
 void Lists::set_toggle(const char *id, const char *state, bool on)
@@ -128,7 +104,7 @@ void Lists::set_toggle(const char *id, const char *state, bool on)
    if (!document.root() || !id || !*id) return;
    if (auto *toggle = document.root()->GetElementById(id))
       toggle->SetClass(document_contract::On, on);
-   document.set_element_text((std::string(id) + "-state").c_str(), state);
+   document.set_element_text((std::string(id) + document_contract::StateSuffix).c_str(), state);
 }
 
 Rml::Element *Lists::visible_list() const
@@ -139,90 +115,6 @@ Rml::Element *Lists::visible_list() const
    for (auto *list : lists)
       if (!hidden(list)) return list;
    return nullptr;
-}
-
-void Lists::visible_rows(std::vector<Rml::Element*> &rows) const
-{
-   rows.clear();
-   auto *list = visible_list();
-   if (!list) return;
-   std::vector<Rml::Element*> all;
-   collect(list, document_contract::ListRow, all);
-   for (auto *row : all)
-      if (!hidden(row)) rows.push_back(row);
-}
-
-Rml::Element *Lists::visible_panel() const
-{
-   if (!document.root()) return nullptr;
-   std::vector<Rml::Element*> panels;
-   collect(document.root(), document_contract::ScreenPanel, panels);
-   for (auto *panel : panels)
-      if (!display_none(panel)) return panel;
-   return nullptr;
-}
-
-void Lists::visible_controls(std::vector<Rml::Element*> &out) const
-{
-   out.clear();
-   auto *panel = visible_panel();
-   if (!panel) return;
-   for (const char *name : {document_contract::OptionEntry, document_contract::ListToggle, document_contract::ListControl, document_contract::ListBack, document_contract::OptionsBack})
-      collect(panel, name, out);
-}
-
-int Lists::visible_row_count() const
-{
-   std::vector<Rml::Element*> rows;
-   visible_rows(rows);
-   return (int)rows.size();
-}
-
-void Lists::focus_list_row(int index) const
-{
-   if (!document.root()) return;
-   std::vector<Rml::Element*> all;
-   collect(document.root(), document_contract::ListRow, all);
-   for (auto *row : all) row->SetClass(document_contract::Focused, false);
-   std::vector<Rml::Element*> rows;
-   visible_rows(rows);
-   if (index >= 0 && index < (int)rows.size())
-      rows[index]->SetClass(document_contract::Focused, true);
-}
-
-int Lists::list_control_count() const
-{
-   std::vector<Rml::Element*> controls;
-   visible_controls(controls);
-   return (int)controls.size();
-}
-
-const char *Lists::list_control_id(int index)
-{
-   std::vector<Rml::Element*> controls;
-   visible_controls(controls);
-   control_id_buffer.clear();
-   if (index >= 0 && index < (int)controls.size())
-      control_id_buffer = controls[index]->GetId();
-   return control_id_buffer.c_str();
-}
-
-void Lists::focus_list_control(int index) const
-{
-   std::vector<Rml::Element*> controls;
-   visible_controls(controls);
-   for (size_t at = 0; at < controls.size(); ++at)
-      controls[at]->SetClass(document_contract::Focused, (int)at == index);
-}
-
-const char *Lists::list_row_id(int index)
-{
-   std::vector<Rml::Element*> rows;
-   visible_rows(rows);
-   row_id_buffer.clear();
-   if (index >= 0 && index < (int)rows.size())
-      row_id_buffer = rows[index]->GetId();
-   return row_id_buffer.c_str();
 }
 
 bool Lists::page_has_row(Rml::Element *page)
@@ -306,7 +198,7 @@ void Lists::select_in(Rml::Element *list, const char *row_id,
    {
       const bool selected = row_id && row->GetId() == row_id;
       row->SetClass(document_contract::Selected, selected);
-      document.set_element_text((row->GetId() + "-state").c_str(),
+      document.set_element_text((row->GetId() + document_contract::StateSuffix).c_str(),
             selected ? on : off);
    }
 }
@@ -329,9 +221,9 @@ void Lists::set_row_text(const char *id, const char *title,
 {
    if (!id || !*id) return;
    const std::string row(id);
-   document.set_element_text((row + "-title").c_str(), title);
-   document.set_element_text((row + "-detail").c_str(), detail);
-   document.set_element_text((row + "-state").c_str(), state);
+   document.set_element_text((row + document_contract::TitleSuffix).c_str(), title);
+   document.set_element_text((row + document_contract::DetailSuffix).c_str(), detail);
+   document.set_element_text((row + document_contract::StateSuffix).c_str(), state);
 }
 
 float Lists::block_dp(Rml::Element *element) const
@@ -347,7 +239,7 @@ float Lists::block_dp(Rml::Element *element) const
 void Lists::fit_row_title(const char *id, const char *text) const
 {
    if (!id || !*id) return;
-   const std::string title_id = std::string(id) + "-title";
+   const std::string title_id = std::string(id) + document_contract::TitleSuffix;
    const std::string source = text ? text : "";
    auto *element = document.root() ? document.root()->GetElementById(title_id) : nullptr;
    if (!element || !document.get_context())
@@ -407,13 +299,11 @@ int Lists::rows_in(const char *list_id) const
    return (int)rows.size();
 }
 
-const char *Lists::row_in(const char *list_id, int index)
+std::string Lists::row_in(const char *list_id, int index) const
 {
    std::vector<Rml::Element*> rows;
    collect(list_element(list_id), document_contract::ListRow, rows);
-   row_in_buffer.clear();
-   if (index >= 0 && index < (int)rows.size()) row_in_buffer = rows[index]->GetId();
-   return row_in_buffer.c_str();
+   return index >= 0 && index < (int)rows.size() ? rows[index]->GetId() : std::string();
 }
 
 void Lists::retarget_pages(const char *list_id, const char *keep_row) const

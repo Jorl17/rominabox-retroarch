@@ -29,7 +29,17 @@ public:
    int index_of(const char *id) const;
    bool active(int index) const;
    FocusTarget first() const;
-   FocusTarget step(int direction) const;
+   /* Handle an event on the pad screen. During a capture, every event but
+    * CANCEL and BACK goes to the capture. The player opens the picker and
+    * chooses in it, pressing a control starts a capture, and pressing RESET
+    * restores the author's pad. False when the event is not for this screen. */
+   bool handle(const Event& event);
+   /* A screen has just been shown, this one when `showing`. */
+   void screen_shown(bool showing);
+   /* While the picker is open, the arrows stay in it, on the chosen pad. When
+    * it closes, we focus the button that opens it again. */
+   void focus_picker();
+   void close_picker();
    bool load_file(const char *path, bool defaults);
    void refresh();
    void focus(FocusTarget target);
@@ -39,7 +49,7 @@ public:
    void reset_defaults();
    void choose_device(const char *chosen);
    void toggle_picker();
-   void configure_binds(const rib_design_data& design);
+   void configure_binds(const BindsDeclaration& binds);
    void update_binds(int x, int y, bool pointer_active);
 
    bool loaded = false;
@@ -77,7 +87,7 @@ private:
    void hide_binds();
    struct Binds
    {
-      char list[64]{};
+      std::string list;
       int after_ms = 0, hover_after_ms = 0, width = 0;
       int control = -1;
       int64_t since = 0;

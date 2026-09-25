@@ -15,11 +15,11 @@ namespace rib {
 class View
 {
 public:
-   bool initialize(const char *assets, int width, int height, bool core_context,
-         const rib_controls_catalog& controls);
+   bool initialize(const char *assets, const std::vector<std::string>& fonts,
+         int width, int height, bool core_context, const rib_controls_catalog& controls);
+
    void shutdown();
    void render(int width, int height);
-   void wire_toggles();
    void clear_intents();
    void set_overlay_mode(bool only_overlays);
    void pointer_move(int x, int y);

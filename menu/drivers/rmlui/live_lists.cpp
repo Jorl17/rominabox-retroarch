@@ -1,3 +1,4 @@
+#include "document_contract.hpp"
 #include "lists.hpp"
 #include "document.hpp"
 #include "elements.hpp"
@@ -8,19 +9,19 @@ namespace rib {
 void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
 {
    auto *list = list_element(list_id);
-   auto *prototype = find_class(find_class(list, "list-prototype"), "list-row");
-   auto *pager = find_class(list, "list-pager");
+   auto *prototype = find_class(find_class(list, document_contract::ListPrototype), document_contract::ListRow);
+   auto *pager = find_class(list, document_contract::ListPager);
    if (!list || !prototype || !pager) return;
-   const int size = std::max(1, list->GetAttribute<int>("data-page-size", 1));
+   const int size = std::max(1, list->GetAttribute<int>(document_contract::PageSizeAttribute, 1));
    const int page_count = ((int)rows.size() + size - 1) / size;
    std::vector<Rml::Element*> pages;
-   collect(list, "list-page", pages);
+   collect(list, document_contract::ListPage, pages);
    std::unordered_map<std::string, Rml::Element*> existing;
    int current = 0;
    for (size_t index = 0; index < pages.size(); ++index) {
       if (!display_none(pages[index])) current = (int)index;
       std::vector<Rml::Element*> children;
-      collect(pages[index], "list-row", children);
+      collect(pages[index], document_contract::ListRow, children);
       for (auto *row : children) existing.emplace(row->GetId(), row);
    }
    current = std::max(0, std::min(current, page_count - 1));
@@ -29,7 +30,7 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
    for (int page_index = 0; page_index < page_count; ++page_index) {
       if (page_index == (int)pages.size()) {
          auto page = document.root()->CreateElement("div");
-         page->SetClass("list-page", true);
+         page->SetClass(document_contract::ListPage, true);
          page->SetId(std::string(list_id) + "-page-" + std::to_string(page_index + 1));
          pages.push_back(list->InsertBefore(std::move(page), pager));
       }
@@ -59,10 +60,10 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
                page->InsertBefore(std::move(moved), page->GetChild(index % size));
             }
          }
-         row->SetClass("selected", data.selected);
-         row->SetClass("line", data.line);
+         row->SetClass(document_contract::Selected, data.selected);
+         row->SetClass(document_contract::Line, data.line);
          const struct { const char *name; const std::string& text; } fields[] = {
-            {"list-row-title", data.title}, {"list-row-detail", data.detail}, {"list-row-state", data.state}
+            {document_contract::ListRowTitle, data.title}, {document_contract::ListRowDetail, data.detail}, {document_contract::ListRowState, data.state}
          };
          for (const auto& field : fields) {
             if (auto *element = find_class(row, field.name)) {
@@ -75,12 +76,12 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
          // that has arrived, because in RmlUi an image without a picture is a
          // white box over the design.
          const bool loading = data.badge == Row::Badge::Loading;
-         row->SetClass("badge-loading", loading);
-         auto *icon = find_class(row, "list-row-icon");
+         row->SetClass(document_contract::BadgeLoading, loading);
+         auto *icon = find_class(row, document_contract::ListRowIcon);
          if (!data.icon.empty() && !loading) {
             if (!icon) {
                auto created = document.root()->CreateElement("img");
-               created->SetClass("list-row-icon", true);
+               created->SetClass(document_contract::ListRowIcon, true);
                icon = row->AppendChild(std::move(created));
             }
             if (icon->GetAttribute<std::string>("src", "") != data.icon) icon->SetAttribute("src", data.icon);
@@ -92,7 +93,7 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
    for (const auto& item : existing) item.second->GetParentNode()->RemoveChild(item.second);
    for (size_t index = page_count; index < pages.size(); ++index) list->RemoveChild(pages[index]);
    show(pager, page_count > 1);
-   write_text(find_class(pager, "list-pager-count"),
+   write_text(find_class(pager, document_contract::ListPagerCount),
          std::to_string(current + 1) + "/" + std::to_string(page_count));
    mark_pager(list, current, page_count);
    if (!resized.empty()) document.get_context()->Update();

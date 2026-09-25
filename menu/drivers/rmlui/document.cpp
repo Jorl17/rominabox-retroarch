@@ -1,5 +1,6 @@
 #include "document_contract.hpp"
 #include "document.hpp"
+#include "../../../verbosity.h"
 #include "elements.hpp"
 #include <RmlUi/Core/StringUtilities.h>
 #include "render/rmlui_gl.h"
@@ -86,8 +87,8 @@ std::string Document::asset_path(const char *name) const
    return asset_dir + "/" + name;
 }
 
-bool Document::initialize(
-      const char *asset_directory, int width, int height, bool core_context)
+bool Document::initialize(const char *asset_directory,
+      const std::vector<std::string>& fonts, int width, int height, bool core_context)
 {
    if (context)
       return true;
@@ -108,8 +109,13 @@ bool Document::initialize(
    if (!Rml::Initialise())
       return false;
 
-   if (!Rml::LoadFontFace(asset_path("Silkscreen-Regular.ttf"), false) ||
-       !Rml::LoadFontFace(asset_path("Silkscreen-Regular.ttf"), true))
+   /* The fonts in the design. We also use the first one for any glyph missing
+    * from a face. With a design that declares no font, we cannot draw text. */
+   bool drawn = !fonts.empty();
+   for (size_t index = 0; drawn && index < fonts.size(); ++index)
+      drawn = Rml::LoadFontFace(asset_path(fonts[index].c_str()), false)
+            && (index || Rml::LoadFontFace(asset_path(fonts[index].c_str()), true));
+   if (!drawn)
    {
       Rml::Shutdown();
       renderer.reset();
@@ -196,7 +202,7 @@ void Document::write_capture(int width, int height)
    const unsigned error = lodepng::encode(path, flipped,
          (unsigned)width, (unsigned)height);
    if (error)
-      std::fprintf(stderr, "[RIB] could not write %s: %s\n",
+      RARCH_ERR("[RIB] could not write %s: %s\n",
             path.c_str(), lodepng_error_text(error));
 #endif
 }
@@ -217,9 +223,10 @@ void Document::render(int width, int height)
    if (!context || !renderer)
       return;
    context->SetDimensions(Rml::Vector2i(width, height));
+   /* The design's canvas, scaled to fit the window whole. */
    const float density = std::min(
-         static_cast<float>(width) / 960.0f,
-         static_cast<float>(height) / 600.0f);
+         static_cast<float>(width) / document_contract::kCanvasWidth,
+         static_cast<float>(height) / document_contract::kCanvasHeight);
    context->SetDensityIndependentPixelRatio(std::max(density, 0.1f));
    renderer->SetViewport(width, height);
    context->Update();
@@ -242,11 +249,6 @@ bool Document::click_element(const char *id)
       return false;
    element->Click();
    return true;
-}
-
-int Document::focusables(const char *panel, char ids[][64], int capacity)
-{
-   return rib::focusable_ids(root(), panel, ids, capacity);
 }
 
 bool Document::element_center(const char *id, int *x, int *y)
@@ -279,14 +281,6 @@ bool Document::element_box(const char *id, int *x, int *y, int *w, int *h)
    *w = static_cast<int>(size.x);
    *h = static_cast<int>(size.y);
    return size.x > 0.f && size.y > 0.f;
-}
-
-bool Document::element_disabled(const char *id)
-{
-   if (!root() || !id)
-      return false;
-   Rml::Element *element = root()->GetElementById(id);
-   return element && element->HasAttribute("disabled");
 }
 
 void Document::set_shown(const char *id, bool shown)

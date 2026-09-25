@@ -21,7 +21,6 @@ public:
    void set_controls(const char *text);
    void expire();
    const std::string& main_text() const { return main.text; }
-   const std::string& controls_text() const { return controls.text; }
 
 private:
    struct Message { std::string text; double expires = 0; };

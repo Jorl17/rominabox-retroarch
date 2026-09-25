@@ -4,6 +4,7 @@
 #include <RmlUi/Core/SystemInterface.h>
 #include <memory>
 #include <string>
+#include <vector>
 #include "text_input_platform.hpp"
 
 class RominaboxRenderer;
@@ -20,17 +21,18 @@ public:
    Document(const Document&) = delete;
    Document& operator=(const Document&) = delete;
 
-   bool initialize(const char *assets, int width, int height, bool core_context);
+   /* The composed document in `assets`, drawn with `fonts`, the files
+    * declared in the design next to it. */
+   bool initialize(const char *assets, const std::vector<std::string>& fonts,
+         int width, int height, bool core_context);
    void shutdown();
    void show();
    void settle();
    void render(int width, int height);
    void capture_next(const char *path);
    bool click_element(const char *id);
-   int focusables(const char *panel, char ids[][64], int capacity);
    bool element_center(const char *id, int *x, int *y);
    bool element_box(const char *id, int *x, int *y, int *w, int *h);
-   bool element_disabled(const char *id);
    bool pointer_inside(const char *id, int x, int y);
    bool has_element(const char *id);
    void set_element_text(const char *id, const char *text);

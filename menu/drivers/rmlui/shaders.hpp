@@ -15,11 +15,13 @@ class Shaders : public ListOwner
 public:
    Shaders(Lists& lists) : lists(lists) {}
    void load(const char *asset_directory, const char *data_directory);
-   void show_running() const;
    ScreenRole role() const override { return ScreenRole::Shaders; }
+   /* Mark the running shader in the list. */
+   void shown() override { show_running(); }
    /* Apply the shader in the row and remember it for the next launch. */
    bool choose(const char *row) override;
 private:
+   void show_running() const;
    Lists& lists;
    rib_shader_catalog catalog{};
    std::string assets, data;

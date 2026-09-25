@@ -11,12 +11,6 @@
 #include <memory>
 #include <vector>
 
-struct rib_design_declarations
-{
-   rib_design_data data{};
-   std::vector<rib_screen_declaration> screens;
-};
-
 namespace
 {
 /* The sizes of the list buffers are limits on the input we accept here. */
@@ -144,225 +138,163 @@ void discover_devices(config_file_t *config, rib_controls_catalog *catalog)
    });
 }
 
-void screens(config_file_t *config, rib_design_declarations &design)
+/* A value as it is in design.cfg, whole. */
+bool read(config_file_t *config, const std::string& key, std::string& out)
 {
-   each_id<512>(config, "screens", [&](const char *id) {
-      char key[96];
-      rib_screen_declaration screen{};
-      strlcpy(screen.id, id, sizeof(screen.id));
-      snprintf(key, sizeof(key), "screen_panel_%s", id);
-      if (!config_get_array(config, key, screen.panel, sizeof(screen.panel)))
-         return true;
-      snprintf(key, sizeof(key), "screen_heading_%s", id);
-      if (!config_get_array(config, key, screen.heading, sizeof(screen.heading)))
-         screen.heading[0] = '\0';
-      snprintf(key, sizeof(key), "screen_footer_%s", id);
-      if (!config_get_array(config, key, screen.footer, sizeof(screen.footer)))
-         screen.footer[0] = '\0';
-      snprintf(key, sizeof(key), "screen_button_%s", id);
-      if (!config_get_array(config, key, screen.button, sizeof(screen.button)))
-         screen.button[0] = '\0';
-      snprintf(key, sizeof(key), "screen_images_%s", id);
-      if (!config_get_array(config, key, screen.images, sizeof(screen.images)))
-         screen.images[0] = '\0';
-      snprintf(key, sizeof(key), "screen_mark_%s", id);
-      if (!config_get_array(config, key, screen.mark, sizeof(screen.mark)))
-         screen.mark[0] = '\0';
-      snprintf(key, sizeof(key), "screen_role_%s", id);
-      if (!config_get_array(config, key, screen.role, sizeof(screen.role)))
-         screen.role[0] = '\0';
-      design.screens.push_back(screen);
-      return true;
-   });
-   design.data.screens = design.screens.data();
-   design.data.screen_count = design.screens.size();
+   const struct config_entry_list *entry = config_get_entry(config, key.c_str());
+   if (!entry || !entry->value)
+      return false;
+   out = entry->value;
+   return true;
 }
 
-void toggles(config_file_t *config, rib_design_data &data)
+std::string value(config_file_t *config, const std::string& key)
 {
-   each_id<256>(config, "toggles", [&](const char *id) {
-      if (data.toggle_count >= RIB_TOGGLE_MAX)
-      {
-         RARCH_ERR("[RIB] more than %d switches are declared; '%s' and any "
-               "after it will not work.\n", RIB_TOGGLE_MAX, id);
-         return false;
-      }
-      char key[128];
-      char value[128] = {};
-      rib_toggle_t &toggle = data.toggles[data.toggle_count++];
-      strlcpy(toggle.id, id, sizeof(toggle.id));
-      snprintf(key, sizeof(key), "toggle_on_%s", id);
-      config_get_array(config, key, toggle.on, sizeof(toggle.on));
-      snprintf(key, sizeof(key), "toggle_off_%s", id);
-      config_get_array(config, key, toggle.off, sizeof(toggle.off));
-      snprintf(key, sizeof(key), "toggle_default_%s", id);
-      config_get_array(config, key, value, sizeof(value));
-      toggle.state = string_is_equal(value, "true");
-      snprintf(key, sizeof(key), "toggle_guard_%s", id);
-      value[0] = '\0';
-      config_get_array(config, key, value, sizeof(value));
-      if (!*value)
-         toggle.guard = RIB_TOGGLE_GUARD_NONE;
-      else if (string_is_equal(value, "saves"))
-         toggle.guard = RIB_TOGGLE_GUARD_SAVES;
-      else
-      {
-         RARCH_ERR("[RIB] the switch '%s' guards '%s', which this player does "
-               "not implement; it will guard nothing.\n", id, value);
-         toggle.guard = RIB_TOGGLE_GUARD_NONE;
-      }
-      snprintf(key, sizeof(key), "toggle_guard_label_%s", id);
-      config_get_array(config, key, toggle.guard_label, sizeof(toggle.guard_label));
-      snprintf(key, sizeof(key), "toggle_guard_status_%s", id);
-      config_get_array(config, key, toggle.guard_status, sizeof(toggle.guard_status));
-      return true;
-   });
+   std::string out;
+   read(config, key, out);
+   return out;
 }
 
-void settings(config_file_t *config, rib_design_data &data)
+int number(config_file_t *config, const std::string& key, int otherwise)
 {
-   each_id<256>(config, "settings", [&](const char *id) {
-      if (data.setting_count >= RIB_SETTING_MAX)
+   int out = otherwise;
+   return config_get_int(config, key.c_str(), &out) ? out : otherwise;
+}
+
+/* The ids in a space-separated list, in order. */
+std::vector<std::string> ids(const std::string& list)
+{
+   std::vector<std::string> found;
+   size_t at = 0;
+   while (at < list.size())
+   {
+      const size_t start = list.find_first_not_of(' ', at);
+      if (start == std::string::npos)
+         break;
+      const size_t end = list.find(' ', start);
+      found.push_back(list.substr(start, end == std::string::npos ? std::string::npos : end - start));
+      at = end == std::string::npos ? list.size() : end;
+   }
+   return found;
+}
+
+void screens(config_file_t *config, rib::DesignDeclarations& design)
+{
+   for (const std::string& id : ids(value(config, "screens")))
+   {
+      rib::ScreenDeclaration screen;
+      screen.id = id;
+      if (!read(config, "screen_panel_" + id, screen.panel) || screen.panel.empty())
+         continue;
+      screen.heading = value(config, "screen_heading_" + id);
+      screen.footer = value(config, "screen_footer_" + id);
+      screen.buttons = ids(value(config, "screen_button_" + id));
+      screen.images = value(config, "screen_images_" + id);
+      screen.mark = value(config, "screen_mark_" + id);
+      std::string role;
+      if (read(config, "screen_role_" + id, role))
       {
-         RARCH_ERR("[RIB] more than %d player settings are declared; '%s' and "
-               "any after it will not work.\n", RIB_SETTING_MAX, id);
-         return false;
+         screen.role = rib::screen_role(role);
+         if (screen.role == rib::ScreenRole::None)
+            RARCH_ERR("[RIB] the screen '%s' takes the role '%s', which this player "
+                  "does not know; it is an ordinary screen.\n", id.c_str(), role.c_str());
       }
-      char key[128];
-      char value[64] = {};
-      rib_setting_declaration setting{};
-      strlcpy(setting.id, id, sizeof(setting.id));
-      snprintf(key, sizeof(key), "setting_control_%s", id);
-      config_get_array(config, key, setting.control, sizeof(setting.control));
-      snprintf(key, sizeof(key), "setting_key_%s", id);
-      config_get_array(config, key, setting.key, sizeof(setting.key));
-      snprintf(key, sizeof(key), "setting_file_%s", id);
-      config_get_array(config, key, setting.file, sizeof(setting.file));
-      snprintf(key, sizeof(key), "setting_kind_%s", id);
-      config_get_array(config, key, value, sizeof(value));
-      if (string_is_equal(value, "level"))
+      design.screens.push_back(std::move(screen));
+   }
+}
+
+void settings(config_file_t *config, rib::DesignDeclarations& design)
+{
+   for (const std::string& id : ids(value(config, "settings")))
+   {
+      rib::SettingDeclaration setting;
+      setting.id = id;
+      setting.control = value(config, "setting_control_" + id);
+      setting.key = value(config, "setting_key_" + id);
+      setting.file = value(config, "setting_file_" + id);
+      const std::string kind = value(config, "setting_kind_" + id);
+      if (kind == "level")
       {
-         setting.kind = RIB_SETTING_LEVEL;
-         snprintf(key, sizeof(key), "setting_low_%s", id);
-         if (config_get_array(config, key, value, sizeof(value)))
-            setting.low = strtof(value, NULL);
-         snprintf(key, sizeof(key), "setting_high_%s", id);
-         if (config_get_array(config, key, value, sizeof(value)))
-            setting.high = strtof(value, NULL);
-         snprintf(key, sizeof(key), "setting_positions_%s", id);
-         config_get_int(config, key, &setting.positions);
+         setting.kind = rib::SettingKind::Level;
+         setting.low = strtof(value(config, "setting_low_" + id).c_str(), NULL);
+         setting.high = strtof(value(config, "setting_high_" + id).c_str(), NULL);
+         setting.positions = number(config, "setting_positions_" + id, 0);
       }
-      else if (string_is_equal(value, "switch"))
+      else if (kind == "switch")
       {
-         setting.kind = RIB_SETTING_SWITCH;
-         snprintf(key, sizeof(key), "setting_on_%s", id);
-         config_get_array(config, key, setting.on, sizeof(setting.on));
-         snprintf(key, sizeof(key), "setting_off_%s", id);
-         config_get_array(config, key, setting.off, sizeof(setting.off));
-         snprintf(key, sizeof(key), "setting_inverted_%s", id);
-         value[0] = '\0';
-         config_get_array(config, key, value, sizeof(value));
-         setting.inverted = string_is_equal(value, "true");
+         setting.kind = rib::SettingKind::Switch;
+         setting.on = value(config, "setting_on_" + id);
+         setting.off = value(config, "setting_off_" + id);
+         setting.inverted = value(config, "setting_inverted_" + id) == "true";
       }
       else
       {
          RARCH_ERR("[RIB] the setting '%s' is a '%s', which this player does "
-               "not implement; it will not be shown.\n", id, value);
-         return true;
+               "not implement; it will not be shown.\n", id.c_str(), kind.c_str());
+         continue;
       }
-      if (!*setting.control || !*setting.key || !*setting.file
-            || (setting.kind == RIB_SETTING_LEVEL
+      if (setting.control.empty() || setting.key.empty() || setting.file.empty()
+            || (setting.kind == rib::SettingKind::Level
                && (setting.positions < 2 || setting.high == setting.low)))
       {
          RARCH_ERR("[RIB] the setting '%s' is declared without its control, "
-               "key, file or range; it will not be shown.\n", id);
-         return true;
+               "key, file or range; it will not be shown.\n", id.c_str());
+         continue;
       }
-      data.settings[data.setting_count++] = setting;
-      return true;
-   });
+      design.settings.push_back(std::move(setting));
+   }
 }
 
-void overlays(config_file_t *config, const char *assets, rib_design_data &data)
+void overlays(config_file_t *config, const char *assets, rib::DesignDeclarations& design)
 {
-   each_id<512>(config, "overlays", [&](const char *id) {
-      if (data.overlay_count >= RIB_OVERLAY_MAX)
+   for (const std::string& id : ids(value(config, "overlays")))
+   {
+      rib::OverlayDeclaration overlay;
+      overlay.id = id;
+      overlay.after_ms = number(config, "overlay_after_" + id, 0);
+      overlay.hold_ms = number(config, "overlay_hold_" + id, 0);
+      if (overlay.hold_ms <= 0)
+         continue;
+      overlay.leave_ms = number(config, "overlay_leave_" + id, 0);
+      overlay.follows = value(config, "overlay_follows_" + id);
+      overlay.needs = value(config, "overlay_needs_" + id);
+      if (!overlay.needs.empty()
+            && !path_is_valid((std::string(assets) + "/" + overlay.needs).c_str()))
       {
-         RARCH_WARN("[RIB] the design declares more than %d overlays; '%s' and "
-               "anything after it will not be drawn.\n", RIB_OVERLAY_MAX, id);
-         return false;
+         RARCH_LOG("[RIB] overlay '%s' needs %s, which this game does not "
+               "carry; it will not be drawn.\n", id.c_str(), overlay.needs.c_str());
+         continue;
       }
-      char key[96];
-      rib_overlay_declaration overlay{};
-      snprintf(key, sizeof(key), "overlay_after_%s", id);
-      config_get_int(config, key, &overlay.after_ms);
-      snprintf(key, sizeof(key), "overlay_hold_%s", id);
-      if (!config_get_int(config, key, &overlay.hold_ms) || overlay.hold_ms <= 0)
-         return true;
-      snprintf(key, sizeof(key), "overlay_leave_%s", id);
-      config_get_int(config, key, &overlay.leave_ms);
-      snprintf(key, sizeof(key), "overlay_follows_%s", id);
-      if (!config_get_array(config, key, overlay.follows, sizeof(overlay.follows)))
-         overlay.follows[0] = '\0';
-      snprintf(key, sizeof(key), "overlay_needs_%s", id);
-      if (!config_get_array(config, key, overlay.needs, sizeof(overlay.needs)))
-         overlay.needs[0] = '\0';
-      if (*overlay.needs)
-      {
-         char required[PATH_MAX_LENGTH];
-         snprintf(required, sizeof(required), "%s/%s", assets, overlay.needs);
-         if (!path_is_valid(required))
-         {
-            RARCH_LOG("[RIB] overlay '%s' needs %s, which this game does not "
-                  "carry; it will not be drawn.\n", id, overlay.needs);
-            return true;
-         }
-      }
-      strlcpy(overlay.id, id, sizeof(overlay.id));
-      data.overlays[data.overlay_count++] = overlay;
-      return true;
-   });
+      design.overlays.push_back(std::move(overlay));
+   }
 }
 }
 
-rib_design_declarations *rib_load_design(const char *asset_directory)
+namespace rib {
+DesignDeclarations load_design(const char *asset_directory)
 {
-   auto design = std::make_unique<rib_design_declarations>();
+   DesignDeclarations design;
    if (!asset_directory || !*asset_directory)
-      return design.release();
-   char path[PATH_MAX_LENGTH];
-   snprintf(path, sizeof(path), "%s/design.cfg", asset_directory);
+      return design;
+   const std::string path = std::string(asset_directory) + "/design.cfg";
    std::unique_ptr<config_file_t, decltype(&config_file_free)> config(
-         config_file_new_from_path_to_string(path), config_file_free);
+         config_file_new_from_path_to_string(path.c_str()), config_file_free);
    if (!config)
    {
       RARCH_LOG("[RIB] no design declarations at %s; the menu has no screens "
-            "and nothing will switch.\n", path);
-      return design.release();
+            "and nothing will switch.\n", path.c_str());
+      return design;
    }
-   screens(config.get(), *design);
-   toggles(config.get(), design->data);
-   settings(config.get(), design->data);
-   overlays(config.get(), asset_directory, design->data);
-   if (!config_get_array(config.get(), "binds_list", design->data.binds_list,
-         sizeof(design->data.binds_list)))
-      design->data.binds_list[0] = '\0';
-   config_get_int(config.get(), "binds_after", &design->data.binds_after_ms);
-   /* When the export does not contain it, the pointer rest is 300 ms. */
-   design->data.binds_hover_after_ms = 300;
-   config_get_int(config.get(), "binds_hover_after", &design->data.binds_hover_after_ms);
-   config_get_int(config.get(), "binds_width", &design->data.binds_width);
-   return design.release();
+   screens(config.get(), design);
+   settings(config.get(), design);
+   overlays(config.get(), asset_directory, design);
+   design.fonts = ids(value(config.get(), "fonts"));
+   design.binds.list = value(config.get(), "binds_list");
+   design.binds.after_ms = number(config.get(), "binds_after", design.binds.after_ms);
+   design.binds.hover_after_ms = number(config.get(), "binds_hover_after", design.binds.hover_after_ms);
+   design.binds.width = number(config.get(), "binds_width", design.binds.width);
+   return design;
 }
-
-const rib_design_data *rib_design_get(const rib_design_declarations *design)
-{
-   return &design->data;
-}
-
-void rib_design_free(rib_design_declarations *design)
-{
-   delete design;
 }
 
 void rib_load_shaders(const char *asset_directory, rib_shader_catalog *catalog)

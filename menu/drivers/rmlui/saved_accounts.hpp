@@ -21,7 +21,7 @@ public:
    SavedAccounts(Document& document, Lists& lists, EventQueue& events)
       : document(document), lists(lists), events(events) {}
    /* Find the screen declared with this role. */
-   void configure(const rib_design_data& design);
+   void configure(const DesignDeclarations& design);
    /* Add the FORGET listener after each document load. */
    void bind();
    ScreenRole role() const override { return ScreenRole::Accounts; }
@@ -38,7 +38,7 @@ private:
    Document& document;
    Lists& lists;
    EventQueue& events;
-   std::string screen;
+   std::string screen, panel;
    std::vector<rib_achievements_saved_account_t> accounts;
    bool forgetting = false;
    ScreenRole leaving = ScreenRole::None;

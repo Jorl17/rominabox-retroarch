@@ -204,14 +204,14 @@ struct PopupLayout
    };
 
    static constexpr rib_keep_clear rib_keep_clear_rules[] = {
-      {"control-callout", false, true},
+      {document_contract::ControlCallout, false, true},
       {document_contract::ControlGroup, false, true},
       {document_contract::MenuAction, false, false},
       {document_contract::Heading, true, false},
-      {"control-picker-label", false, false},
-      {"control-picker-current", false, false},
+      {document_contract::ControlPickerLabel, false, false},
+      {document_contract::ControlPickerCurrent, false, false},
       {document_contract::ControlsStatus, true, false},
-      {"footer", true, false},
+      {document_contract::Footer, true, false},
    };
 
    bool rib_under(Rml::Element *ancestor, Rml::Element *element)
@@ -409,27 +409,6 @@ struct PopupLayout
       rib_set_border_position(list, best_x, best_y);
    }
 
-   /* Relative to the screen. The labels are the callout and group elements in
-    * the document. The box of a stick is control-group-l_stick, not
-    * control-group- plus an axis id, so it is not in the control table. */
-   int covered(const char *anchor_id,
-         int left, int top, int width, int height)
-   {
-      if (!document || !context || width <= 0 || height <= 0)
-         return 0;
-      context->Update();
-      Rml::Element *screen = document->GetElementById(document_contract::Screen);
-      if (!screen)
-         return 0;
-      const Rml::Vector2f origin = screen->GetAbsoluteOffset(Rml::BoxArea::Border);
-      int labels = 0;
-      int chrome = 0;
-      rib_count_covered(nullptr, anchor_id,
-            origin.x + (float)left, origin.y + (float)top,
-            (float)width, (float)height, labels, chrome);
-      return labels;
-   }
-
 };
 }
 
@@ -439,9 +418,4 @@ void place_binds_popup(Rml::ElementDocument *document, Rml::Context *context,
    PopupLayout{document, context}.place(list_id, anchor_id, width_dp);
 }
 
-int popup_covered_labels(Rml::ElementDocument *document, Rml::Context *context,
-      const char *anchor_id, int left, int top, int width, int height)
-{
-   return PopupLayout{document, context}.covered(anchor_id, left, top, width, height);
-}
 }

@@ -34,7 +34,7 @@ public:
    void ProcessEvent(Rml::Event& event) override
    {
       auto *element = event.GetCurrentElement();
-      if (!element || element->HasAttribute("data-screen-target")
+      if (!element || element->HasAttribute(document_contract::ScreenTargetAttribute)
             || element->HasAttribute("disabled") || element->IsClassSet(document_contract::Disabled))
          return;
       events.push(RIB_RMLUI_ACTION_CONTROLS_BACK);

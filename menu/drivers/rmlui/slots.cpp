@@ -67,18 +67,11 @@ void Slots::paint() const
          element->SetClass(document_contract::Selected, slot == selected_slot);
          element->SetClass(document_contract::Occupied, slots[index].occupied);
          element->SetClass(document_contract::Empty, !slots[index].occupied);
-         element->SetClass(document_contract::Disabled, !guard.empty());
-         if (guard.empty())
-            element->RemoveAttribute("disabled");
-         else
-            element->SetAttribute("disabled", "disabled");
       }
-      if (auto *label = document.root()->GetElementById(document_contract::SlotLabelPrefix + suffix))
-         label->SetInnerRML(rib::words::SlotLabel + suffix);
-      if (auto *state = document.root()->GetElementById(document_contract::SlotStatePrefix + suffix))
-         state->SetInnerRML(guard.empty()
-               ? (slots[index].occupied ? rib::words::Occupied : rib::words::Empty)
-               : Rml::StringUtilities::EncodeRml(guard));
+      document.set_element_text((document_contract::SlotLabelPrefix + suffix).c_str(),
+            (rib::words::SlotLabel + suffix).c_str());
+      document.set_element_text((document_contract::SlotStatePrefix + suffix).c_str(),
+            slots[index].occupied ? rib::words::Occupied : rib::words::Empty);
       if (auto *image = document.root()->GetElementById(document_contract::SlotImagePrefix + suffix))
       {
          const float height = std::min(138.0f, 230.0f / game_aspect);
@@ -97,22 +90,10 @@ void Slots::paint() const
       }
    }
 
-   for (const char *id : {document_contract::Save, document_contract::Load})
-      if (auto *button = document.root()->GetElementById(id))
-      {
-         const bool disabled = !guard.empty() ||
-               (std::string(id) == document_contract::Load && !slots[selected_slot - 1].occupied);
-         button->SetClass(document_contract::Disabled, disabled);
-         if (disabled)
-            button->SetAttribute("disabled", "disabled");
-         else
-            button->RemoveAttribute("disabled");
-      }
-
+   document.set_disabled(document_contract::Load, !slots[selected_slot - 1].occupied);
    document.show_fact(document_contract::ChosenSlotFact, std::to_string(selected_slot));
-
    paint_status_line(document.root()->GetElementById(document_contract::Status),
-         status.main_text().empty() ? guard_reason : status.main_text());
+         status.main_text());
 }
 
 void Slots::set_selected_slot(int slot)
@@ -152,16 +133,6 @@ void Slots::set_game_aspect(float aspect)
    paint();
 }
 
-void Slots::guard_slots(const char *label, const char *reason)
-{
-   const std::string next = label ? label : "";
-   const std::string why = reason ? reason : "";
-   if (next == guard && why == guard_reason) return;
-   guard = next;
-   guard_reason = why;
-   paint();
-}
-
 bool Slots::occupied(int slot) const
 {
    return valid_slot(slot) && slots[slot - 1].occupied;
@@ -170,29 +141,5 @@ bool Slots::occupied(int slot) const
 bool Slots::has_thumbnail(int slot) const
 {
    return valid_slot(slot) && !slots[slot - 1].thumbnail_path.empty();
-}
-}
-
-namespace rib {
-/* The element on Pause from which the player presses an action. */
-void Slots::focus_action(const Event& event)
-{
-   switch (event.kind)
-   {
-      case RIB_RMLUI_ACTION_SELECT_SLOT:
-         if (valid_slot(event.slot))
-            focus.set((document_contract::Slot + std::to_string(event.slot)).c_str());
-         break;
-      case RIB_RMLUI_ACTION_RESUME: focus.set(document_contract::Resume); break;
-      case RIB_RMLUI_ACTION_SAVE: focus.set(document_contract::Save); break;
-      case RIB_RMLUI_ACTION_LOAD: focus.set(document_contract::Load); break;
-      case RIB_RMLUI_ACTION_CONTROLS: focus.set(document_contract::Controls); break;
-      case RIB_RMLUI_ACTION_QUIT: focus.set(document_contract::Quit); break;
-      default: break;
-   }
-}
-void Slots::focus_element(const char *id)
-{
-   focus.set(id);
 }
 }

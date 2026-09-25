@@ -10,12 +10,11 @@
 #include "parts.hpp"
 #include <cstdlib>
 #include <cstring>
-#include <string/stdstring.h>
 
 namespace rib {
-Rml::Element *Navigation::element(const char *id) const
+Rml::Element *Navigation::element(const std::string& id) const
 {
-   return document.root() && id && *id ? document.root()->GetElementById(id) : nullptr;
+   return document.root() && !id.empty() ? document.root()->GetElementById(id) : nullptr;
 }
 
 Rml::Element *Navigation::panel() const
@@ -28,12 +27,11 @@ void Navigation::enter()
    /* We start in an open dialog, because the panel behind it is inactive. */
    if (dialog_held && focus.set(focus.first(focus.trapped())))
       return;
-   const char *screen = screens.current();
-   if (focus.set(focus.recall(screen)))
+   if (focus.set(focus.recall(screens.current())))
       return;
    /* We start the pad screen on its first control, not on the picker that
     * comes before the controls in the document. */
-   if (screens.controls_visible())
+   if (screens.showing(ScreenRole::Controls))
    {
       controls.focus(controls.first());
       if (focus.stop(focus.current()))
@@ -48,6 +46,19 @@ void Navigation::enter()
    focus.paint();
 }
 
+bool Navigation::present(const std::string& id)
+{
+   /* A copy, because we may be about to forget `id` as an opener. */
+   const std::string to = id;
+   if (!screens.show_screen(to))
+      return false;
+   screens.remember(to);
+   enter();
+   if (shown)
+      shown();
+   return true;
+}
+
 void Navigation::open()
 {
    openers.clear();
@@ -55,27 +66,28 @@ void Navigation::open()
    focus.trap(nullptr);
    dialog_held = false;
    before_dialog.clear();
-   if (controls.device_picker_open)
-      controls.toggle_picker();
-   screens.show_screen("pause");
-   screens.remember("pause");
-   if (!focus.set(document_contract::Resume))
-      enter();
+   controls.close_picker();
+   close();
+   if (present(screens.current()))
+      focus.set(document_contract::Resume);
 }
 
-bool Navigation::show(const char *id)
+void Navigation::close()
 {
-   /* A copy, because we may forget `id` as an opener here. */
+   screens.remember(screens.with_role(ScreenRole::Pause));
+}
+
+bool Navigation::show(const std::string& id)
+{
    const std::string from = screens.current();
-   const std::string to = id ? id : "";
-   if (!screens.show_screen(to.c_str()))
+   const std::string to = id;
+   if (screens.screen_panel(to).empty())
       return false;
    const auto opener = openers.find(from);
    const bool returning = opener != openers.end() && opener->second == to;
    if (from != to)
    {
-      if (controls.device_picker_open)
-         controls.toggle_picker();
+      controls.close_picker();
       if (!dialog_held)
          focus.trap(nullptr);
       if (returning)
@@ -89,24 +101,16 @@ bool Navigation::show(const char *id)
          openers[to] = from;
       }
    }
-   screens.remember(to.c_str());
-   enter();
+   if (!present(to))
+      return false;
    play_action_sound(returning ? RIB_RMLUI_ACTION_CONTROLS_BACK : RIB_RMLUI_ACTION_SHOW_SCREEN);
    return true;
 }
 
-void Navigation::back_to_opener()
+void Navigation::back()
 {
    const auto opener = openers.find(screens.current());
-   show(opener != openers.end() ? opener->second.c_str() : "pause");
-}
-
-void Navigation::select_slot(int slot)
-{
-   if (!valid_slot(slot))
-      return;
-   slots.set_selected_slot(slot);
-   focus.set((document_contract::Slot + std::to_string(slot)).c_str());
+   show(opener != openers.end() ? opener->second : screens.with_role(ScreenRole::Pause));
 }
 
 bool Navigation::turn_page(int delta, Rml::Element *from)
@@ -118,31 +122,6 @@ bool Navigation::turn_page(int delta, Rml::Element *from)
       return false;
    focus.set(lists.first_row(list));
    return true;
-}
-
-void Navigation::picker()
-{
-   Rml::Element *box = element(document_contract::ControlsDevice);
-   if (controls.device_picker_open && box)
-   {
-      focus.trap(box);
-      Rml::Element *chosen = nullptr;
-      walk(box, [&](Rml::Element *option) {
-         if (option->IsClassSet(document_contract::Selected)
-               && option->GetId().rfind(document_contract::ControlsDeviceOptionPrefix, 0) == 0)
-         {
-            chosen = option;
-            return Walk::Stop;
-         }
-         return Walk::Continue;
-      });
-      if (!focus.set(chosen))
-         focus.set(focus.first(element(document_contract::ControlsDeviceList)));
-      return;
-   }
-   if (!dialog_held)
-      focus.trap(nullptr);
-   focus.set(document_contract::ControlsDeviceCurrent);
 }
 
 void Navigation::hold(Rml::Element *dialog)
@@ -168,7 +147,7 @@ void Navigation::hold(Rml::Element *dialog)
    dialog_held = false;
    focus.trap(nullptr);
    if (controls.device_picker_open)
-      picker();
+      controls.focus_picker();
    /* Closing the dialog may already have moved the focus somewhere useful. */
    if (focus.stop(focus.current()))
       return;
@@ -176,16 +155,16 @@ void Navigation::hold(Rml::Element *dialog)
       enter();
 }
 
-Event Navigation::back()
+Event Navigation::back_key()
 {
    if (controls.device_picker_open)
    {
-      controls.toggle_picker();
-      picker();
+      controls.close_picker();
+      controls.focus_picker();
       play_action_sound(RIB_RMLUI_ACTION_CONTROLS_CANCEL);
       return {};
    }
-   if (string_is_equal(screens.current(), "pause"))
+   if (screens.showing(ScreenRole::Pause))
       return RIB_RMLUI_ACTION_RESUME;
    /* The back button of the screen, with its declared destination, if any. */
    Rml::Element *own = nullptr;
@@ -275,11 +254,11 @@ Event Navigation::key(rib_key action)
       case RIB_KEY_CANCEL:
       case RIB_KEY_RESUME:
       case RIB_KEY_TOGGLE:
-         return back();
+         return back_key();
       case RIB_KEY_START:
-         if (string_is_equal(screens.current(), "pause"))
+         if (screens.showing(ScreenRole::Pause))
             return RIB_RMLUI_ACTION_SAVE;
-         if (screens.controls_visible())
+         if (screens.showing(ScreenRole::Controls))
             return RIB_RMLUI_ACTION_CONTROLS_RESET;
          return {};
       default:

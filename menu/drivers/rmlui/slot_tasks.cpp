@@ -2,6 +2,8 @@
 #include "slots.hpp"
 #include "host.h"
 #include "status.hpp"
+#include "focus.hpp"
+#include "sounds.hpp"
 #include <cstdio>
 
 namespace rib {
@@ -80,5 +82,31 @@ void Slots::notify_task(const char *path, int slot, bool is_save, bool success)
    else
       std::snprintf(message, sizeof(message), is_save ? rib::words::SaveFailed : rib::words::LoadFailed);
    status.set_main(message);
+}
+
+bool Slots::handle(const Event& event)
+{
+   switch (event.kind)
+   {
+      case RIB_RMLUI_ACTION_SAVE:
+      case RIB_RMLUI_ACTION_LOAD:
+      {
+         const Transfer kind = event.kind == RIB_RMLUI_ACTION_SAVE ? Transfer::Save : Transfer::Load;
+         if (transfer_pending() || (kind == Transfer::Load && !load_available()))
+            return true;
+         play_action_sound(event.kind);
+         request(kind);
+         return true;
+      }
+      case RIB_RMLUI_ACTION_SELECT_SLOT:
+         if (valid_slot(event.slot))
+         {
+            set_selected_slot(event.slot);
+            focus.set((document_contract::Slot + std::to_string(event.slot)).c_str());
+         }
+         return true;
+      default:
+         return false;
+   }
 }
 }

@@ -327,7 +327,7 @@ void rib_host_apply_shader(const char *id, const char *path)
       applied = video_shader_apply_shader(settings, video_shader_parse_type(path), path, false);
    else
       applied = video_shader_apply_shader(settings, RARCH_SHADER_NONE, NULL, false);
-   fprintf(stderr, "[RIB] shader '%s' %s: %s\n", id,
+   RARCH_LOG("[RIB] shader '%s' %s: %s\n", id,
          applied ? "applied" : "not applied", path[0] ? path : "unfiltered");
 }
 
