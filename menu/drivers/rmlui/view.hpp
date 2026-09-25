@@ -19,7 +19,6 @@ public:
          const rib_controls_catalog& controls);
    void shutdown();
    void render(int width, int height);
-   bool reload_if_changed();
    void wire_toggles();
    void clear_intents();
    void set_overlay_mode(bool only_overlays);

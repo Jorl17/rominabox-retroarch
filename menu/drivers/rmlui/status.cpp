@@ -10,9 +10,11 @@ void paint_status_line(Rml::Element *line, const std::string& text)
    if (!line) return;
    if (!line->HasAttribute("data-prompt"))
       line->SetAttribute("data-prompt", line->GetInnerRML());
-   line->SetInnerRML(text.empty()
+   const Rml::String shown = text.empty()
          ? line->GetAttribute<Rml::String>("data-prompt", "")
-         : Rml::StringUtilities::EncodeRml(text));
+         : Rml::StringUtilities::EncodeRml(text);
+   if (line->GetInnerRML() != shown)
+      line->SetInnerRML(shown);
 }
 
 void Status::show(Message& message, const char *id, const char *text)

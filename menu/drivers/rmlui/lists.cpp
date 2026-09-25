@@ -128,7 +128,7 @@ void Lists::set_toggle(const char *id, const char *state, bool on)
    if (!document.root() || !id || !*id) return;
    if (auto *toggle = document.root()->GetElementById(id))
       toggle->SetClass(document_contract::On, on);
-   set_text(std::string(id) + "-state", state);
+   document.set_element_text((std::string(id) + "-state").c_str(), state);
 }
 
 Rml::Element *Lists::visible_list() const
@@ -263,16 +263,9 @@ std::vector<Rml::Element*> Lists::usable_pages(Rml::Element *list)
 void Lists::show_page(Rml::Element *list, const std::vector<Rml::Element*>& pages, int shown)
 {
    for (size_t index = 0; index < pages.size(); ++index)
-      if ((int)index == shown) pages[index]->RemoveProperty("display");
-      else pages[index]->SetProperty("display", "none");
-   std::vector<Rml::Element*> counts;
-   collect(list, document_contract::ListPagerCount, counts);
-   if (!counts.empty())
-   {
-      char label[32];
-      std::snprintf(label, sizeof(label), "%d/%d", shown + 1, (int)pages.size());
-      counts[0]->SetInnerRML(label);
-   }
+      show(pages[index], (int)index == shown);
+   if (Rml::Element *count = find_class(list, document_contract::ListPagerCount))
+      write_text(count, std::to_string(shown + 1) + "/" + std::to_string(pages.size()));
    mark_pager(list, shown, (int)pages.size());
 }
 
@@ -313,9 +306,8 @@ void Lists::select_in(Rml::Element *list, const char *row_id,
    {
       const bool selected = row_id && row->GetId() == row_id;
       row->SetClass(document_contract::Selected, selected);
-      if (auto *state = document.root()->GetElementById(row->GetId() + "-state"))
-         state->SetInnerRML(Rml::StringUtilities::EncodeRml(
-               selected ? (on ? on : "") : (off ? off : "")));
+      document.set_element_text((row->GetId() + "-state").c_str(),
+            selected ? on : off);
    }
 }
 
@@ -332,21 +324,14 @@ void Lists::select_row(const char *list_id, const char *row_id,
       select_in(list_element(list_id), row_id, on, off);
 }
 
-void Lists::set_text(const std::string& id, const char *text) const
-{
-   if (!document.root()) return;
-   if (auto *element = document.root()->GetElementById(id))
-      element->SetInnerRML(Rml::StringUtilities::EncodeRml(text ? text : ""));
-}
-
 void Lists::set_row_text(const char *id, const char *title,
       const char *detail, const char *state) const
 {
    if (!id || !*id) return;
    const std::string row(id);
-   set_text(row + "-title", title);
-   set_text(row + "-detail", detail);
-   set_text(row + "-state", state);
+   document.set_element_text((row + "-title").c_str(), title);
+   document.set_element_text((row + "-detail").c_str(), detail);
+   document.set_element_text((row + "-state").c_str(), state);
 }
 
 float Lists::block_dp(Rml::Element *element) const
@@ -367,7 +352,7 @@ void Lists::fit_row_title(const char *id, const char *text) const
    auto *element = document.root() ? document.root()->GetElementById(title_id) : nullptr;
    if (!element || !document.get_context())
    {
-      set_text(title_id, source.c_str());
+      document.set_element_text(title_id.c_str(), source.c_str());
       return;
    }
    document.get_context()->Update();
@@ -382,7 +367,7 @@ void Lists::fit_row_title(const char *id, const char *text) const
    };
    if (limit_px <= 1.f || width_of(source) <= limit_px)
    {
-      set_text(title_id, source.c_str());
+      write_text(element, source);
       return;
    }
    /* We cut the middle of the title to keep the disc number at its end, and
@@ -406,8 +391,7 @@ void Lists::fit_row_title(const char *id, const char *text) const
    }
    const int head = best / 2;
    const int tail = best - head;
-   set_text(title_id, (slice(source, 0, head) + mark
-         + slice(source, total - tail, tail)).c_str());
+   write_text(element, slice(source, 0, head) + mark + slice(source, total - tail, tail));
 }
 
 Rml::Element *Lists::list_element(const char *list_id) const
@@ -439,18 +423,14 @@ void Lists::retarget_pages(const char *list_id, const char *keep_row) const
    std::vector<Rml::Element*> pages;
    collect(list, document_contract::ListPage, pages);
    for (auto *page : pages)
-      if (!page_has_row(page)) page->SetProperty("display", "none");
+      if (!page_has_row(page)) show(page, false);
    const auto usable = usable_pages(list);
    auto *kept = keep_row ? list->GetElementById(keep_row) : nullptr;
    int shown = 0;
    for (size_t index = 0; kept && index < usable.size(); ++index)
       if (usable[index]->Contains(kept)) shown = (int)index;
    if (!usable.empty()) show_page(list, usable, shown);
-   std::vector<Rml::Element*> pagers;
-   collect(list, document_contract::ListPager, pagers);
-   if (pagers.empty()) return;
-   if (usable.size() < 2) pagers[0]->SetProperty("display", "none");
-   else pagers[0]->RemoveProperty("display");
+   show(find_class(list, document_contract::ListPager), usable.size() >= 2);
 }
 
 void Lists::place_list(const char *list_id, const char *anchor_id, int width_dp) const

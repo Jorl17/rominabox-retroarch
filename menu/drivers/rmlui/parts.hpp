@@ -28,7 +28,8 @@ public:
    void begin_drag(Rml::Element *hovered, int x);
    void drag_to(int x);
    void end_drag();
-   void clear_drag();
+   /* We are closing the document, so forget all its elements and drawings. */
+   void forget();
    const std::map<std::string, float>& fractions() const { return slider_fraction; }
 
 private:
@@ -41,6 +42,9 @@ private:
    EventQueue& events;
    std::map<std::string, float> slider_fraction;
    std::map<std::string, float> slider_step;
+   /* The last values we set for the fill and thumb of each slider, in pixels. */
+   struct Painted { float fill = -1.0f, left = -1.0f; };
+   std::map<std::string, Painted> slider_painted;
    Rml::Element *drag_element = nullptr;
    std::string drag_id;
    float drag_fraction = 0.0f;

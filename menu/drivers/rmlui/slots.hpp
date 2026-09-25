@@ -3,6 +3,7 @@
 
 #include <string>
 #include <cstring>
+#include <cstdint>
 #include "events.h"
 #include <retro_miscellaneous.h>
 
@@ -37,10 +38,14 @@ public:
    Slots(Document& document, Focus& focus, Status& status)
       : document(document), focus(focus), status(status) {}
    enum class Transfer { Save, Load };
-   void reset_transfer() { transfer = {}; }
+   void reset_transfer() { transfer = {}; awaiting = {}; }
    bool transfer_pending() const { return transfer.pending; }
    bool load_available() const;
+   /* Read every slot from the host, when the menu opens and when a save or a
+    * load finishes. Nothing else changes them. */
    void refresh();
+   /* Call once a frame. Returns the slot still waiting for its picture. */
+   void follow();
    void request(Transfer kind);
    void notify_task(const char *path, int slot, bool is_save, bool success);
    void focus_action(const Event& event);
@@ -57,6 +62,14 @@ public:
 
 private:
    bool begin_transfer(Transfer kind);
+   void look_at(int slot);
+   /* How long we wait for the picture of a saved slot. */
+   static constexpr int64_t kPictureWaitUs = 5000000;
+   struct Awaiting
+   {
+      int slot = 0;
+      int64_t until = 0;
+   } awaiting;
    struct Request
    {
       bool pending = false;

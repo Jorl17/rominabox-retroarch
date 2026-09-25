@@ -2,7 +2,6 @@
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/SystemInterface.h>
-#include <ctime>
 #include <memory>
 #include <string>
 #include "text_input_platform.hpp"
@@ -25,7 +24,6 @@ public:
    void shutdown();
    void show();
    void settle();
-   bool reload_if_changed();
    void render(int width, int height);
    void capture_next(const char *path);
    bool click_element(const char *id);
@@ -78,8 +76,6 @@ private:
    Rml::ElementDocument *document = nullptr;
    std::string asset_dir;
    std::string capture_path;
-   time_t rml_mtime = 0;
-   time_t rcss_mtime = 0;
 #ifdef RIB_RMLUI_HEADLESS
    unsigned texture_count = 0;
    unsigned geometry_count = 0;

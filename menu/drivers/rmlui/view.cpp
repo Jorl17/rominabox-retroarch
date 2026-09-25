@@ -22,7 +22,7 @@ void View::shutdown()
    document.shutdown();
    clear_intents();
    pointer_down = false;
-   parts.clear_drag();
+   parts.forget();
    catalog = nullptr;
 }
 void View::render(int width, int height)
@@ -30,12 +30,6 @@ void View::render(int width, int height)
    if (!document.get_context()) return;
    status.expire();
    document.render(width, height);
-}
-bool View::reload_if_changed()
-{
-   if (!document.reload_if_changed()) return false;
-   wire_document();
-   return true;
 }
 void View::wire_toggles()
 {

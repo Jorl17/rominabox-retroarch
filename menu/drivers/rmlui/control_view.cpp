@@ -105,13 +105,7 @@ void ControlView::set_device_picker(const rib_controls_catalog& catalog, bool op
 {
    if (!document.root())
       return;
-   if (Rml::Element *list = document.root()->GetElementById(document_contract::ControlsDeviceList))
-   {
-      if (open)
-         list->RemoveProperty("display");
-      else
-         list->SetProperty("display", "none");
-   }
+   document.set_shown(document_contract::ControlsDeviceList, open);
    for (int index = 0; index < catalog.device_count; ++index)
    {
       const char *id = catalog.devices[index].id;
@@ -126,7 +120,7 @@ void ControlView::set_device_picker(const rib_controls_catalog& catalog, bool op
          if (chosen && !std::strcmp(chosen, catalog.devices[index].id))
          {
             const char *name = catalog.devices[index].name;
-            current->SetInnerRML(Rml::StringUtilities::EncodeRml(name ? name : chosen));
+            write_text(current, name ? name : chosen);
             break;
          }
 }
@@ -151,27 +145,15 @@ void ControlView::set_control_state(const char *stop, const char *id,
    const std::string suffix(id);
    if (Rml::Element *control = stop ? document.root()->GetElementById(stop) : nullptr)
       control->SetClass(document_contract::Capturing, capturing);
-   if (Rml::Element *label_element =
-         document.root()->GetElementById(document_contract::ControlLabelPrefix + suffix))
-      label_element->SetInnerRML(Rml::StringUtilities::EncodeRml(
-            label ? label : ""));
-   if (Rml::Element *binding_element =
-         document.root()->GetElementById(document_contract::ControlBindingPrefix + suffix))
-      binding_element->SetInnerRML(Rml::StringUtilities::EncodeRml(
-            binding ? binding : ""));
+   document.set_element_text((document_contract::ControlLabelPrefix + suffix).c_str(), label);
+   document.set_element_text((document_contract::ControlBindingPrefix + suffix).c_str(), binding);
 }
 
 void ControlView::set_capturing(bool capturing)
 {
    if (!document.root())
       return;
-   if (Rml::Element *element = document.root()->GetElementById(document_contract::ControlsCancel))
-   {
-      element->SetClass(document_contract::Capturing, capturing);
-      if (capturing)
-         element->RemoveProperty("display");
-      else
-         element->SetProperty("display", "none");
-   }
+   document.set_class(document_contract::ControlsCancel, document_contract::Capturing, capturing);
+   document.set_shown(document_contract::ControlsCancel, capturing);
 }
 }

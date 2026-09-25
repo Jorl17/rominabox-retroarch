@@ -3,9 +3,7 @@
 #include "elements.hpp"
 #include <RmlUi/Core/StringUtilities.h>
 #include "render/rmlui_gl.h"
-#include <RmlUi/Core/Factory.h>
 #include <filesystem>
-#include <sys/stat.h>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -61,12 +59,6 @@ private:
 };
 
 #endif
-
-time_t modification_time(const std::string& path)
-{
-   struct stat info = {};
-   return stat(path.c_str(), &info) == 0 ? info.st_mtime : 0;
-}
 
 }
 
@@ -159,31 +151,12 @@ void Document::shutdown()
 void Document::show()
 {
    document->Show();
-   rml_mtime = modification_time(asset_path("menu.rml"));
-   rcss_mtime = modification_time(asset_path("menu.rcss"));
 }
 
 void Document::settle()
 {
    context->SetDensityIndependentPixelRatio(1.0f);
    context->Update();
-}
-
-bool Document::reload_if_changed(void)
-{
-   if (!context || !document)
-      return false;
-
-   const time_t current_rml_mtime = modification_time(asset_path("menu.rml"));
-   const time_t current_rcss_mtime = modification_time(asset_path("menu.rcss"));
-   if (current_rml_mtime == rml_mtime && current_rcss_mtime == rcss_mtime)
-      return false;
-
-   document->Close();
-   document = nullptr;
-   Rml::Factory::ClearStyleSheetCache();
-   document = context->LoadDocument(asset_path("menu.rml"));
-   return document != nullptr;
 }
 
 /* Read the frame we have just drawn for the menu, and write it.
@@ -318,29 +291,14 @@ bool Document::element_disabled(const char *id)
 
 void Document::set_shown(const char *id, bool shown)
 {
-   if (!root() || !id)
-      return;
-   if (Rml::Element *element = root()->GetElementById(id))
-   {
-      if (shown)
-         element->RemoveProperty("display");
-      else
-         element->SetProperty("display", "none");
-   }
+   if (root() && id)
+      rib::show(root()->GetElementById(id), shown);
 }
 
 void Document::set_disabled(const char *id, bool disabled)
 {
-   if (!root() || !id)
-      return;
-   Rml::Element *element = root()->GetElementById(id);
-   if (!element)
-      return;
-   element->SetClass(document_contract::Disabled, disabled);
-   if (disabled)
-      element->SetAttribute("disabled", "disabled");
-   else
-      element->RemoveAttribute("disabled");
+   if (root() && id)
+      disable(root()->GetElementById(id), disabled);
 }
 
 bool Document::pointer_inside(const char *id, int x, int y)
@@ -364,9 +322,8 @@ bool Document::has_element(const char *id)
 
 void Document::set_element_text(const char *id, const char *text)
 {
-   if (!root() || !id || !*id) return;
-   if (auto *element = root()->GetElementById(id))
-      element->SetInnerRML(Rml::StringUtilities::EncodeRml(text ? text : ""));
+   if (root() && id && *id)
+      write_text(root()->GetElementById(id), text ? text : "");
 }
 
 void Document::show_fact(const char *fact, const std::string& text)
@@ -375,10 +332,8 @@ void Document::show_fact(const char *fact, const std::string& text)
    Rml::ElementList showing;
    root()->QuerySelectorAll(showing,
          std::string("[") + document_contract::FactAttribute + "=" + fact + "]");
-   const std::string encoded = Rml::StringUtilities::EncodeRml(text);
    for (Rml::Element *element : showing)
-      if (element->GetInnerRML() != encoded)
-         element->SetInnerRML(encoded);
+      write_text(element, text);
 }
 
 void Document::set_class(const char *id, const char *name, bool enabled)

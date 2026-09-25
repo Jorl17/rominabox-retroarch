@@ -65,7 +65,6 @@ public:
 
 private:
    Rml::Element *list_element(const char *list_id) const;
-   void set_text(const std::string& id, const char *text) const;
    void select_in(Rml::Element *list, const char *row_id,
          const char *on, const char *off) const;
    static bool page_has_row(Rml::Element *page);

@@ -3,6 +3,7 @@
 #include "screens.hpp"
 
 #include "document.hpp"
+#include "elements.hpp"
 #include <RmlUi/Core/StringUtilities.h>
 #include <utility>
 #include <cstdio>
@@ -111,18 +112,10 @@ bool Screens::show_screen(const char *id)
    events.clear();
    hovered = RIB_RMLUI_ACTION_NONE;
    for (const Screen& screen : screens)
-      if (auto *panel = document.root()->GetElementById(screen.panel))
-      {
-         if (&screen == wanted)
-            panel->RemoveProperty("display");
-         else
-            panel->SetProperty("display", "none");
-      }
-   if (auto *heading = document.root()->GetElementById(document_contract::Heading))
-      heading->SetInnerRML(Rml::StringUtilities::EncodeRml(wanted->heading));
+      show(document.root()->GetElementById(screen.panel), &screen == wanted);
+   document.set_element_text(document_contract::Heading, wanted->heading.c_str());
    if (!wanted->footer.empty())
-      if (auto *footer = document.root()->GetElementById(document_contract::FooterHint))
-         footer->SetInnerRML(Rml::StringUtilities::EncodeRml(wanted->footer));
+      document.set_element_text(document_contract::FooterHint, wanted->footer.c_str());
    return true;
 }
 
@@ -191,9 +184,6 @@ const char *Screens::pause_screen_button()
 
 void Screens::set_footer_hint(const char *hint) const
 {
-   if (!document.root())
-      return;
-   if (auto *footer = document.root()->GetElementById(document_contract::FooterHint))
-      footer->SetInnerRML(Rml::StringUtilities::EncodeRml(hint ? hint : ""));
+   document.set_element_text(document_contract::FooterHint, hint ? hint : "");
 }
 }

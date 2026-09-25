@@ -34,7 +34,7 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
          pages.push_back(list->InsertBefore(std::move(page), pager));
       }
       auto *page = pages[page_index];
-      page->SetProperty("display", page_index == current ? "block" : "none");
+      show(page, page_index == current);
       for (int index = page_index * size; index < std::min((page_index + 1) * size, (int)rows.size()); ++index) {
          const auto& data = rows[index];
          auto found = existing.find(data.id);
@@ -84,16 +84,16 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
                icon = row->AppendChild(std::move(created));
             }
             if (icon->GetAttribute<std::string>("src", "") != data.icon) icon->SetAttribute("src", data.icon);
-            icon->RemoveProperty("display");
-         } else if (icon) icon->SetProperty("display", "none");
+            show(icon, true);
+         } else show(icon, false);
          if (fit) resized.push_back(&data);
       }
    }
    for (const auto& item : existing) item.second->GetParentNode()->RemoveChild(item.second);
    for (size_t index = page_count; index < pages.size(); ++index) list->RemoveChild(pages[index]);
-   pager->SetProperty("display", page_count > 1 ? "block" : "none");
-   if (auto *count = find_class(pager, "list-pager-count"))
-      count->SetInnerRML(std::to_string(current + 1) + "/" + std::to_string(page_count));
+   show(pager, page_count > 1);
+   write_text(find_class(pager, "list-pager-count"),
+         std::to_string(current + 1) + "/" + std::to_string(page_count));
    mark_pager(list, current, page_count);
    if (!resized.empty()) document.get_context()->Update();
    for (const auto *row : resized) fit_row_title(row->id.c_str(), row->title.c_str());

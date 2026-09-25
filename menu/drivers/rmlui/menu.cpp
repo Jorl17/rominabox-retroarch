@@ -192,6 +192,8 @@ static void reset_interaction(Menu *menu, bool opening)
    menu->view.pointer_leave();
    if (opening)
    {
+      /* Show on the slots any save the player made with a hotkey during play. */
+      menu->slots.refresh();
       /* Pause, with CONTINUE highlighted. */
       menu->navigation.open();
       menu->view.screens.set_footer_hint(rib::words::ContinueHint);
@@ -620,18 +622,7 @@ void rib_menu_frame(void *data, int width, int height)
    }
 
    menu->controls.poll_capture();
-
-   if (menu->view.reload_if_changed())
-   {
-      menu->achievements.context_lost();
-      load_design(menu, asset_directory);
-      menu->settings.attach();
-      menu->achievements.bind();
-      menu->accounts.bind();
-      menu->screens.show_screen(menu->screens.current());
-      menu->navigation.enter();
-   }
-   menu->slots.refresh();
+   menu->slots.follow();
    menu->controls.update_binds(pointer.x, pointer.y,
          !menu->script.wants_frames());
    settle_focus(menu);

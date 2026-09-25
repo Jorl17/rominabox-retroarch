@@ -10,16 +10,28 @@ bool Slots::load_available() const
    return rib_host_slot_occupied(selected_slot);
 }
 
+void Slots::look_at(int slot)
+{
+   char thumbnail_path[PATH_MAX_LENGTH] = {};
+   const bool occupied = rib_host_slot_occupied(slot);
+   rib_host_thumbnail(slot, thumbnail_path, sizeof(thumbnail_path));
+   set_slot_state(slot, occupied, thumbnail_path);
+}
+
 void Slots::refresh()
 {
+   set_game_aspect(rib_host_game_aspect());
    for (int slot = 1; slot <= kSlotCount; ++slot)
-   {
-      char thumbnail_path[PATH_MAX_LENGTH] = {};
-      const bool occupied = rib_host_slot_occupied(slot);
-      rib_host_thumbnail(slot, thumbnail_path, sizeof(thumbnail_path));
-      set_game_aspect(rib_host_game_aspect());
-      set_slot_state(slot, occupied, thumbnail_path);
-   }
+      look_at(slot);
+}
+
+void Slots::follow()
+{
+   if (!awaiting.slot)
+      return;
+   look_at(awaiting.slot);
+   if (has_thumbnail(awaiting.slot) || rib_host_time_us() >= awaiting.until)
+      awaiting = {};
 }
 
 bool Slots::begin_transfer(Transfer kind)
@@ -56,6 +68,11 @@ void Slots::notify_task(const char *path, int slot, bool is_save, bool success)
          transfer.kind == Transfer::Save, transfer.path, transfer.slot,
          path, slot, is_save)) return;
    transfer.pending = false;
+   /* Read the slots after the task. The picture of a save comes after the
+    * state, so we follow that slot until its picture arrives. */
+   refresh();
+   if (success && is_save && !has_thumbnail(transfer.slot))
+      awaiting = {transfer.slot, rib_host_time_us() + kPictureWaitUs};
    char message[64];
    if (success)
       std::snprintf(message, sizeof(message),
