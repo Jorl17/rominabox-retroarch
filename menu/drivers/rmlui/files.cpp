@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #if defined(_WIN32)
 #include <windows.h>
 #include <encodings/utf.h>
@@ -74,11 +75,11 @@ bool rib_write_player_setting(const char *path, const char *key, const char *val
    char temporary[PATH_MAX_LENGTH];
    if (!key || !*key || !value || !temporary_path(temporary, path))
       return false;
-   FILE *file = fopen(temporary, "w");
-   if (!file)
-      return false;
-   fprintf(file, "%s = \"%s\"\n", key, value);
-   if (fclose(file) != 0)
+   /* Through the libretro file layer, as for every menu file. Its paths are
+    * UTF-8 on every platform. On Windows, fopen uses the ANSI code page and
+    * cannot open a data folder whose name has non-ASCII characters. */
+   const std::string line = std::string(key) + " = \"" + value + "\"\n";
+   if (!filestream_write_file(temporary, line.data(), (int64_t)line.size()))
    {
       filestream_delete(temporary);
       return false;
