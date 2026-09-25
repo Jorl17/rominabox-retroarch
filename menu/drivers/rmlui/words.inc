@@ -7,13 +7,9 @@
  *
  * RIB_WORD(name, id, English) */
 
-/* The footer while a binding is captured, and the headings and footers of
- * a menu whose design declares no screens. */
+/* The footer while a binding is captured. A screen's own heading and footer
+ * are its design.json "screens" entry's. */
 RIB_WORD(CancelHint, "cancel-hint", "ESC  CANCEL")
-RIB_WORD(ContinueHint, "continue-hint", "ESC  CONTINUE")
-RIB_WORD(BackHint, "back-hint", "ESC  BACK")
-RIB_WORD(PausedHeading, "paused-heading", "GAME PAUSED")
-RIB_WORD(ControlsHeading, "controls-heading", "CONTROLS")
 
 /* The pad screen. */
 RIB_WORD(ChooseControl, "choose-control", "SELECT A CONTROL TO REBIND")

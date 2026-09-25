@@ -1,4 +1,3 @@
-#include "words.hpp"
 #include "document_contract.hpp"
 #include "screens.hpp"
 
@@ -30,28 +29,6 @@ private:
 };
 
 const std::string nothing;
-}
-
-void Screens::built_in_screens()
-{
-   /* Declare it and add its listeners once, as for a design screen. BACK on
-    * Controls is not the button of Pause. With it the player goes back to the
-    * screen they came from (we add its listener in view.cpp). */
-   ScreenDeclaration pause;
-   pause.id = role_word(ScreenRole::Pause);
-   pause.panel = document_contract::PausePanel;
-   pause.heading = say(Word::PausedHeading);
-   pause.footer = say(Word::ContinueHint);
-   pause.role = ScreenRole::Pause;
-   declare_screen(pause);
-   ScreenDeclaration controls;
-   controls.id = role_word(ScreenRole::Controls);
-   controls.panel = document_contract::ControlsPanel;
-   controls.heading = say(Word::ControlsHeading);
-   controls.footer = say(Word::BackHint);
-   controls.buttons = {document_contract::Controls};
-   controls.role = ScreenRole::Controls;
-   declare_screen(controls);
 }
 
 void Screens::clear_screens()
