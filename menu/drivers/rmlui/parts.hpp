@@ -1,12 +1,12 @@
 #pragma once
 
+#include "events.h"
 #include <RmlUi/Core.h>
 #include <map>
 #include <string>
 
 namespace rib {
 class Document;
-class EventQueue;
 
 /* The slider and toggle parts of the design, their listeners, and a pointer
  * drag. The elements belong to Document, and on shutdown we clear the drag. */
@@ -27,7 +27,9 @@ public:
    bool part_is_slider(const char *id) const;
    void begin_drag(Rml::Element *hovered, int x);
    void drag_to(int x);
-   void end_drag();
+   /* End a drag. Returns the final position of the slider, which stays there,
+    * or nothing when there was no drag. */
+   Event end_drag();
    /* We are closing the document, so forget all its elements and drawings. */
    void forget();
    const std::map<std::string, float>& fractions() const { return slider_fraction; }

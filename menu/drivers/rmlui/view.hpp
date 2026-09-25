@@ -24,7 +24,9 @@ public:
    void set_overlay_mode(bool only_overlays);
    void pointer_move(int x, int y);
    void pointer_button(bool down);
-   void pointer_leave();
+   /* The pointer has gone, so release what it was pressing. Returns the end
+    * of a drag cut short, for the caller to handle or drop. */
+   Event pointer_leave();
    bool move_pointer_to(const char *id);
    /* Once a frame, after every pointer move. When the pointer moved onto a
     * stop, focus it without a sound. When it did not move, the focus stays

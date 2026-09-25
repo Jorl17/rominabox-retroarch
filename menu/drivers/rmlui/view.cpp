@@ -119,23 +119,24 @@ void View::pointer_button(bool down)
    {
       parts.drag_to(pointer_x);
       document.get_context()->ProcessMouseButtonUp(0, 0);
-      parts.end_drag();
+      intents.push(parts.end_drag());
    }
 }
 
-void View::pointer_leave()
+Event View::pointer_leave()
 {
    if (!document.get_context())
-      return;
+      return {};
    document.get_context()->ProcessMouseLeave();
    hovered = RIB_RMLUI_ACTION_NONE;
    pointer_settled = false;
-   parts.end_drag();
+   Event cut_short = parts.end_drag();
    if (pointer_down)
    {
       pointer_down = false;
       document.get_context()->ProcessMouseButtonUp(0, 0);
    }
+   return cut_short;
 }
 
 void View::follow_pointer()

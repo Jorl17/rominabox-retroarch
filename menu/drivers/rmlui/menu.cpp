@@ -65,6 +65,7 @@ static bool pending_overlay_start;
 static Menu *active_menu;
 
 int rib_menu_key(void *data, enum rib_key action);
+static void perform_action(Menu *menu, const rib::Event& event);
 
 void rib_rmlui_begin_overlays(void)
 {
@@ -193,8 +194,12 @@ static void reset_interaction(Menu *menu, bool opening)
       menu->controls.cancel_capture();
    menu->pointer_pressed = false;
    menu->controls.capture_ignore_pointer = false;
+   /* When the menu closes during a drag, we end the drag where it is and keep
+    * it, as if released. We drop everything else in the queue. */
+   const rib::Event cut_short = menu->view.pointer_leave();
    menu->view.clear_intents();
-   menu->view.pointer_leave();
+   if (cut_short.kind != RIB_RMLUI_ACTION_NONE)
+      perform_action(menu, cut_short);
    if (!opening)
    {
       menu->navigation.close();
