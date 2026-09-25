@@ -55,6 +55,9 @@ typedef struct rib_session {
     * not save it after the automatic sign-in at launch, so an account the
     * player removed stays removed. */
    bool share_on_success;
+   /* The saved token we try for QUICK SIGN IN. We use it as this game's
+    * session only after the login succeeds, so backing out leaves nothing. */
+   char trying_token[128];
    rib_completion_t completion;
 #ifdef HAVE_THREADS
    slock_t *lock;
@@ -197,7 +200,8 @@ static void rib_load_callback(int result, const char *error,
    rib_queue_completion(RIB_COMPLETION_LOAD, result, error, userdata);
 }
 
-static bool rib_begin_login(bool token_login, const char *password)
+/* `secret` is the token for a token login and the password otherwise. */
+static bool rib_begin_login(bool token_login, const char *secret)
 {
    rc_client_t *client;
    unsigned generation;
@@ -229,11 +233,11 @@ static bool rib_begin_login(bool token_login, const char *password)
    rib.snapshot.revision++;
 
    if (token_login)
-      rc_client_begin_login_with_token(client, rib.username, rib.token,
+      rc_client_begin_login_with_token(client, rib.username, secret,
             rib_login_callback, (void*)(uintptr_t)generation);
    else
    {
-      rib_copy(transient_password, password, sizeof(transient_password));
+      rib_copy(transient_password, secret, sizeof(transient_password));
       rc_client_begin_login_with_password(client, rib.username,
             transient_password, rib_login_callback,
             (void*)(uintptr_t)generation);
@@ -302,6 +306,9 @@ void rib_achievements_pump(void)
                rib_accounts_drop_if(rib.username, rib.token);
                rib_accounts_forget(rib.username, rib_game());
             }
+            else if (rib.trying_token[0])
+               rib_accounts_drop_if(rib.username, rib.trying_token);
+            memset(rib.trying_token, 0, sizeof(rib.trying_token));
             rib.share_on_success = false;
             rib.token[0] = '\0';
             rib.snapshot.enabled_preference = false;
@@ -337,6 +344,7 @@ void rib_achievements_pump(void)
                   rib_accounts_remember(rib.username, user->display_name,
                         rib.token, rib_game());
                rib.share_on_success = false;
+               memset(rib.trying_token, 0, sizeof(rib.trying_token));
                info.path = rib.content_path;
                info.data = rib.content_data;
                info.size = rib.content_size;
@@ -530,7 +538,7 @@ bool rib_achievements_content_load(const struct retro_game_info *info)
    rib.snapshot.status = rib.token[0] ? RIB_ACHIEVEMENTS_OFF :
          RIB_ACHIEVEMENTS_SIGNED_OUT;
    if (rib.snapshot.enabled_preference)
-      rib_begin_login(true, NULL);
+      rib_begin_login(true, rib.token);
    return true;
 }
 
@@ -659,9 +667,14 @@ bool rib_achievements_quick_sign_in(const char *username)
          continue;
       rib_achievements_cancel();
       rib_copy(rib.username, found[index].username, sizeof(rib.username));
-      rib_copy(rib.token, found[index].token, sizeof(rib.token));
+      rib_copy(rib.trying_token, found[index].token, sizeof(rib.trying_token));
       rib.share_on_success = true;
-      started = rib_begin_login(true, NULL);
+      started = rib_begin_login(true, rib.trying_token);
+      if (!started)
+      {
+         memset(rib.trying_token, 0, sizeof(rib.trying_token));
+         rib.share_on_success = false;
+      }
    }
    memset(found, 0, sizeof(found));
    return started;
@@ -714,7 +727,7 @@ bool rib_achievements_set_enabled(bool enabled)
       }
       return true;
    }
-   return rib_begin_login(true, NULL);
+   return rib_begin_login(true, rib.token);
 }
 
 bool rib_achievements_retry(void)
@@ -723,13 +736,16 @@ bool rib_achievements_retry(void)
        (rib.snapshot.status != RIB_ACHIEVEMENTS_ERROR &&
         rib.snapshot.status != RIB_ACHIEVEMENTS_UNAVAILABLE))
       return false;
-   return rib_begin_login(true, NULL);
+   return rib_begin_login(true, rib.token);
 }
 
 static void rib_cancel_session(bool change_preference)
 {
    rc_client_t *client = get_rcheevos_locals()->client;
    bool had_pending_upload;
+   /* When the player backs out of QUICK SIGN IN, we keep nothing. */
+   memset(rib.trying_token, 0, sizeof(rib.trying_token));
+   rib.share_on_success = false;
    rib_lock();
    had_pending_upload = rib.inflight_awards > 0 || rib.retry_pending;
    ++rib.generation;
