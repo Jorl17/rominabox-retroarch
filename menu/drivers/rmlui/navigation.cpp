@@ -29,8 +29,11 @@ void Navigation::enter()
       return;
    if (focus.set(focus.recall(screens.current())))
       return;
-   /* We start the pad screen on its first control, not on the picker that
-    * comes before the controls in the document. */
+   /* On every screen, we start where the design marks the start. When the pad
+    * screen has no mark, we start on its first control, not on the picker
+    * that comes before the controls in the document. */
+   if (focus.set(focus.marked(panel())))
+      return;
    if (screens.showing(ScreenRole::Controls))
    {
       controls.focus(controls.first());
