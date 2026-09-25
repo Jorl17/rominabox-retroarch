@@ -82,7 +82,7 @@ const SettingDeclaration *PlayerSettings::owning(const char *control,
 float PlayerSettings::value(const SettingDeclaration& setting) const
 {
    float current = setting.kind == SettingKind::Level ? setting.high : 0.0f;
-   rib_host_setting(setting.key.c_str(), &current);
+   rib_host_setting(setting.key, &current);
    return current;
 }
 
@@ -124,17 +124,18 @@ void PlayerSettings::paint() const
 
 void PlayerSettings::set(const SettingDeclaration& setting, float chosen, bool persist)
 {
-   if (!rib_host_set_setting(setting.key.c_str(), chosen))
+   if (!rib_host_set_setting(setting.key, chosen))
    {
       RARCH_ERR("[RIB] the setting '%s' drives '%s', which this player cannot "
-            "change while the game runs.\n", setting.id.c_str(), setting.key.c_str());
+            "change while the game runs.\n", setting.id.c_str(),
+            setting_key_name(setting.key));
       return;
    }
    if (!persist || data.empty())
       return;
    const std::string text = file_text(setting, chosen);
    const std::string path = data + "/" + setting.file;
-   if (!rib_write_player_setting(path.c_str(), setting.key.c_str(), text.c_str()))
+   if (!rib_write_player_setting(path.c_str(), setting_key_name(setting.key), text.c_str()))
       RARCH_ERR("[RIB] '%s' is %s now, but %s could not be written, so the "
             "next launch will start from the export's default.\n",
             setting.id.c_str(), text.c_str(), path.c_str());

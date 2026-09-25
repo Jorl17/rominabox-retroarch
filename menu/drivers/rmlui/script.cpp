@@ -131,7 +131,7 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
    {
       binds_list = observation.binds_list ? observation.binds_list : "";
       float volume_db = 0.0f;
-      rib_host_setting("audio_volume", &volume_db);
+      rib_host_setting(RIB_SETTING_AudioVolume, &volume_db);
       if (menu)
          fprintf(stderr, "[RIB] checkpoint %s %s\n", id + 7,
                report(observation.screen, rib_host_menu_open(),

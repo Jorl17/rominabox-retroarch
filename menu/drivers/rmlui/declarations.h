@@ -6,6 +6,7 @@
 #include <retro_miscellaneous.h>
 
 #ifdef __cplusplus
+#include "host.h"
 #include "screen_role.hpp"
 #include "words.hpp"
 #include <string>
@@ -30,15 +31,24 @@ struct OverlayDeclaration
    int after_ms = 0, hold_ms = 0, leave_ms = 0;
 };
 
+/* How a player setting is shown, as settings.inc declares the kinds. */
+enum class SettingKind
+{
+#define RIB_SETTING_KIND(name, word) name,
+#include "settings.inc"
+};
+
+/* A key's RetroArch config name, as settings.inc declares it. */
+const char *setting_key_name(rib_setting_key key);
+
 /* A setting the player changes in the Options of the game, for one RetroArch
  * key. We declare every one at export. In the menu we show it in `control`,
  * apply it at once and store it in `file`, in the game's data, and at the
  * next launch we apply that file in the launcher. */
-enum class SettingKind { Level, Switch };
-
 struct SettingDeclaration
 {
-   std::string id, control, key, file;
+   std::string id, control, file;
+   rib_setting_key key = RIB_SETTING_KEY_COUNT;
    SettingKind kind = SettingKind::Level;
    /* A level: the key's value at each end, and how many positions lie
     * between them, both ends included. */

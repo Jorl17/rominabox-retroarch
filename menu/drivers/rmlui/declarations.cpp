@@ -202,6 +202,23 @@ void screens(config_file_t *config, rib::DesignDeclarations& design)
    }
 }
 
+/* The key and the kind in design.cfg, by the words in settings.inc. */
+bool setting_key_named(const std::string& word, rib_setting_key& key)
+{
+#define RIB_SETTING_KEY(name, retroarch) \
+   if (word == retroarch) { key = RIB_SETTING_##name; return true; }
+#include "settings.inc"
+   return false;
+}
+
+bool setting_kind_named(const std::string& word, rib::SettingKind& kind)
+{
+#define RIB_SETTING_KIND(name, text) \
+   if (word == text) { kind = rib::SettingKind::name; return true; }
+#include "settings.inc"
+   return false;
+}
+
 void settings(config_file_t *config, rib::DesignDeclarations& design)
 {
    for (const std::string& id : ids(value(config, "settings")))
@@ -209,33 +226,38 @@ void settings(config_file_t *config, rib::DesignDeclarations& design)
       rib::SettingDeclaration setting;
       setting.id = id;
       setting.control = value(config, "setting_control_" + id);
-      setting.key = value(config, "setting_key_" + id);
       setting.file = value(config, "setting_file_" + id);
       const std::string kind = value(config, "setting_kind_" + id);
-      if (kind == "level")
-      {
-         setting.kind = rib::SettingKind::Level;
-         setting.low = strtof(value(config, "setting_low_" + id).c_str(), NULL);
-         setting.high = strtof(value(config, "setting_high_" + id).c_str(), NULL);
-         setting.positions = number(config, "setting_positions_" + id, 0);
-      }
-      else if (kind == "switch")
-      {
-         setting.kind = rib::SettingKind::Switch;
-         setting.inverted = value(config, "setting_inverted_" + id) == "true";
-      }
-      else
+      const std::string key = value(config, "setting_key_" + id);
+      if (!setting_kind_named(kind, setting.kind))
       {
          RARCH_ERR("[RIB] the setting '%s' is a '%s', which this player does "
                "not implement; it will not be shown.\n", id.c_str(), kind.c_str());
          continue;
       }
-      if (setting.control.empty() || setting.key.empty() || setting.file.empty()
+      if (!setting_key_named(key, setting.key))
+      {
+         RARCH_ERR("[RIB] the setting '%s' drives '%s', which this player does "
+               "not apply; it will not be shown.\n", id.c_str(), key.c_str());
+         continue;
+      }
+      switch (setting.kind)
+      {
+         case rib::SettingKind::Level:
+            setting.low = strtof(value(config, "setting_low_" + id).c_str(), NULL);
+            setting.high = strtof(value(config, "setting_high_" + id).c_str(), NULL);
+            setting.positions = number(config, "setting_positions_" + id, 0);
+            break;
+         case rib::SettingKind::Switch:
+            setting.inverted = value(config, "setting_inverted_" + id) == "true";
+            break;
+      }
+      if (setting.control.empty() || setting.file.empty()
             || (setting.kind == rib::SettingKind::Level
                && (setting.positions < 2 || setting.high == setting.low)))
       {
          RARCH_ERR("[RIB] the setting '%s' is declared without its control, "
-               "key, file or range; it will not be shown.\n", id.c_str());
+               "file or range; it will not be shown.\n", id.c_str());
          continue;
       }
       design.settings.push_back(std::move(setting));
@@ -268,6 +290,17 @@ void overlays(config_file_t *config, const char *assets, rib::DesignDeclarations
 }
 
 namespace rib {
+const char *setting_key_name(rib_setting_key key)
+{
+   switch (key)
+   {
+#define RIB_SETTING_KEY(name, retroarch) case RIB_SETTING_##name: return retroarch;
+#include "settings.inc"
+      default:
+         return "";
+   }
+}
+
 DesignDeclarations load_design(const char *asset_directory)
 {
    DesignDeclarations design;
