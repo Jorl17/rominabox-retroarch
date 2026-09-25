@@ -69,15 +69,14 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
                if (element->GetInnerRML() != escaped) { element->SetInnerRML(escaped); fit = true; }
             }
          }
-         // For a badge that is loading or lost, we show the placeholder in the
-         // row prototype from the design. We make an image only from a picture
+         // For a badge that is loading, we show the placeholder in the row
+         // prototype from the design. We make an image only from a picture
          // that has arrived, because in RmlUi an image without a picture is a
          // white box over the design.
-         const bool loading = data.badge == Row::Badge::Loading, failed = data.badge == Row::Badge::Failed;
+         const bool loading = data.badge == Row::Badge::Loading;
          row->SetClass("badge-loading", loading);
-         row->SetClass("badge-failed", failed);
          auto *icon = find_class(row, "list-row-icon");
-         if (!data.icon.empty() && !loading && !failed) {
+         if (!data.icon.empty() && !loading) {
             if (!icon) {
                auto created = document.root()->CreateElement("img");
                created->SetClass("list-row-icon", true);
