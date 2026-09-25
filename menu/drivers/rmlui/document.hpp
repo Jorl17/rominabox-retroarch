@@ -36,6 +36,8 @@ public:
    bool pointer_inside(const char *id, int x, int y);
    bool has_element(const char *id);
    void set_element_text(const char *id, const char *text);
+   /* Show `text` in every element that shows `fact` (data-fact). */
+   void show_fact(const char *fact, const std::string& text);
    void set_shown(const char *id, bool shown);
    void set_disabled(const char *id, bool disabled);
    void set_class(const char *id, const char *name, bool enabled);

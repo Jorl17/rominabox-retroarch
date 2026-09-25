@@ -10,7 +10,9 @@ namespace document_contract {
 #define RIB_ELEMENT(name, value, scope, presence) inline constexpr char name[] = value;
 #define RIB_CLASS(name, value, scope, presence) inline constexpr char name[] = value;
 #define RIB_ATTRIBUTE(name, value, scope, presence) inline constexpr char name[] = value;
+#define RIB_FACT(name, value) inline constexpr char name[] = value;
 #include "document_contract.inc"
+#undef RIB_FACT
 #undef RIB_ATTRIBUTE
 #undef RIB_CLASS
 #undef RIB_ELEMENT

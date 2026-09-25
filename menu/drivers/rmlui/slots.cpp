@@ -109,6 +109,8 @@ void Slots::paint() const
             button->RemoveAttribute("disabled");
       }
 
+   document.show_fact(document_contract::ChosenSlotFact, std::to_string(selected_slot));
+
    paint_status_line(document.root()->GetElementById(document_contract::Status),
          status.main_text().empty() ? guard_reason : status.main_text());
 }

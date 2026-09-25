@@ -140,3 +140,9 @@ RIB_CLASS(Overlay, "overlay", State, Optional)
  * the element with focus, so a design can style anything by what has focus:
  * [data-focus=save] .slot.selected is the slot SAVE is about to use. */
 RIB_ATTRIBUTE(FocusAttribute, "data-focus", State, Optional)
+/* An element marked data-fact="<name>" shows that fact as its text, kept up
+ * to date by the player; the design decides where. Its own text is what a
+ * preview shows. The facts: */
+RIB_ATTRIBUTE(FactAttribute, "data-fact", State, Optional)
+/* The slot SAVE and LOAD use, as a number. */
+RIB_FACT(ChosenSlotFact, "chosen-slot")

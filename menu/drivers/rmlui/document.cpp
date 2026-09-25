@@ -366,6 +366,18 @@ void Document::set_element_text(const char *id, const char *text)
       element->SetInnerRML(Rml::StringUtilities::EncodeRml(text ? text : ""));
 }
 
+void Document::show_fact(const char *fact, const std::string& text)
+{
+   if (!root() || !fact || !*fact) return;
+   Rml::ElementList showing;
+   root()->QuerySelectorAll(showing,
+         std::string("[") + document_contract::FactAttribute + "=" + fact + "]");
+   const std::string encoded = Rml::StringUtilities::EncodeRml(text);
+   for (Rml::Element *element : showing)
+      if (element->GetInnerRML() != encoded)
+         element->SetInnerRML(encoded);
+}
+
 void Document::set_class(const char *id, const char *name, bool enabled)
 {
    if (!root() || !id || !*id) return;
