@@ -142,7 +142,6 @@ void Achievements::paint_rows()
       switch (item.badge) {
          case RIB_ACHIEVEMENT_BADGE_LOADING: badge = Lists::Row::Badge::Loading; break;
          case RIB_ACHIEVEMENT_BADGE_READY: badge = Lists::Row::Badge::Ready; break;
-         case RIB_ACHIEVEMENT_BADGE_FAILED: badge = Lists::Row::Badge::Failed; break;
          default: break;
       }
       if (item.id == popup_waiting && item.badge == RIB_ACHIEVEMENT_BADGE_READY) {

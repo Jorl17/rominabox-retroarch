@@ -20,7 +20,7 @@ public:
    {
       /* The state of the picture of the row. We show a placeholder while it
        * loads, and a mark when we could not fetch it. */
-      enum class Badge { None, Loading, Ready, Failed };
+      enum class Badge { None, Loading, Ready };
       std::string id, title, detail, state, icon;
       bool selected = false;
       Badge badge = Badge::None;

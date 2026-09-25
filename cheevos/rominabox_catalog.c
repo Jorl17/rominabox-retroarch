@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include <compat/strl.h>
+#include <features/features_cpu.h>
 #include <file/file_path.h>
 #include <retro_miscellaneous.h>
 #ifdef HAVE_THREADS
@@ -25,8 +26,14 @@ typedef struct rib_badge_failure {
    struct rib_badge_failure *next;
 } rib_badge_failure_t;
 
+/* We show a badge not on disk as on its way. We request it, and request it
+ * again this long after a refused request or a failed download. */
+#define RIB_BADGE_RETRY_USEC (5 * 1000000)
+
 typedef struct rib_catalog {
    rib_achievement_row_t *rows;
+   /* For each row, when to request its badge again, or 0. */
+   int64_t *retry_at;
    size_t count;
    bool rows_dirty;
    bool badge_dirty;
@@ -100,7 +107,9 @@ void rib_catalog_clear(rib_achievements_snapshot_t *snapshot)
       node = next;
    }
    free(catalog.rows);
+   free(catalog.retry_at);
    catalog.rows = NULL;
+   catalog.retry_at = NULL;
    catalog.count = 0;
    snapshot->count = 0;
    snapshot->game_title[0] = '\0';
@@ -188,23 +197,30 @@ static bool catalog_badge_name(char name[32],
    return length > 0 && length < 32 && rib_storage_badge_name_valid(name);
 }
 
-/* Request a row's picture, and mark on the row whether it is on its way. */
-static void catalog_request_badge(rib_achievement_row_t *row,
+/* Request a row's picture, and show it as on its way until it is on disk.
+ * We repeat a request after a pause when it was refused because RetroArch
+ * is already fetching the same file, or when we could not queue it. */
+static void catalog_request_badge(rib_achievement_row_t *row, int64_t *retry_at,
       const rc_client_achievement_t *achievement)
 {
    char name[32];
    if (!catalog_badge_name(name, achievement, row))
       return;
+   *retry_at = 0;
    if (rcheevos_client_download_badge_from_url(catalog_unlocked(row) ?
             achievement->badge_url : achievement->badge_locked_url, name))
-      row->badge = RIB_ACHIEVEMENT_BADGE_LOADING;
-   else
    {
-      /* Refused because it is on disk, or because we cannot fetch it. */
-      catalog_badge_path(row->badge_path, achievement);
-      row->badge = row->badge_path[0] ?
-            RIB_ACHIEVEMENT_BADGE_READY : RIB_ACHIEVEMENT_BADGE_FAILED;
+      row->badge = RIB_ACHIEVEMENT_BADGE_LOADING;
+      return;
    }
+   catalog_badge_path(row->badge_path, achievement);
+   if (row->badge_path[0])
+   {
+      row->badge = RIB_ACHIEVEMENT_BADGE_READY;
+      return;
+   }
+   row->badge = RIB_ACHIEVEMENT_BADGE_LOADING;
+   *retry_at = cpu_features_get_time_usec() + RIB_BADGE_RETRY_USEC;
 }
 
 static void catalog_refresh_rows(rc_client_t *client,
@@ -212,6 +228,7 @@ static void catalog_refresh_rows(rc_client_t *client,
 {
    rc_client_achievement_list_t *list;
    rib_achievement_row_t *rows;
+   int64_t *retry_at;
    size_t count = 0, index = 0, previous;
    uint32_t bucket, item;
    const rc_client_game_t *game;
@@ -233,8 +250,11 @@ static void catalog_refresh_rows(rc_client_t *client,
    for (bucket = 0; bucket < list->num_buckets; ++bucket)
       count += list->buckets[bucket].num_achievements;
    rows = count ? (rib_achievement_row_t*)calloc(count, sizeof(*rows)) : NULL;
-   if (count && !rows)
+   retry_at = count ? (int64_t*)calloc(count, sizeof(*retry_at)) : NULL;
+   if (count && (!rows || !retry_at))
    {
+      free(rows);
+      free(retry_at);
       rc_client_destroy_achievement_list(list);
       return;
    }
@@ -245,6 +265,7 @@ static void catalog_refresh_rows(rc_client_t *client,
       for (item = 0; item < group->num_achievements; ++item)
       {
          const rc_client_achievement_t *achievement = group->achievements[item];
+         int64_t *row_retry = &retry_at[index];
          rib_achievement_row_t *row = &rows[index++];
          row->id = achievement->id;
          row->points = achievement->points;
@@ -267,16 +288,21 @@ static void catalog_refresh_rows(rc_client_t *client,
             if (catalog.rows[previous].id == row->id)
             {
                if (catalog_unlocked(&catalog.rows[previous]) == catalog_unlocked(row))
+               {
                   row->badge = catalog.rows[previous].badge;
+                  *row_retry = catalog.retry_at[previous];
+               }
                else
-                  catalog_request_badge(row, achievement);
+                  catalog_request_badge(row, row_retry, achievement);
                break;
             }
       }
    }
    rc_client_destroy_achievement_list(list);
    free(catalog.rows);
+   free(catalog.retry_at);
    catalog.rows = rows;
+   catalog.retry_at = retry_at;
    catalog.count = snapshot->count = count;
    snapshot->revision++;
 }
@@ -305,8 +331,10 @@ static void catalog_refresh_badge_paths(rc_client_t *client,
    }
 }
 
+/* We still show a failed download as on its way, and request it again
+ * after a pause. */
 static void catalog_mark_failures(rc_client_t *client,
-      rib_badge_failure_t *failures, rib_achievements_snapshot_t *snapshot)
+      rib_badge_failure_t *failures)
 {
    size_t index;
    for (index = 0; client && failures && index < catalog.count; ++index)
@@ -321,28 +349,38 @@ static void catalog_mark_failures(rc_client_t *client,
       for (failure = failures; failure; failure = failure->next)
          if (!strcmp(failure->name, name))
          {
-            row->badge = RIB_ACHIEVEMENT_BADGE_FAILED;
-            snapshot->revision++;
+            catalog.retry_at[index] = cpu_features_get_time_usec() + RIB_BADGE_RETRY_USEC;
             break;
          }
    }
    catalog_free_failures(failures);
 }
 
-/* Each time we show the list, we request again every badge not on disk,
- * failed ones and ones still waiting for a reply that may never come. */
+/* Each time we show the list, we request again at once every badge not on
+ * disk, without waiting for a reply that may never come or for a retry. */
 void rib_catalog_list_shown(bool shown, rib_achievements_snapshot_t *snapshot)
 {
    size_t index;
    bool retry = shown && !catalog.list_shown;
    catalog.list_shown = shown;
    for (index = 0; retry && index < catalog.count; ++index)
-      if (catalog.rows[index].badge == RIB_ACHIEVEMENT_BADGE_FAILED ||
-          catalog.rows[index].badge == RIB_ACHIEVEMENT_BADGE_LOADING)
+      if (catalog.rows[index].badge == RIB_ACHIEVEMENT_BADGE_LOADING)
       {
          catalog.rows[index].badge = RIB_ACHIEVEMENT_BADGE_NONE;
+         catalog.retry_at[index] = 0;
          snapshot->revision++;
       }
+}
+
+/* Request again every badge whose pause is over. */
+static void catalog_retry_badges(rc_client_t *client)
+{
+   size_t index;
+   const int64_t now = cpu_features_get_time_usec();
+   for (index = 0; client && index < catalog.count; ++index)
+      if (catalog.retry_at[index] && now >= catalog.retry_at[index])
+         catalog_request_badge(&catalog.rows[index], &catalog.retry_at[index],
+               rc_client_get_achievement_info(client, catalog.rows[index].id));
 }
 
 void rib_catalog_pump(rc_client_t *client, rib_achievements_snapshot_t *snapshot)
@@ -361,7 +399,8 @@ void rib_catalog_pump(rc_client_t *client, rib_achievements_snapshot_t *snapshot
       catalog_refresh_rows(client, snapshot);
    if (badge_dirty)
       catalog_refresh_badge_paths(client, snapshot);
-   catalog_mark_failures(client, failures, snapshot);
+   catalog_mark_failures(client, failures);
+   catalog_retry_badges(client);
    if (unlock_changed)
       snapshot->revision++;
 }
@@ -399,7 +438,8 @@ bool rib_catalog_get_row(rc_client_t *client, size_t index,
       return false;
    row = &catalog.rows[index];
    if (row->badge == RIB_ACHIEVEMENT_BADGE_NONE && client)
-      catalog_request_badge(row, rc_client_get_achievement_info(client, row->id));
+      catalog_request_badge(row, &catalog.retry_at[index],
+            rc_client_get_achievement_info(client, row->id));
    *out = *row;
    return true;
 }

@@ -34,13 +34,14 @@ typedef enum rib_achievement_state {
    RIB_ACHIEVEMENT_PENDING_UPLOAD
 } rib_achievement_state_t;
 
-/* The state of the badge picture of a row. We request a failed download
- * again the next time we show the list (rib_achievements_list_shown). */
+/* The state of a row's badge picture, LOADING or on disk. After a refused
+ * request or a failed download we keep LOADING and request it again after a
+ * pause while the menu is open, or at once when we show the list again
+ * (rib_achievements_list_shown), so the player never sees "not fetched". */
 typedef enum rib_achievement_badge {
    RIB_ACHIEVEMENT_BADGE_NONE,
    RIB_ACHIEVEMENT_BADGE_LOADING,
-   RIB_ACHIEVEMENT_BADGE_READY,
-   RIB_ACHIEVEMENT_BADGE_FAILED
+   RIB_ACHIEVEMENT_BADGE_READY
 } rib_achievement_badge_t;
 
 typedef struct rib_achievements_snapshot {
