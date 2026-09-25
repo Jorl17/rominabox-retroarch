@@ -93,6 +93,21 @@ void rib_achievements_cancel(void);
 void rib_achievements_sign_out(void);
 void rib_achievements_skip_startup(void);
 
+/* The accounts saved in other ROM-in-a-Box games, for QUICK SIGN IN, most
+ * recently used first. We return only names here, never a token. */
+#define RIB_ACHIEVEMENTS_SAVED_ACCOUNTS 32
+typedef struct rib_achievements_saved_account {
+   char username[RIB_ACHIEVEMENTS_ACCOUNT_SIZE];
+   char display_name[RIB_ACHIEVEMENTS_ACCOUNT_SIZE];
+} rib_achievements_saved_account_t;
+size_t rib_achievements_saved_accounts(rib_achievements_saved_account_t *out, size_t capacity);
+/* Sign in with a saved account's session. As with rib_achievements_sign_in,
+ * we refuse while this game has a session or a sign-in in progress. */
+bool rib_achievements_quick_sign_in(const char *username);
+/* Remove a saved account from the list in every game. A game signed in with
+ * the account stays signed in with its own session. */
+bool rib_achievements_forget_account(const char *username);
+
 #ifdef __cplusplus
 }
 #endif

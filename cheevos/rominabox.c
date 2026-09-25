@@ -4,6 +4,7 @@
 #include "rominabox_internal.h"
 #include "rominabox_catalog.h"
 #include "rominabox_storage.h"
+#include "accounts.h" /* ROM-in-a-Box's shared accounts store */
 #include "cheevos.h"
 #include "cheevos_client.h"
 #include "cheevos_locals.h"
@@ -49,6 +50,11 @@ typedef struct rib_session {
    bool retry_pending;
    bool upload_error_changed;
    char upload_error[RIB_ACHIEVEMENTS_ERROR_SIZE];
+   /* The player chose this account by entering a password or through
+    * QUICK SIGN IN. Only then do we save the account for other games. We do
+    * not save it after the automatic sign-in at launch, so an account the
+    * player removed stays removed. */
+   bool share_on_success;
    rib_completion_t completion;
 #ifdef HAVE_THREADS
    slock_t *lock;
@@ -89,6 +95,13 @@ static bool rib_included(void)
 bool rib_achievements_managed(void)
 {
    return getenv("ROMINABOX_ACHIEVEMENTS") != NULL;
+}
+
+/* The game identity we get from the launcher, or empty outside a game. */
+static const char *rib_game(void)
+{
+   const char *game = getenv("ROMINABOX_GAME_IDENTITY");
+   return game ? game : "";
 }
 
 bool rib_achievements_badge_directory(char *path, size_t capacity)
@@ -280,6 +293,16 @@ void rib_achievements_pump(void)
          if (completion.result == RC_EXPIRED_TOKEN ||
              completion.result == RC_INVALID_CREDENTIALS)
          {
+            /* The service refused the session of this game. We keep the
+             * account for other games only if one of them saved a newer
+             * token, and stop using it in this game either way. A mistyped
+             * password does not change the saved accounts. */
+            if (rib.token[0])
+            {
+               rib_accounts_drop_if(rib.username, rib.token);
+               rib_accounts_forget(rib.username, rib_game());
+            }
+            rib.share_on_success = false;
             rib.token[0] = '\0';
             rib.snapshot.enabled_preference = false;
             rib.snapshot.status = RIB_ACHIEVEMENTS_SIGNED_OUT;
@@ -308,6 +331,12 @@ void rib_achievements_pump(void)
                rib_error("Cannot save the achievements session in game storage.");
             else
             {
+               /* Without the shared folder, the player keeps the session in
+                * this game, and only QUICK SIGN IN elsewhere is missing. */
+               if (rib.share_on_success)
+                  rib_accounts_remember(rib.username, user->display_name,
+                        rib.token, rib_game());
+               rib.share_on_success = false;
                info.path = rib.content_path;
                info.data = rib.content_data;
                info.size = rib.content_size;
@@ -496,6 +525,7 @@ bool rib_achievements_content_load(const struct retro_game_info *info)
       rib.content_size = info->size;
    }
    rib.content_present = true;
+   rib.share_on_success = false;
    rib_read_session();
    rib.snapshot.status = rib.token[0] ? RIB_ACHIEVEMENTS_OFF :
          RIB_ACHIEVEMENTS_SIGNED_OUT;
@@ -589,7 +619,57 @@ bool rib_achievements_sign_in(const char *username, const char *password)
    rib_achievements_cancel();
    rib_copy(rib.username, username, sizeof(rib.username));
    rib.token[0] = '\0';
+   rib.share_on_success = true;
    return rib_begin_login(false, password);
+}
+
+size_t rib_achievements_saved_accounts(rib_achievements_saved_account_t *out, size_t capacity)
+{
+   rib_saved_account_t found[RIB_ACHIEVEMENTS_SAVED_ACCOUNTS];
+   size_t count, index;
+   if (!rib_included() || !out)
+      return 0;
+   count = rib_accounts_list(found,
+         capacity < RIB_ACHIEVEMENTS_SAVED_ACCOUNTS ? capacity : RIB_ACHIEVEMENTS_SAVED_ACCOUNTS);
+   for (index = 0; index < count; ++index)
+   {
+      rib_copy(out[index].username, found[index].username, sizeof(out[index].username));
+      rib_copy(out[index].display_name, found[index].display_name,
+            sizeof(out[index].display_name));
+   }
+   memset(found, 0, sizeof(found));
+   return count;
+}
+
+bool rib_achievements_quick_sign_in(const char *username)
+{
+   rib_saved_account_t found[RIB_ACHIEVEMENTS_SAVED_ACCOUNTS];
+   size_t count, index;
+   bool started = false;
+   if (!rib_included() || !rib.content_present || !username || !*username ||
+       rib.token[0] ||
+       rib.snapshot.status == RIB_ACHIEVEMENTS_SIGNING_IN ||
+       rib.snapshot.status == RIB_ACHIEVEMENTS_LOADING)
+      return false;
+   count = rib_accounts_list(found, RIB_ACHIEVEMENTS_SAVED_ACCOUNTS);
+   for (index = 0; index < count && !started; ++index)
+   {
+      if (strcmp(found[index].username, username) != 0 ||
+          strlen(found[index].token) >= sizeof(rib.token))
+         continue;
+      rib_achievements_cancel();
+      rib_copy(rib.username, found[index].username, sizeof(rib.username));
+      rib_copy(rib.token, found[index].token, sizeof(rib.token));
+      rib.share_on_success = true;
+      started = rib_begin_login(true, NULL);
+   }
+   memset(found, 0, sizeof(found));
+   return started;
+}
+
+bool rib_achievements_forget_account(const char *username)
+{
+   return rib_included() && rib_accounts_erase(username);
 }
 
 bool rib_achievements_set_enabled(bool enabled)
@@ -687,6 +767,10 @@ void rib_achievements_sign_out(void)
 {
    rc_client_t *client = get_rcheevos_locals()->client;
    rib_achievements_cancel();
+   /* We remove the account from QUICK SIGN IN when no game uses it. */
+   if (rib.username[0])
+      rib_accounts_forget(rib.username, rib_game());
+   rib.share_on_success = false;
    if (client)
       rc_client_logout(client);
    rib_catalog_clear(&rib.snapshot);

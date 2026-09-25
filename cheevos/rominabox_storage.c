@@ -1,21 +1,10 @@
 /* Per-game credential and badge paths for the managed achievements session. */
 #include "rominabox_storage.h"
+#include "portable_fs.h" /* ROM-in-a-Box's file layer, shared with the launcher */
 
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifndef _WIN32
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#else
-#include <io.h>
-#include <fcntl.h>
-#include <share.h>
-#include <sys/stat.h>
-#endif
 
 #include <file/file_path.h>
 #include <retro_miscellaneous.h>
@@ -74,7 +63,7 @@ bool rib_storage_read(rib_stored_session_t *session)
    if (!session || !rib_storage_session_path(path))
       return false;
    memset(session, 0, sizeof(*session));
-   file = fopen(path, "rb");
+   file = fs_open(path, "rb");
    if (!file)
       return false;
    if (!fgets(session->username, sizeof(session->username), file) ||
@@ -102,62 +91,24 @@ invalid:
    return false;
 }
 
+/* We replace the whole file and make it readable by this user only. */
 bool rib_storage_write(const rib_stored_session_t *session)
 {
    char path[PATH_MAX_LENGTH];
-   FILE *file;
-   int descriptor;
+   char text[sizeof(session->username) + sizeof(session->token) + 8];
    int length;
-#ifndef _WIN32
-   char temp[PATH_MAX_LENGTH];
-#endif
+   bool written;
    if (!session || !session->username[0] || !session->token[0] ||
        strchr(session->username, '\n') || strchr(session->token, '\n') ||
        !rib_storage_session_path(path))
       return false;
-#ifdef _WIN32
-   /* We create this directory in the launcher, with a user-only ACL. */
-   if (_sopen_s(&descriptor, path, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY,
-         _SH_DENYRW, _S_IREAD | _S_IWRITE) != 0)
+   length = snprintf(text, sizeof(text), "%s\n%s\n%d\n", session->username,
+         session->token, session->enabled ? 1 : 0);
+   if (length <= 0 || (size_t)length >= sizeof(text))
       return false;
-   file = _fdopen(descriptor, "wb");
-#else
-   length = snprintf(temp, sizeof(temp), "%s.tmp.XXXXXX", path);
-   if (length < 0 || (size_t)length >= sizeof(temp))
-      return false;
-   descriptor = mkstemp(temp);
-   if (descriptor < 0)
-      return false;
-   fchmod(descriptor, 0600);
-   file = fdopen(descriptor, "wb");
-#endif
-   if (!file)
-   {
-#ifdef _WIN32
-      _close(descriptor);
-#else
-      close(descriptor);
-      unlink(temp);
-#endif
-      return false;
-   }
-   length = fprintf(file, "%s\n%s\n%d\n", session->username, session->token,
-         session->enabled ? 1 : 0);
-   if (fclose(file) != 0 || length < 0)
-   {
-#ifndef _WIN32
-      unlink(temp);
-#endif
-      return false;
-   }
-#ifdef _WIN32
-   return true;
-#else
-   if (rename(temp, path) == 0)
-      return true;
-   unlink(temp);
-   return false;
-#endif
+   written = fs_write_file(path, text, (size_t)length) == 0;
+   memset(text, 0, sizeof(text));
+   return written;
 }
 
 bool rib_storage_remove(void)
@@ -165,5 +116,5 @@ bool rib_storage_remove(void)
    char path[PATH_MAX_LENGTH];
    if (!rib_storage_session_path(path))
       return false;
-   return remove(path) == 0 || errno == ENOENT;
+   return fs_remove(path) == 0;
 }

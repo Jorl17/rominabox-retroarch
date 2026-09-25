@@ -41,3 +41,19 @@ bool rib_achievements_retry(void) { return false; }
 void rib_achievements_cancel(void) {}
 void rib_achievements_sign_out(void) {}
 void rib_achievements_skip_startup(void) {}
+size_t rib_achievements_saved_accounts(rib_achievements_saved_account_t *out, size_t capacity)
+{
+   (void)out;
+   (void)capacity;
+   return 0;
+}
+bool rib_achievements_quick_sign_in(const char *username)
+{
+   (void)username;
+   return false;
+}
+bool rib_achievements_forget_account(const char *username)
+{
+   (void)username;
+   return false;
+}
