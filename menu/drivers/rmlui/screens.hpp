@@ -1,6 +1,7 @@
 #pragma once
 
 #include "events.h"
+#include "screen_role.hpp"
 #include <string>
 #include <vector>
 
@@ -22,11 +23,11 @@ public:
    void clear_screens();
    void declare_screen(const char *id, const char *panel,
          const char *heading, const char *footer, const char *button,
-         const char *role = "");
-   /* The declared role of screen `id`, or "" when it has none. */
-   const char *role_of(const char *id) const;
+         ScreenRole role = ScreenRole::None);
+   /* The declared role of screen `id`, None when it has none. */
+   ScreenRole role_of(const char *id) const;
    /* The first screen declared with `role`, or "" when there is none. */
-   const char *with_role(const char *role) const;
+   const char *with_role(ScreenRole role) const;
    bool show_screen(const char *id);
    const char *screen_panel(const char *id) const;
    const char *pause_screen_button();
@@ -35,7 +36,8 @@ public:
 private:
    struct Screen
    {
-      std::string id, panel, heading, footer, button, role;
+      std::string id, panel, heading, footer, button;
+      ScreenRole role;
    };
    Document& document;
    EventQueue& events;

@@ -16,7 +16,7 @@ public:
    Shaders(Lists& lists) : lists(lists) {}
    void load(const char *asset_directory, const char *data_directory);
    void show_running() const;
-   const char *role() const override { return "shaders"; }
+   ScreenRole role() const override { return ScreenRole::Shaders; }
    /* Apply the shader in the row and remember it for the next launch. */
    bool choose(const char *row) override;
 private:

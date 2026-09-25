@@ -24,13 +24,14 @@ public:
    void configure(const rib_design_data& design);
    /* Add the FORGET listener after each document load. */
    void bind();
-   const char *role() const override { return "accounts"; }
+   ScreenRole role() const override { return ScreenRole::Accounts; }
    void shown() override;
    bool choose(const char *row) override;
    bool act(const char *id) override;
-   const char *leave_for() override;
-   /* How many accounts are saved now. */
-   static size_t count();
+   ScreenRole leave_for() override;
+   /* How many accounts are saved now. We also set this as the saved-accounts
+    * fact wherever a design shows it. */
+   static size_t count(Document& document);
 private:
    void fill();
    void set_forgetting(bool on);
@@ -40,6 +41,6 @@ private:
    std::string screen;
    std::vector<rib_achievements_saved_account_t> accounts;
    bool forgetting = false;
-   const char *leaving = nullptr;
+   ScreenRole leaving = ScreenRole::None;
 };
 }

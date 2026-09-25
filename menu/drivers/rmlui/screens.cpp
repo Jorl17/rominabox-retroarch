@@ -60,12 +60,12 @@ void Screens::clear_screens()
 
 void Screens::declare_screen(const char *id, const char *panel,
       const char *heading, const char *footer, const char *button,
-      const char *role)
+      ScreenRole role)
 {
    if (!id || !*id || !panel || !*panel)
       return;
    screens.push_back(Screen{id, panel, heading ? heading : "",
-         footer ? footer : "", button ? button : "", role ? role : ""});
+         footer ? footer : "", button ? button : "", role});
    /* We keep the listener and its target on the element. A new document has
     * new elements, and for a repeated declaration we update the target without
     * adding a listener. We keep no registry for longer than its document. */
@@ -126,18 +126,18 @@ bool Screens::show_screen(const char *id)
    return true;
 }
 
-const char *Screens::role_of(const char *id) const
+ScreenRole Screens::role_of(const char *id) const
 {
    if (id)
       for (const Screen& screen : screens)
          if (screen.id == id)
-            return screen.role.c_str();
-   return "";
+            return screen.role;
+   return ScreenRole::None;
 }
 
-const char *Screens::with_role(const char *role) const
+const char *Screens::with_role(ScreenRole role) const
 {
-   if (role && *role)
+   if (role != ScreenRole::None)
       for (const Screen& screen : screens)
          if (screen.role == role)
             return screen.id.c_str();

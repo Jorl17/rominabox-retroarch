@@ -22,7 +22,7 @@ void Discs::configure(const rib_design_data& design)
    for (size_t index = 0; index < design.screen_count; ++index)
    {
       const rib_screen_declaration *screen = &design.screens[index];
-      if (string_is_equal(screen->images, "list"))
+      if (screen_role(screen->role) == ScreenRole::Discs)
       {
          strlcpy(list_id, screen->id, sizeof(list_id));
          strlcpy(list_button, screen->button, sizeof(list_button));

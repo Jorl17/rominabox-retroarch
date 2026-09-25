@@ -19,7 +19,7 @@ public:
    Discs(Document& document, Lists& lists) : document(document), lists(lists) {}
    void configure(const rib_design_data& design);
    void sync();
-   const char *role() const override { return "discs"; }
+   ScreenRole role() const override { return ScreenRole::Discs; }
    /* Put the disc of the row in the tray. */
    bool choose(const char *row) override;
    void redirect(char *screen_id, size_t length) const;

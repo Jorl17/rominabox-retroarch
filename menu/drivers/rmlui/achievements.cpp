@@ -168,10 +168,9 @@ void Achievements::paint()
    document.set_shown(document_contract::AchievementsSignedOut, !form && signed_out);
    {
       /* We show QUICK SIGN IN only when using it would have an effect. */
-      const size_t saved = signed_out ? SavedAccounts::count() : 0;
-      document.set_shown(document_contract::AchievementsQuick, !form && saved > 0);
-      document.set_disabled(document_contract::AchievementsQuick, form || saved == 0);
-      document.show_fact(document_contract::SavedAccountsFact, std::to_string(saved));
+      const bool offered = signed_out && SavedAccounts::count(document) > 0;
+      document.set_shown(document_contract::AchievementsQuick, !form && offered);
+      document.set_disabled(document_contract::AchievementsQuick, form || !offered);
    }
    document.set_shown(document_contract::AchievementsCatalog, !form && !signed_out);
    document.set_shown(document_contract::AchievementsSessionActions, !form && !signed_out);

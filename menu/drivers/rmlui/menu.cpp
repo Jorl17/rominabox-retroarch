@@ -107,9 +107,9 @@ bool rib_rmlui_allow_quit(void)
 /* The list of the screen showing now, if it has one. */
 static rib::ListOwner *showing_list(Menu *menu)
 {
-   const char *role = menu->screens.role_of(menu->screens.current());
+   const rib::ScreenRole role = menu->screens.role_of(menu->screens.current());
    for (rib::ListOwner *owner : menu->owners)
-      if (role[0] && string_is_equal(owner->role(), role))
+      if (role != rib::ScreenRole::None && owner->role() == role)
          return owner;
    return nullptr;
 }
@@ -137,7 +137,7 @@ static void load_design(Menu *menu, const char *assets)
    {
       const rib_screen_declaration *screen = &design->screens[index];
       menu->view.screens.declare_screen(screen->id, screen->panel, screen->heading,
-            screen->footer, screen->button, screen->role);
+            screen->footer, screen->button, rib::screen_role(screen->role));
    }
    menu->toggles.load(*design, absolute_data_directory());
    menu->overlays.load(*design);
@@ -229,7 +229,7 @@ static void screen_shown(Menu *menu)
    menu->shaders.show_running();
    if (rib::ListOwner *owner = showing_list(menu))
       owner->shown();
-   if (string_is_equal(menu->screens.role_of(menu->screens.current()), "achievements"))
+   if (menu->screens.role_of(menu->screens.current()) == rib::ScreenRole::Achievements)
       menu->achievements.shown();
 }
 
@@ -237,8 +237,7 @@ static void screen_shown(Menu *menu)
  * sign-in has started, we show the screen that the list returns. */
 static void follow_list(Menu *menu, rib::ListOwner *owner)
 {
-   const char *role = owner ? owner->leave_for() : nullptr;
-   const char *screen = role ? menu->screens.with_role(role) : "";
+   const char *screen = owner ? menu->screens.with_role(owner->leave_for()) : "";
    if (screen[0] && menu->navigation.show(screen))
       screen_shown(menu);
 }

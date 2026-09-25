@@ -8,11 +8,20 @@
 #include <cstring>
 
 namespace rib {
+namespace {
+/* The only place where we set the saved-accounts fact. */
+size_t state_count(Document& document, size_t saved)
+{
+   document.show_fact(document_contract::SavedAccountsFact, std::to_string(saved));
+   return saved;
+}
+}
+
 void SavedAccounts::configure(const rib_design_data& design)
 {
    screen.clear();
    for (size_t index = 0; index < design.screen_count; ++index)
-      if (!std::strcmp(design.screens[index].role, role()))
+      if (screen_role(design.screens[index].role) == role())
       {
          screen = design.screens[index].id;
          break;
@@ -27,10 +36,10 @@ void SavedAccounts::bind()
             new ActionListener(events, Event(RIB_RMLUI_ACTION_LIST_ACTION, document_contract::AccountsForget)));
 }
 
-size_t SavedAccounts::count()
+size_t SavedAccounts::count(Document& document)
 {
    rib_achievements_saved_account_t found[RIB_ACHIEVEMENTS_SAVED_ACCOUNTS];
-   return rib_achievements_saved_accounts(found, RIB_ACHIEVEMENTS_SAVED_ACCOUNTS);
+   return state_count(document, rib_achievements_saved_accounts(found, RIB_ACHIEVEMENTS_SAVED_ACCOUNTS));
 }
 
 void SavedAccounts::fill()
@@ -48,7 +57,7 @@ void SavedAccounts::fill()
    }
    if (!screen.empty())
       lists.replace_rows((screen + "-list").c_str(), rows);
-   document.show_fact(document_contract::SavedAccountsFact, std::to_string(count));
+   state_count(document, count);
 }
 
 void SavedAccounts::set_forgetting(bool on)
@@ -62,7 +71,7 @@ void SavedAccounts::set_forgetting(bool on)
 void SavedAccounts::shown()
 {
    set_forgetting(false);
-   leaving = nullptr;
+   leaving = ScreenRole::None;
    fill();
    if (!screen.empty())
       document.set_element_text((screen + "-status").c_str(), "");
@@ -81,12 +90,12 @@ bool SavedAccounts::choose(const char *row)
       rib_achievements_forget_account(accounts[index].username);
       fill();
       if (accounts.empty())
-         leaving = "achievements";
+         leaving = ScreenRole::Achievements;
       return true;
    }
    if (rib_achievements_quick_sign_in(accounts[index].username))
    {
-      leaving = "achievements";
+      leaving = ScreenRole::Achievements;
       return true;
    }
    if (!screen.empty())
@@ -102,10 +111,10 @@ bool SavedAccounts::act(const char *id)
    return true;
 }
 
-const char *SavedAccounts::leave_for()
+ScreenRole SavedAccounts::leave_for()
 {
-   const char *next = leaving;
-   leaving = nullptr;
+   const ScreenRole next = leaving;
+   leaving = ScreenRole::None;
    return next;
 }
 }
