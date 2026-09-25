@@ -130,11 +130,13 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
 
    if (!strncmp(id, "report:", 7))
    {
+      float volume_db = 0.0f;
+      rib_host_setting("audio_volume", &volume_db);
       if (menu)
          fprintf(stderr, "[RIB] checkpoint %s %s\n", id + 7,
                report(observation.screen, rib_host_menu_open(),
                      observation.transfer_pending, observation.capture_active, observation.profile,
-                     rib_host_volume()));
+                     volume_db));
       return;
    }
 

@@ -54,10 +54,18 @@ bool rib_host_load_state(void);
 void rib_host_open_menu(void);
 void rib_host_resume(void);
 void rib_host_quit(void);
-float rib_host_volume(void);
-bool rib_host_muted(void);
-void rib_host_set_volume(float db);
+/* Read or change, by its config key, a RetroArch setting that a player
+ * setting controls, while the game runs. A switch is 1 or 0. Returns false for
+ * a key that we do not apply while the game runs. */
+bool rib_host_setting(const char *key, float *value);
+bool rib_host_set_setting(const char *key, float value);
 void rib_host_scroll_sound(bool up);
+/* Play the movement cue at the volume of the game, so the player hears a
+ * change of level at the new level. */
+void rib_host_level_sound(bool up);
+/* When a game has no menu sound pack, we export it with a cue for a change
+ * of level and use that as the movement cue. Navigation stays silent. */
+void rib_host_load_level_cue(const char *path);
 void rib_host_ok_sound(void);
 void rib_host_cancel_sound(void);
 const char *rib_host_current_shader(void);

@@ -12,8 +12,9 @@ extern "C" {
  * config still belongs to the caller. */
 bool rib_write_menu_config(config_file_t *config, const char *path);
 
-/* The volume file's exact decimal format, replaced the same way. */
-bool rib_write_menu_volume(const char *path, float db);
+/* The file for a player setting: the one `key = "value"` line for RetroArch,
+ * replaced the same way. */
+bool rib_write_player_setting(const char *path, const char *key, const char *value);
 
 /* The step that moves a finished temporary file onto its destination and
  * replaces an existing file in one step. It returns 0 on success, as rename

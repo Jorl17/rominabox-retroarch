@@ -29,6 +29,9 @@ RIB_ELEMENT(UnlockRow, "unlock-row", Menu, Optional)
 RIB_CLASS(MenuAction, "menu-action", Menu, Required)
 RIB_CLASS(ScreenPanel, "screen-panel", Menu, Required)
 RIB_CLASS(Toggle, "toggle", Menu, Optional)
+/* Anything else that switches on and off when pressed, as a player setting
+ * drawn as an Options entry. */
+RIB_CLASS(Switch, "switch", Menu, Optional)
 
 /* The pause screen, and its save slots. */
 RIB_ELEMENT(PausePanel, "pause-panel", Pause, Required)
