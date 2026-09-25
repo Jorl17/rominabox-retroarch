@@ -8,6 +8,7 @@ inline constexpr char BackHint[] = "ESC  BACK";
 inline constexpr char CancelHint[] = "ESC  CANCEL";
 inline constexpr char ChooseControl[] = "SELECT A CONTROL TO REBIND";
 inline constexpr char BindingUnchanged[] = "BINDING UNCHANGED";
+inline constexpr char QuickSignInFailed[] = "COULD NOT USE THIS ACCOUNT";
 inline constexpr char CaptureFailed[] = "CAPTURE COULD NOT START";
 inline constexpr char CaptureStarted[] = "%s: PRESS AN INPUT (10)";
 inline constexpr char CaptureCountdown[] = "%s: PRESS AN INPUT (%d)";

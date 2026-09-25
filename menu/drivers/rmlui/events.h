@@ -23,7 +23,9 @@ enum rib_rmlui_action
    RIB_RMLUI_ACTION_LIST_PAGE,
    RIB_RMLUI_ACTION_PART_TOGGLE,
    RIB_RMLUI_ACTION_SHOW_SCREEN,
-   RIB_RMLUI_ACTION_ACCOUNT
+   RIB_RMLUI_ACTION_ACCOUNT,
+   /* A button on a list screen, passed to the list for that screen. */
+   RIB_RMLUI_ACTION_LIST_ACTION
 };
 
 #ifdef __cplusplus

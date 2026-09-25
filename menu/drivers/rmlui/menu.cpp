@@ -22,6 +22,7 @@
 #include "script.hpp"
 #include "shaders.hpp"
 #include "discs.hpp"
+#include "saved_accounts.hpp"
 #include "settings.hpp"
 #include "controls.hpp"
 #include "slots.hpp"
@@ -44,6 +45,10 @@ struct Menu
    rib::Script script{view};
    rib::Shaders shaders{view.lists};
    rib::Discs discs{view.document, view.lists};
+   rib::SavedAccounts accounts{view.document, view.lists, view.intents};
+   /* The list of each screen that has one. We pass a chosen row to the list of
+    * the screen showing, which we find by the declared role of the screen. */
+   rib::ListOwner *const owners[3] = {&discs, &shaders, &accounts};
    rib::Toggles toggles{view.lists, view.slots};
    rib::Volume volume{view.parts};
    rib::Focus& focus = view.focus;
@@ -99,6 +104,16 @@ bool rib_rmlui_allow_quit(void)
    return false;
 }
 
+/* The list of the screen showing now, if it has one. */
+static rib::ListOwner *showing_list(Menu *menu)
+{
+   const char *role = menu->screens.role_of(menu->screens.current());
+   for (rib::ListOwner *owner : menu->owners)
+      if (role[0] && string_is_equal(owner->role(), role))
+         return owner;
+   return nullptr;
+}
+
 static const char *absolute_data_directory(void)
 {
    const char *data = getenv("ROMINABOX_DATA_DIR");
@@ -117,11 +132,12 @@ static void load_design(Menu *menu, const char *assets)
    size_t index;
    menu->view.screens.clear_screens();
    menu->discs.configure(*design);
+   menu->accounts.configure(*design);
    for (index = 0; index < design->screen_count; ++index)
    {
       const rib_screen_declaration *screen = &design->screens[index];
       menu->view.screens.declare_screen(screen->id, screen->panel, screen->heading,
-            screen->footer, screen->button);
+            screen->footer, screen->button, screen->role);
    }
    menu->toggles.load(*design, absolute_data_directory());
    menu->overlays.load(*design);
@@ -211,6 +227,20 @@ static void screen_shown(Menu *menu)
     * the stylesheet, at the low end. Paint again now that we show the screen. */
    menu->volume.paint();
    menu->shaders.show_running();
+   if (rib::ListOwner *owner = showing_list(menu))
+      owner->shown();
+   if (string_is_equal(menu->screens.role_of(menu->screens.current()), "achievements"))
+      menu->achievements.shown();
+}
+
+/* When we have finished with the list of a screen, as on QUICK SIGN IN once
+ * sign-in has started, we show the screen that the list returns. */
+static void follow_list(Menu *menu, rib::ListOwner *owner)
+{
+   const char *role = owner ? owner->leave_for() : nullptr;
+   const char *screen = role ? menu->screens.with_role(role) : "";
+   if (screen[0] && menu->navigation.show(screen))
+      screen_shown(menu);
 }
 
 static void perform_action(Menu *menu, const rib::Event& event)
@@ -242,19 +272,17 @@ static void perform_action(Menu *menu, const rib::Event& event)
                rib_volume_db_from_fraction(event.fraction), true);
       return;
    }
-   if (action == RIB_RMLUI_ACTION_LIST_CHOOSE)
+   if (action == RIB_RMLUI_ACTION_LIST_CHOOSE || action == RIB_RMLUI_ACTION_LIST_ACTION)
    {
       const char *id = event.id.c_str();
+      rib::ListOwner *owner = showing_list(menu);
+      const bool done = owner && (action == RIB_RMLUI_ACTION_LIST_CHOOSE ?
+            owner->choose(id) : owner->act(id));
 
-      if (menu->discs.choose(menu->screens.current(), id))
-      {
-         rib::play_action_sound(action);
-         menu->discs.sync();
-      }
-      else if (menu->shaders.apply(id, getenv("ROMINABOX_RML_ASSETS"),
-               absolute_data_directory()))
+      if (done)
          rib::play_action_sound(action);
       menu->focus.set(id);
+      follow_list(menu, owner);
       return;
    }
    if (action == RIB_RMLUI_ACTION_LIST_PAGE)
@@ -468,7 +496,8 @@ void rib_menu_frame(void *data, int width, int height)
       /* Read the screens and overlays in the design before we show any. */
       load_design(menu, asset_directory);
       menu->achievements.bind();
-      menu->shaders.load(asset_directory);
+      menu->accounts.bind();
+      menu->shaders.load(asset_directory, absolute_data_directory());
       menu->slots.paint();
       menu->slots.refresh();
       menu->navigation.open();
@@ -602,6 +631,7 @@ void rib_menu_frame(void *data, int width, int height)
       menu->achievements.context_lost();
       load_design(menu, asset_directory);
       menu->achievements.bind();
+      menu->accounts.bind();
       menu->screens.show_screen(menu->screens.current());
       menu->navigation.enter();
    }

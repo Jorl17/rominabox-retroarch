@@ -59,12 +59,13 @@ void Screens::clear_screens()
 }
 
 void Screens::declare_screen(const char *id, const char *panel,
-      const char *heading, const char *footer, const char *button)
+      const char *heading, const char *footer, const char *button,
+      const char *role)
 {
    if (!id || !*id || !panel || !*panel)
       return;
    screens.push_back(Screen{id, panel, heading ? heading : "",
-         footer ? footer : "", button ? button : ""});
+         footer ? footer : "", button ? button : "", role ? role : ""});
    /* We keep the listener and its target on the element. A new document has
     * new elements, and for a repeated declaration we update the target without
     * adding a listener. We keep no registry for longer than its document. */
@@ -123,6 +124,24 @@ bool Screens::show_screen(const char *id)
       if (auto *footer = document.root()->GetElementById(document_contract::FooterHint))
          footer->SetInnerRML(Rml::StringUtilities::EncodeRml(wanted->footer));
    return true;
+}
+
+const char *Screens::role_of(const char *id) const
+{
+   if (id)
+      for (const Screen& screen : screens)
+         if (screen.id == id)
+            return screen.role.c_str();
+   return "";
+}
+
+const char *Screens::with_role(const char *role) const
+{
+   if (role && *role)
+      for (const Screen& screen : screens)
+         if (screen.role == role)
+            return screen.id.c_str();
+   return "";
 }
 
 const char *Screens::screen_panel(const char *id) const

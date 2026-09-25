@@ -103,16 +103,14 @@ void Discs::sync()
    }
 }
 
-bool Discs::choose(const char *screen, const char *id) const
+bool Discs::choose(const char *id)
 {
    char rows_id[48];
    unsigned count;
    int rows;
    int index;
 
-   if (!screen || !id || !list_id[0])
-      return false;
-   if (!string_is_equal(screen, list_id))
+   if (!id || !list_id[0])
       return false;
    snprintf(rows_id, sizeof(rows_id), "%s-list", list_id);
    rows = lists.rows_in(rows_id);
@@ -128,6 +126,7 @@ bool Discs::choose(const char *screen, const char *id) const
          return true;
       image = (unsigned)index;
       rib_host_choose_disc(image);
+      sync();
       return true;
    }
    return false;

@@ -23,6 +23,9 @@ public:
    bool physical(bool down, unsigned key, uint32_t character, uint16_t modifiers);
    void leave_form();
    void context_lost();
+   /* The screen has just been shown. The player may have saved an account
+    * for QUICK SIGN IN in another game since we last painted it. */
+   void shown();
    bool request_exit(Exit exit);
    bool allow_quit();
    bool modal() const { return confirming || snapshot.startup_waiting; }

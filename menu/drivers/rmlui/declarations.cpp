@@ -168,6 +168,9 @@ void screens(config_file_t *config, rib_design_declarations &design)
       snprintf(key, sizeof(key), "screen_mark_%s", id);
       if (!config_get_array(config, key, screen.mark, sizeof(screen.mark)))
          screen.mark[0] = '\0';
+      snprintf(key, sizeof(key), "screen_role_%s", id);
+      if (!config_get_array(config, key, screen.role, sizeof(screen.role)))
+         screen.role[0] = '\0';
       design.screens.push_back(screen);
       return true;
    });

@@ -2,6 +2,7 @@
 #define RIB_MENU_DISCS_HPP
 
 #include "declarations.h"
+#include "list_owner.hpp"
 #include <cstddef>
 
 namespace rib {
@@ -12,13 +13,15 @@ class Lists;
  * We pass in the active screen and the redirect target id from Menu. We may
  * call sync() every frame, but we fill the list again only when the disc
  * count or current disc changes, or after configure() for a new document. */
-class Discs
+class Discs : public ListOwner
 {
 public:
    Discs(Document& document, Lists& lists) : document(document), lists(lists) {}
    void configure(const rib_design_data& design);
    void sync();
-   bool choose(const char *screen, const char *id) const;
+   const char *role() const override { return "discs"; }
+   /* Put the disc of the row in the tray. */
+   bool choose(const char *row) override;
    void redirect(char *screen_id, size_t length) const;
 private:
    Document& document;

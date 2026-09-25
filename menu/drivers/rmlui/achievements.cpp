@@ -5,6 +5,7 @@
 #include "sounds.hpp"
 #include "../../../input/alt_enter_fullscreen.h"
 #include "navigation.hpp"
+#include "saved_accounts.hpp"
 #include <algorithm>
 #include <cstring>
 #include <libretro.h>
@@ -113,6 +114,10 @@ void Achievements::show_form(bool show)
    }
    paint();
 }
+void Achievements::shown()
+{
+   if (document.has_element(document_contract::AchievementsPanel)) paint();
+}
 void Achievements::leave_form()
 {
    if (!form) return;
@@ -161,6 +166,13 @@ void Achievements::paint()
    const bool failed = snapshot.status == RIB_ACHIEVEMENTS_ERROR || snapshot.status == RIB_ACHIEVEMENTS_UNAVAILABLE;
    document.set_shown(document_contract::AchievementsForm, form);
    document.set_shown(document_contract::AchievementsSignedOut, !form && signed_out);
+   {
+      /* We show QUICK SIGN IN only when using it would have an effect. */
+      const size_t saved = signed_out ? SavedAccounts::count() : 0;
+      document.set_shown(document_contract::AchievementsQuick, !form && saved > 0);
+      document.set_disabled(document_contract::AchievementsQuick, form || saved == 0);
+      document.show_fact(document_contract::SavedAccountsFact, std::to_string(saved));
+   }
    document.set_shown(document_contract::AchievementsCatalog, !form && !signed_out);
    document.set_shown(document_contract::AchievementsSessionActions, !form && !signed_out);
    document.set_shown(document_contract::AchievementsBack, !form);

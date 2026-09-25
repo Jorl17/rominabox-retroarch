@@ -34,6 +34,9 @@ typedef struct rib_screen_declaration
    char button[128];
    char images[64];
    char mark[32];
+   /* The kind of screen, for the screens we handle in a special way: the
+    * word declared in design.cfg (pause, discs, shaders, accounts, ...). */
+   char role[32];
 } rib_screen_declaration;
 
 typedef struct rib_overlay_declaration

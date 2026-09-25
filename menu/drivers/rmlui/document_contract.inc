@@ -77,6 +77,11 @@ RIB_ELEMENT(AchievementUsername, "achievement-username", Achievements, Required)
 RIB_ELEMENT(AchievementPassword, "achievement-password", Achievements, Required)
 RIB_ELEMENT(AchievementPasswordVisibility, "achievements-password-visibility", Achievements, Required)
 RIB_ELEMENT(AchievementsLogin, "achievements-login", Achievements, Required)
+/* QUICK SIGN IN: the button on the achievements screen that opens the saved
+ * accounts, shown while any are saved, and that screen's FORGET. Both are
+ * required whenever the accounts screen ships, which is with achievements. */
+RIB_ELEMENT(AchievementsQuick, "achievements-quick", Accounts, Required)
+RIB_ELEMENT(AccountsForget, "accounts-forget", Accounts, Required)
 RIB_ELEMENT(AchievementsSubmit, "achievements-submit", Achievements, Required)
 RIB_ELEMENT(AchievementsCancel, "achievements-cancel", Achievements, Required)
 RIB_ELEMENT(AchievementsError, "achievements-error", Achievements, Required)
@@ -146,3 +151,5 @@ RIB_ATTRIBUTE(FocusAttribute, "data-focus", State, Optional)
 RIB_ATTRIBUTE(FactAttribute, "data-fact", State, Optional)
 /* The slot SAVE and LOAD use, as a number. */
 RIB_FACT(ChosenSlotFact, "chosen-slot")
+/* How many accounts QUICK SIGN IN offers, as a number. */
+RIB_FACT(SavedAccountsFact, "saved-accounts")

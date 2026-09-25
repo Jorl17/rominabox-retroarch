@@ -13,9 +13,11 @@
 #include <cstring>
 
 namespace rib {
-void Shaders::load(const char *asset_directory)
+void Shaders::load(const char *asset_directory, const char *data_directory)
 {
    rib_load_shaders(asset_directory, &catalog);
+   assets = asset_directory ? asset_directory : "";
+   data = data_directory ? data_directory : "";
 }
 
 void Shaders::show_running() const
@@ -58,7 +60,7 @@ void Shaders::show_running() const
          catalog.state_on, catalog.state_off);
 }
 
-bool Shaders::apply(const char *id, const char *assets, const char *data) const
+bool Shaders::choose(const char *id)
 {
    char absolute[PATH_MAX_LENGTH];
    char choice_path[PATH_MAX_LENGTH];
@@ -76,19 +78,18 @@ bool Shaders::apply(const char *id, const char *assets, const char *data) const
          known = true;
          break;
       }
-   /* Other generated lists use this action too, so an unknown id is for them. */
    if (!known)
       return false;
 
    absolute[0] = '\0';
-   if (relative && *relative && assets && *assets)
-      snprintf(absolute, sizeof(absolute), "%s/%s", assets, relative);
+   if (relative && *relative && !assets.empty())
+      snprintf(absolute, sizeof(absolute), "%s/%s", assets.c_str(), relative);
 
    rib_host_apply_shader(id, absolute);
 
-   if (data && *data)
+   if (!data.empty())
    {
-      snprintf(choice_path, sizeof(choice_path), "%s/shader-choice", data);
+      snprintf(choice_path, sizeof(choice_path), "%s/shader-choice", data.c_str());
       if (absolute[0])
          snprintf(body, sizeof(body), "%s\n", absolute);
       else
