@@ -72,9 +72,6 @@ RIB_KEYS(Word, "word_")
 RIB_FILE(Shaders, "shaders.cfg")
 RIB_KEY(ShaderIds, "shader_ids")
 RIB_KEYS(ShaderPreset, "shader_preset_")
-/* The filter the game starts with. The menu does not read it; the launcher
- * takes the starting filter from the launch plan. */
-RIB_KEY(ShaderInitial, "shader_initial")
 
 #undef RIB_FILE
 #undef RIB_FILES
