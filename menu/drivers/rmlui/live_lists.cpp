@@ -32,7 +32,6 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
       if (page_index == (int)pages.size()) {
          auto page = document.root()->CreateElement("div");
          page->SetClass(document_contract::ListPage, true);
-         page->SetId(std::string(list_id) + "-page-" + std::to_string(page_index + 1));
          pages.push_back(list->InsertBefore(std::move(page), pager));
       }
       auto *page = pages[page_index];
