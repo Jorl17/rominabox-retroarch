@@ -122,7 +122,21 @@ bool Navigation::turn_page(int delta, Rml::Element *from)
       list = list->GetParentNode();
    if (lists.turn_list_page(delta, list) < 0)
       return false;
-   focus.set(lists.first_row(list));
+   /* When the player turns the page with an arrow, we keep the focus on it,
+    * so another press turns again. At the end we move the focus to the other
+    * arrow. After a turn from a row, we focus the first row of the page. */
+   Rml::Element *to = lists.first_row(list);
+   const bool previous = from && from->IsClassSet(document_contract::ListPagerPrev);
+   if (previous || (from && from->IsClassSet(document_contract::ListPagerNext)))
+   {
+      Rml::Element *other = find_class(list, previous
+            ? document_contract::ListPagerNext : document_contract::ListPagerPrev);
+      if (!from->IsClassSet(document_contract::Disabled))
+         to = from;
+      else if (other && !other->IsClassSet(document_contract::Disabled))
+         to = other;
+   }
+   focus.set(to);
    return true;
 }
 
