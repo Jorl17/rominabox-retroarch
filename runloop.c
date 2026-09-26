@@ -113,6 +113,7 @@
 
 #include "runtime_file.h"
 #include "runloop.h"
+#include "rominabox_launch.h"
 #include "camera/camera_driver.h"
 #include "location_driver.h"
 #include "record/record_driver.h"
@@ -6206,7 +6207,7 @@ static enum runloop_state_enum runloop_check_state(
 
       if (!startup_overlay_checked && !core_type_is_dummy && core_is_running)
       {
-         const char *start_at_menu = getenv("ROMINABOX_START_AT_MENU");
+         const char *start_at_menu = getenv(RIB_ENV_START_AT_MENU);
          bool keep_menu_open = start_at_menu && string_is_equal(start_at_menu, "1");
 #ifdef HAVE_CHEEVOS
          /* We already showed the startup menu at the autosave gate. Pressing
@@ -7584,7 +7585,7 @@ static void rib_startup_restore_poll(settings_t *settings,
       struct menu_state *menu_st = menu_state_get_ptr();
       if (!rib_startup_menu_recorded)
       {
-         const char *start_at_menu = getenv("ROMINABOX_START_AT_MENU");
+         const char *start_at_menu = getenv(RIB_ENV_START_AT_MENU);
          rib_startup_keep_menu =
                (menu_st->flags & MENU_ST_FLAG_ALIVE) ||
                (start_at_menu && string_is_equal(start_at_menu, "1"));

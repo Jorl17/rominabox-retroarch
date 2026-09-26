@@ -47,6 +47,7 @@
 #include "../../configuration.h"
 #include "../../retroarch.h"
 #include "../../verbosity.h"
+#include "../../rominabox_launch.h"
 
 #if defined(HAVE_COCOATOUCH)
 #define GLContextClass  EAGLContext
@@ -89,7 +90,7 @@ CocoaView *cocoaview_get(void);
 #ifdef OSX
 static bool rominabox_title_active(void)
 {
-   const char *title = getenv("ROMINABOX_TITLE");
+   const char *title = getenv(RIB_ENV_TITLE);
    return title && title[0];
 }
 
@@ -409,7 +410,7 @@ static void cocoa_gl_gfx_ctx_swap_buffers(void *data)
          [window orderFront:nil];
          rib_window_prepared = false;
       }
-      else if (getenv("ROMINABOX_MENU_SHOT") && !rominabox_test_window_shown())
+      else if (getenv(RIB_ENV_MENU_SHOT) && !rominabox_test_window_shown())
       {
          [window orderFront:nil];
          rib_window_prepared = false;

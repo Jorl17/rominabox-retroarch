@@ -5,6 +5,8 @@
 #include <string.h>
 #import <AppKit/AppKit.h>
 
+#include "../../rominabox_launch.h"
+
 /* A test launch still requires a drawable. With the explicit window switch,
  * someone can check a game by hand without changing its exported settings. */
 static inline bool rominabox_test_window_shown(void)
@@ -15,7 +17,7 @@ static inline bool rominabox_test_window_shown(void)
 
 static inline bool rominabox_test_window_hidden(void)
 {
-   return getenv("ROMINABOX_QUIET") && !rominabox_test_window_shown();
+   return getenv(RIB_ENV_QUIET) && !rominabox_test_window_shown();
 }
 
 static inline void rominabox_prepare_test_window(NSWindow *window)

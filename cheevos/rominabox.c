@@ -17,6 +17,7 @@
 #include <file/file_path.h>
 #include <retro_miscellaneous.h>
 #include "../configuration.h"
+#include "../rominabox_launch.h"
 
 typedef enum rib_completion_kind {
    RIB_COMPLETION_NONE,
@@ -91,19 +92,19 @@ static void rib_copy(char *dest, const char *src, size_t capacity)
 
 static bool rib_included(void)
 {
-   const char *flag = getenv("ROMINABOX_ACHIEVEMENTS");
+   const char *flag = getenv(RIB_ENV_ACHIEVEMENTS);
    return flag && strcmp(flag, "1") == 0;
 }
 
 bool rib_achievements_managed(void)
 {
-   return getenv("ROMINABOX_ACHIEVEMENTS") != NULL;
+   return getenv(RIB_ENV_ACHIEVEMENTS) != NULL;
 }
 
 /* The game identity we get from the launcher, or empty outside a game. */
 static const char *rib_game(void)
 {
-   const char *game = getenv("ROMINABOX_GAME_IDENTITY");
+   const char *game = getenv(RIB_ENV_GAME_IDENTITY);
    return game ? game : "";
 }
 

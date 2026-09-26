@@ -69,6 +69,7 @@
 #include "../../verbosity.h"
 
 #include "ui_cocoa.h"
+#include "../../rominabox_launch.h"
 
 #ifdef HAVE_SWIFT
 #import "RetroArch-Swift.h"
@@ -89,7 +90,7 @@ static char **waiting_argv;
 
 static const char *rominabox_window_title(void)
 {
-   const char *title = getenv("ROMINABOX_TITLE");
+   const char *title = getenv(RIB_ENV_TITLE);
 
    if (title && title[0])
       return title;
@@ -98,7 +99,7 @@ static const char *rominabox_window_title(void)
 
 static bool rominabox_advanced_access(void)
 {
-   const char *value = getenv("ROMINABOX_ADVANCED_ACCESS");
+   const char *value = getenv(RIB_ENV_ADVANCED_ACCESS);
 
    return value && string_is_equal(value, "1");
 }

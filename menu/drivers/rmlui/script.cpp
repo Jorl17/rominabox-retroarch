@@ -8,6 +8,7 @@
 #include <cmath>
 #include "../../../verbosity.h"
 #include "../../../rominabox_environment.h"
+#include "../../../rominabox_launch.h"
 #include <string/stdstring.h>
 #include <climits>
 #include <cstdio>
@@ -16,7 +17,7 @@
 
 void rib::Script::shot()
 {
-   const rib_environment_value shot_path = rib_owned(rib_environment("ROMINABOX_MENU_SHOT"));
+   const rib_environment_value shot_path = rib_owned(rib_environment(RIB_ENV_MENU_SHOT));
    const char *path = shot_path.get();
 
    if (!path || !*path || !rib_host_prepare_script_shot())

@@ -13,6 +13,7 @@
 #include <streams/file_stream.h>
 #include "../../../verbosity.h"
 #include "../../../rominabox_environment.h"
+#include "../../../rominabox_launch.h"
 #include "../rmlui_bridge.h"
 #include "menu_api.h"
 #include "files.h"
@@ -377,7 +378,7 @@ void rib_menu_frame(void *data, int width, int height)
 
    if (!menu->initialized)
    {
-      const rib_environment_value assets = rib_owned(rib_environment("ROMINABOX_RML_ASSETS"));
+      const rib_environment_value assets = rib_owned(rib_environment(RIB_ENV_RML_ASSETS));
       menu->initialized = initialize(menu,
             assets && *assets ? assets.get() : RIB_RMLUI_DEFAULT_ASSETS, width, height);
       if (!menu->initialized)

@@ -88,6 +88,7 @@
 #include "../../msg_hash.h"
 #include "../../ui/ui_companion_driver.h"
 #include "../../paths.h"
+#include "../../rominabox_launch.h"
 
 typedef enum
 {
@@ -406,7 +407,7 @@ static void frontend_darwin_get_env(int *argc, char *argv[],
    char bundle_path_buf[PATH_MAX_LENGTH]   = {0};
    char documents_dir_buf[DIR_MAX_LENGTH]  = {0};
    char application_data[PATH_MAX_LENGTH]  = {0};
-   const char *data_root                    = getenv("ROMINABOX_DATA_DIR");
+   const char *data_root                    = getenv(RIB_ENV_DATA_DIR);
 #if defined(OSX)
    if (!data_root || data_root[0] != '/')
    {

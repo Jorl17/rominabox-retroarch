@@ -15,6 +15,7 @@
 #include <boolean.h>
 #include <retro_inline.h>
 #include <file/file_path.h>
+#include "rominabox_launch.h"
 #if defined(_WIN32)
 #include <encodings/utf.h>
 #endif
@@ -45,7 +46,7 @@ static INLINE char *rib_environment(const char *name)
  * relative to the directory the player runs in. */
 static INLINE char *rib_data_directory(void)
 {
-   char *path = rib_environment("ROMINABOX_DATA_DIR");
+   char *path = rib_environment(RIB_ENV_DATA_DIR);
    if (path && path_is_absolute(path))
       return path;
    free(path);
