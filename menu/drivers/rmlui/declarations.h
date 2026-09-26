@@ -50,10 +50,9 @@ struct SettingDeclaration
    std::string id, control, file;
    rib_setting_key key = RIB_SETTING_KEY_COUNT;
    SettingKind kind = SettingKind::Level;
-   /* A level: the key's value at each end, and how many positions lie
-    * between them, both ends included. */
-   float low = 0.0f, high = 0.0f;
-   int positions = 0;
+   /* A level: the key's value at each of its positions, from the slider's
+    * low end to its high end. */
+   std::vector<float> values;
    /* A switch: whether on is the key's false. The words for it are in the
     * menu (Word::SwitchOn, Word::SwitchOff). */
    bool inverted = false;

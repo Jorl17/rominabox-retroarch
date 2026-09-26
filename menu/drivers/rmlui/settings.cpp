@@ -10,33 +10,38 @@
 #include "../../../verbosity.h"
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
 namespace rib {
 namespace {
+/* The positions of a level count from 0 at its low end, and the value at each
+ * is values[position]. We convert between a position and a value or a slider
+ * fraction here and nowhere else. */
 int last_position(const SettingDeclaration& level)
 {
-   return level.positions - 1;
+   return (int)level.values.size() - 1;
 }
 
-/* The position of a level nearest to `value`. */
+/* The position with the value nearest `value`, or the higher of two ties. */
 int position_of(const SettingDeclaration& level, float value)
 {
-   float fraction = (value - level.low) / (level.high - level.low);
+   int nearest = 0;
+   for (int position = 1; position <= last_position(level); ++position)
+      if (std::fabs(level.values[position] - value)
+            <= std::fabs(level.values[nearest] - value))
+         nearest = position;
+   return nearest;
+}
+
+/* The position of a slider at `fraction` of its track. */
+int position_at(const SettingDeclaration& level, float fraction)
+{
    if (fraction < 0.0f) fraction = 0.0f;
    if (fraction > 1.0f) fraction = 1.0f;
    return (int)(fraction * (float)last_position(level) + 0.5f);
-}
-
-/* We use the declared values exactly at both ends, not a sum of steps. */
-float value_at(const SettingDeclaration& level, int position)
-{
-   if (position <= 0) return level.low;
-   if (position >= last_position(level)) return level.high;
-   return level.low + (level.high - level.low) * (float)position
-         / (float)last_position(level);
 }
 
 float fraction_at(const SettingDeclaration& level, int position)
@@ -81,7 +86,7 @@ const SettingDeclaration *PlayerSettings::owning(const char *control,
 
 float PlayerSettings::value(const SettingDeclaration& setting) const
 {
-   float current = setting.kind == SettingKind::Level ? setting.high : 0.0f;
+   float current = setting.kind == SettingKind::Level ? setting.values.back() : 0.0f;
    rib_host_setting(setting.key, &current);
    return current;
 }
@@ -92,13 +97,13 @@ void PlayerSettings::attach()
    {
       if (setting.kind != SettingKind::Level)
          continue;
-      parts.set_slider_step(setting.control.c_str(), 1.0f / (float)last_position(setting));
+      parts.set_slider_step(setting.control.c_str(), fraction_at(setting, 1));
       /* We move a level between positions, from a file or a hotkey, to the
        * nearest one and store it there. The file has one decimal, so a level
        * from it is at a position when it matches to one decimal, and we do not
        * write a level that is already at a position. */
       const float current = value(setting);
-      const float nearest = value_at(setting, position_of(setting, current));
+      const float nearest = setting.values[position_of(setting, current)];
       if (file_text(setting, nearest) != file_text(setting, current))
          set(setting, nearest, true);
    }
@@ -147,9 +152,9 @@ bool PlayerSettings::slide(const char *control, float fraction, bool persist)
    if (!level)
       return false;
    const int from = position_of(*level, value(*level));
-   const int to = position_of(*level, level->low + fraction * (level->high - level->low));
+   const int to = position_at(*level, fraction);
    if (to != from || persist)
-      set(*level, value_at(*level, to), persist);
+      set(*level, level->values[to], persist);
    if (to != from)
       play_level_sound(to > from);
    paint();

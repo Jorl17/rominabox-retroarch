@@ -164,6 +164,21 @@ bool setting_kind_named(const std::string& word, rib::SettingKind& kind)
    return false;
 }
 
+/* A level's values, one per position, from a space-separated list. None
+ * when any of them is not a number. */
+std::vector<float> levels(const std::string& list)
+{
+   std::vector<float> values;
+   for (const std::string& word : ids(list))
+   {
+      char *end = NULL;
+      values.push_back(strtof(word.c_str(), &end));
+      if (end == word.c_str() || *end)
+         return {};
+   }
+   return values;
+}
+
 void settings(config_file_t *config, rib::DesignDeclarations& design)
 {
    for (const std::string& id : ids(value(config, "settings")))
@@ -189,20 +204,17 @@ void settings(config_file_t *config, rib::DesignDeclarations& design)
       switch (setting.kind)
       {
          case rib::SettingKind::Level:
-            setting.low = strtof(value(config, "setting_low_" + id).c_str(), NULL);
-            setting.high = strtof(value(config, "setting_high_" + id).c_str(), NULL);
-            setting.positions = number(config, "setting_positions_" + id, 0);
+            setting.values = levels(value(config, "setting_values_" + id));
             break;
          case rib::SettingKind::Switch:
             setting.inverted = value(config, "setting_inverted_" + id) == "true";
             break;
       }
       if (setting.control.empty() || setting.file.empty()
-            || (setting.kind == rib::SettingKind::Level
-               && (setting.positions < 2 || setting.high == setting.low)))
+            || (setting.kind == rib::SettingKind::Level && setting.values.size() < 2))
       {
          RARCH_ERR("[RIB] the setting '%s' is declared without its control, "
-               "file or range; it will not be shown.\n", id.c_str());
+               "file or values; it will not be shown.\n", id.c_str());
          continue;
       }
       design.settings.push_back(std::move(setting));
