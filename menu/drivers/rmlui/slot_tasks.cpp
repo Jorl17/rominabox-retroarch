@@ -23,7 +23,6 @@ void Slots::look_at(int slot)
 
 void Slots::refresh()
 {
-   set_game_aspect(rib_host_game_aspect());
    for (int slot = 1; slot <= kSlotCount; ++slot)
       look_at(slot);
 }

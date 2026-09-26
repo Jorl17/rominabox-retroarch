@@ -59,7 +59,7 @@ std::string Slots::quoted_css_path(const std::string& path)
    return result;
 }
 
-void Slots::paint()
+void Slots::paint() const
 {
    if (!document.root()) return;
 
@@ -92,43 +92,6 @@ void Slots::paint()
    document.show_fact(document_contract::ChosenSlotFact, std::to_string(selected_slot));
    paint_status_line(document.root()->GetElementById(document_contract::Status),
          status.main_text());
-   fit_pictures();
-}
-
-void Slots::fit_pictures()
-{
-   Rml::Context *context = document.get_context();
-   if (!document.root() || !context)
-      return;
-   context->Update();
-   const float dp = context->GetDensityIndependentPixelRatio();
-   if (!(dp > 0.0f))
-      return;
-   for (int index = 0; index < kSlotCount; ++index)
-   {
-      Rml::Element *image = document.root()->GetElementById(
-            document_contract::SlotImagePrefix + std::to_string(index + 1));
-      Rml::Element *box = image ? image->GetParentNode() : nullptr;
-      if (!box)
-         continue;
-      /* In dp, which are the same in a window of any size. A box with no size
-       * has no layout yet, for example while its screen is hidden. */
-      const Rml::Vector2f room = box->GetBox().GetSize(Rml::BoxArea::Content) / dp;
-      if (!(room.x > 0.0f && room.y > 0.0f))
-         continue;
-      Fitted& fitted = fits[index];
-      if (fitted.image.get() == image && fitted.width == room.x && fitted.height == room.y
-            && fitted.aspect == game_aspect)
-         continue;
-      fitted = {image->GetObserverPtr(), room.x, room.y, game_aspect};
-      const float width = std::min(room.x, room.y * game_aspect);
-      const float height = std::min(room.y, room.x / game_aspect);
-      const auto in_dp = [](float value) { return std::to_string(value) + "dp"; };
-      image->SetProperty("width", in_dp(width));
-      image->SetProperty("height", in_dp(height));
-      image->SetProperty("margin-left", in_dp((room.x - width) / 2));
-      image->SetProperty("margin-top", in_dp((room.y - height) / 2));
-   }
 }
 
 void Slots::set_selected_slot(int slot)
@@ -157,14 +120,6 @@ void Slots::set_slot_state(int slot, bool occupied, const char *thumbnail_path)
       document.release_texture(state.thumbnail_path);
    state.thumbnail_path = next_path;
    state.thumbnail_version = picture.version;
-   paint();
-}
-
-void Slots::set_game_aspect(float aspect)
-{
-   if (!(aspect > 0.0f && aspect < 100.0f) || aspect == game_aspect)
-      return;
-   game_aspect = aspect;
    paint();
 }
 

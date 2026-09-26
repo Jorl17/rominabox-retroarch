@@ -176,6 +176,15 @@ static void settle_focus(Menu *menu)
    menu->focus.paint();
 }
 
+/* Read what we show of the running game when the menu opens. That is the
+ * aspect ratio of the game, which can change while it runs, and the slots,
+ * which a save by hotkey can change. */
+static void read_game(Menu *menu)
+{
+   menu->view.document.show_game_shape(rib_host_game_aspect());
+   menu->slots.refresh();
+}
+
 static void reset_interaction(Menu *menu, bool opening)
 {
    if (!menu)
@@ -196,8 +205,7 @@ static void reset_interaction(Menu *menu, bool opening)
       menu->navigation.close();
       return;
    }
-   /* Show on the slots any save the player made with a hotkey during play. */
-   menu->slots.refresh();
+   read_game(menu);
    menu->navigation.open();
    settle_focus(menu);
 }
@@ -344,7 +352,7 @@ static bool initialize(Menu *menu, const char *assets, int width, int height)
    menu->accounts.bind();
    menu->shaders.load(assets, data);
    menu->slots.paint();
-   menu->slots.refresh();
+   read_game(menu);
    menu->navigation.open();
    if (!menu->controls.loaded)
    {
@@ -474,7 +482,6 @@ void rib_menu_frame(void *data, int width, int height)
 
    menu->controls.poll_capture();
    menu->slots.follow();
-   menu->slots.fit_pictures();
    menu->controls.update_binds(pointer.x, pointer.y,
          !menu->script.wants_frames());
    settle_focus(menu);

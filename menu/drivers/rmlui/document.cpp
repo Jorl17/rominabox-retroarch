@@ -6,6 +6,8 @@
 #include "render/rmlui_gl.h"
 #include <filesystem>
 #include <algorithm>
+#include <cfloat>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -328,6 +330,43 @@ void Document::show_fact(const char *fact, const std::string& text)
          std::string("[") + document_contract::FactAttribute + "=" + fact + "]");
    for (Rml::Element *element : showing)
       write_text(element, text);
+}
+
+void Document::show_game_shape(float aspect)
+{
+   const float dp = context ? context->GetDensityIndependentPixelRatio() : 0.0f;
+   if (!root() || !(dp > 0.0f) || !(aspect > 0.0f && aspect < 100.0f)) return;
+   /* In whole thousandths, which look the same in every locale. */
+   const long thousandths = std::lround(aspect * 1000.0f);
+   char shape[32];
+   std::snprintf(shape, sizeof(shape), "%ld.%03ld", thousandths / 1000, thousandths % 1000);
+   if (root()->GetAttribute<Rml::String>(document_contract::GameShapeAttribute, "") == shape)
+      return;
+   root()->SetAttribute(document_contract::GameShapeAttribute, Rml::String(shape));
+   /* The largest sizes in the stylesheet now, which a design may also make
+    * depend on the game's proportions. We set width and height, never these,
+    * so they stay as the design set them however often the menu opens. */
+   context->Update();
+   Rml::ElementList marked;
+   root()->QuerySelectorAll(marked,
+         std::string("[") + document_contract::GameShapedAttribute + "]");
+   for (Rml::Element *element : marked)
+   {
+      const Rml::Style::ComputedValues& style = element->GetComputedValues();
+      const Rml::Style::LengthPercentage most_wide = style.max_width();
+      const Rml::Style::LengthPercentage most_tall = style.max_height();
+      const auto declared = [](const Rml::Style::LengthPercentage& most) {
+         return most.type == Rml::Style::LengthPercentage::Length
+               && most.value > 0.0f && most.value < FLT_MAX;
+      };
+      if (!declared(most_wide) || !declared(most_tall))
+         continue;
+      const float width = most_wide.value / dp, height = most_tall.value / dp;
+      element->SetProperty(Rml::PropertyId::Width,
+            Rml::Property(std::min(width, height * aspect), Rml::Unit::DP));
+      element->SetProperty(Rml::PropertyId::Height,
+            Rml::Property(std::min(height, width / aspect), Rml::Unit::DP));
+   }
 }
 
 void Document::set_class(const char *id, const char *name, bool enabled)

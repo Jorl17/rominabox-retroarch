@@ -38,6 +38,11 @@ public:
    void set_element_text(const char *id, const char *text);
    /* Show `text` in every element that shows `fact` (data-fact). */
    void show_fact(const char *fact, const std::string& text);
+   /* The proportions of the running game, width over height. We state them
+    * on the document as data-game-shape and give them to every element
+    * marked data-game-shaped, inside the largest size in its stylesheet.
+    * No change for proportions already shown, or for none at all. */
+   void show_game_shape(float aspect);
    void set_shown(const char *id, bool shown);
    void set_disabled(const char *id, bool disabled);
    void set_class(const char *id, const char *name, bool enabled);
