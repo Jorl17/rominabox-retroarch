@@ -214,13 +214,13 @@ bool Controls::save()
    if (path.empty() || !(config = config_file_new_alloc()))
       return false;
 
-   config_set_string(config, "controls_profile", profile_id.c_str());
+   config_set_string(config, keys::ControlsProfile, profile_id.c_str());
    for (index = 0; index < catalog.count; ++index)
    {
       if (!active(index))
          continue;
       const rib_control_declaration& control = catalog.entries[index];
-      config_set_string(config, ("rib_label_" + control.id).c_str(), control.label.c_str());
+      config_set_string(config, keys::ControlLabel(control.id).c_str(), control.label.c_str());
       rib_host_write_bind(config, control.id.c_str(), control.bind_index);
    }
 

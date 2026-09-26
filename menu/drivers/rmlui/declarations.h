@@ -26,6 +26,9 @@ namespace keys {
 #define RIB_KEY(name, key) inline constexpr char name[] = key;
 #define RIB_KEYS(name, prefix) \
    inline std::string name(const std::string& id) { return prefix + id; }
+#define RIB_CONTROLS_KEY(name, key) inline constexpr char name[] = key;
+#define RIB_CONTROLS_KEYS(name, prefix) \
+   inline std::string name(const std::string& id) { return prefix + id; }
 #include "declarations.inc"
 }
 

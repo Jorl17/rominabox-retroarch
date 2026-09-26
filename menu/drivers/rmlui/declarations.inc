@@ -9,7 +9,9 @@
  * RIB_FILES(name, "prefix", "suffix") one per id there: prefix, id, suffix
  * RIB_DATA_FILE(name, "file")         in the game's data, written by the menu
  * RIB_KEY(name, "key")
- * RIB_KEYS(name, "prefix")            one per id: the prefix, then the id */
+ * RIB_KEYS(name, "prefix")            one per id: the prefix, then the id
+ * RIB_CONTROLS_KEY(name, "key")       likewise, in the controls files, which
+ * RIB_CONTROLS_KEYS(name, "prefix")   the launcher also reads */
 /* A reader defines the declarations it reads; the others read as nothing. */
 #ifndef RIB_FILE
 #define RIB_FILE(name, file)
@@ -26,6 +28,12 @@
 #ifndef RIB_KEYS
 #define RIB_KEYS(name, prefix)
 #endif
+#ifndef RIB_CONTROLS_KEY
+#define RIB_CONTROLS_KEY(name, key)
+#endif
+#ifndef RIB_CONTROLS_KEYS
+#define RIB_CONTROLS_KEYS(name, prefix)
+#endif
 
 /* The menu's document. */
 RIB_FILE(Menu, "menu.rml")
@@ -36,6 +44,17 @@ RIB_FILE(ControlsDefaults, "controls-defaults.cfg")
 /* The player's own bindings, and the filter the player last chose. */
 RIB_DATA_FILE(Controls, "controls.cfg")
 RIB_DATA_FILE(ShaderChoice, "shader-choice")
+
+/* The controls files, beside RetroArch's own input_player1_ bindings: the pad
+ * in use, the pads the picker offers, each pad's name, emulated device and
+ * controls, and each control's label and the group it is drawn in. */
+RIB_CONTROLS_KEY(ControlsProfile, "controls_profile")
+RIB_CONTROLS_KEY(ControlsVariants, "controls_variants")
+RIB_CONTROLS_KEYS(ControlsVariantName, "controls_variant_name_")
+RIB_CONTROLS_KEYS(ControlsVariantDevice, "controls_variant_device_")
+RIB_CONTROLS_KEYS(ControlsVariantControls, "controls_variant_controls_")
+RIB_CONTROLS_KEYS(ControlLabel, "rib_label_")
+RIB_CONTROLS_KEYS(ControlGroup, "rib_group_")
 
 /* design.cfg: the design's screens, settings, overlays, bind list, fonts and
  * words. A list is ids separated by spaces. */
@@ -78,3 +97,5 @@ RIB_KEYS(ShaderPreset, "shader_preset_")
 #undef RIB_DATA_FILE
 #undef RIB_KEY
 #undef RIB_KEYS
+#undef RIB_CONTROLS_KEY
+#undef RIB_CONTROLS_KEYS

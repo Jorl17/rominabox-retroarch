@@ -63,8 +63,9 @@ void discover_controls(config_file_t *config, const std::string& profile_id,
    /* The controls of a pad, when the defaults list them, or else every control. */
    std::vector<std::string> belonging;
    if (!profile_id.empty())
-      belonging = ids(value(config, "controls_variant_controls_" + profile_id));
+      belonging = ids(value(config, rib::keys::ControlsVariantControls(profile_id)));
 
+   const std::string label = rib::keys::ControlLabel("");
    catalog->count = 0;
    for (present = config_get_entry_list_head(config, &entry); present;
         present = config_get_entry_list_next(&entry))
@@ -72,9 +73,9 @@ void discover_controls(config_file_t *config, const std::string& profile_id,
       const char *id;
       unsigned bind_index;
 
-      if (!entry.key || strncmp(entry.key, "rib_label_", 10))
+      if (!entry.key || strncmp(entry.key, label.c_str(), label.size()))
          continue;
-      id = entry.key + 10;
+      id = entry.key + label.size();
       if (!*id)
          continue;
       if (!belonging.empty()
@@ -96,7 +97,7 @@ void discover_controls(config_file_t *config, const std::string& profile_id,
       }
       rib_control_declaration& control = catalog->entries[catalog->count];
       control.id = id;
-      control.group = value(config, std::string("rib_group_") + id);
+      control.group = value(config, rib::keys::ControlGroup(id));
       control.bind_index = bind_index;
       ++catalog->count;
    }
@@ -105,7 +106,7 @@ void discover_controls(config_file_t *config, const std::string& profile_id,
 void discover_devices(config_file_t *config, rib_controls_catalog *catalog)
 {
    catalog->device_count = 0;
-   for (const std::string& id : ids(value(config, "controls_variants")))
+   for (const std::string& id : ids(value(config, rib::keys::ControlsVariants)))
    {
       if (catalog->device_count >= RIB_DEVICE_MAX)
       {
@@ -116,8 +117,8 @@ void discover_devices(config_file_t *config, rib_controls_catalog *catalog)
       rib_device_declaration& device = catalog->devices[catalog->device_count];
       device.id = id;
       device.libretro = (unsigned)strtoul(
-            value(config, "controls_variant_device_" + id).c_str(), NULL, 10);
-      if (!read(config, "controls_variant_name_" + id, device.name))
+            value(config, rib::keys::ControlsVariantDevice(id)).c_str(), NULL, 10);
+      if (!read(config, rib::keys::ControlsVariantName(id), device.name))
          device.name = id;
       ++catalog->device_count;
    }
@@ -328,7 +329,7 @@ config_file_t *rib_open_controls(const char *path, bool defaults,
    if (!config)
       return nullptr;
 
-   const std::string profile = value(config, "controls_profile");
+   const std::string profile = value(config, rib::keys::ControlsProfile);
    *profile_present = !profile.empty();
    if (*profile_present)
       profile_id = profile;
@@ -372,5 +373,5 @@ void rib_controls_read_enabled(config_file_t *config,
 void rib_controls_read_label(config_file_t *config,
       rib_control_declaration *control)
 {
-   read(config, "rib_label_" + control->id, control->label);
+   read(config, rib::keys::ControlLabel(control->id), control->label);
 }
