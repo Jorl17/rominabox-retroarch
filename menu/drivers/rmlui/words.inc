@@ -1,6 +1,7 @@
 /* The words the menu writes itself, over whatever the design's markup says:
- * statuses, prompts, the words on slots and lists, and the words composition
- * writes for the player's settings. A design gives its own
+ * statuses, the words on slots and lists, and the words composition writes
+ * for the player's settings. A status line's prompt is the design's own
+ * text, which a status covers until it lapses. A design gives its own
  * wording in design.json "words", by the id below; the exporter writes each
  * to design.cfg as word_<id>, and a word a design does not give is the
  * English here. {name} is a value the menu puts in: a design's words may use
@@ -12,8 +13,7 @@
  * are its design.json "screens" entry's. */
 RIB_WORD(CancelHint, "cancel-hint", "ESC  CANCEL")
 
-/* The pad screen. */
-RIB_WORD(ChooseControl, "choose-control", "SELECT A CONTROL TO REBIND")
+/* The pad screen's statuses. */
 RIB_WORD(CaptureCountdown, "capture-countdown", "{control}: PRESS AN INPUT ({seconds})")
 RIB_WORD(CaptureFailed, "capture-failed", "CAPTURE COULD NOT START")
 RIB_WORD(BindingSaved, "binding-saved", "BINDING SAVED")

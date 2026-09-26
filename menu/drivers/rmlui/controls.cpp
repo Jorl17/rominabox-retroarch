@@ -632,7 +632,8 @@ void Controls::screen_shown(bool showing)
 {
    if (showing)
    {
-      status.set_controls(say(Word::ChooseControl).c_str());
+      /* On opening, show the text from the design, whatever was there last. */
+      status.set_controls("");
       refresh();
    }
    else
