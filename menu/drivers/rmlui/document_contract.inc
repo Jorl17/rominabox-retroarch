@@ -99,6 +99,14 @@ RIB_ELEMENT(ControlsDevice, "controls-device", Controls, Optional)
 RIB_ELEMENT(ControlsDeviceCurrent, "controls-device-current", Controls, Optional)
 RIB_ELEMENT(ControlsDeviceList, "controls-device-list", Controls, Optional)
 RIB_CLASS(ControlGroup, "control-group", Controls, Optional)
+/* A stick member's mark on the pad: an arrow for each direction, a dot for
+ * the click. The one being captured is `capturing`. */
+RIB_CLASS(ControlDirection, "control-direction", Controls, Optional)
+RIB_CLASS(DirectionUp, "direction-up", Controls, Optional)
+RIB_CLASS(DirectionRight, "direction-right", Controls, Optional)
+RIB_CLASS(DirectionDown, "direction-down", Controls, Optional)
+RIB_CLASS(DirectionLeft, "direction-left", Controls, Optional)
+RIB_CLASS(DirectionPress, "direction-press", Controls, Optional)
 RIB_CLASS(ControlCallout, "control-callout", Controls, Optional)
 RIB_CLASS(ControlPickerLabel, "control-picker-label", Controls, Optional)
 RIB_CLASS(ControlPickerCurrent, "control-picker-current", Controls, Optional)
@@ -184,6 +192,8 @@ RIB_ELEMENT(SlotStatePrefix, "slot-state-", Generated, Optional)
 RIB_ELEMENT(ControlsDeviceOptionPrefix, "controls-device-option-", Generated, Optional)
 RIB_ELEMENT(ControlGroupPrefix, "control-group-", Generated, Optional)
 RIB_ELEMENT(ControlGroupBindingPrefix, "control-group-binding-", Generated, Optional)
+/* A stick member's mark, by the member's control id. */
+RIB_ELEMENT(ControlDirectionPrefix, "control-direction-", Generated, Optional)
 RIB_ELEMENT(AchievementRowPrefix, "achievement-", Generated, Optional)
 RIB_ELEMENT(AccountRowPrefix, "account-", Generated, Optional)
 /* Ids the exporter builds from a screen's or a row's own id. */
