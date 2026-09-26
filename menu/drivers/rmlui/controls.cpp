@@ -233,7 +233,8 @@ void Controls::refresh()
 {
    int index;
    /* The stop being captured, which is the focused one, is marked capturing.
-    * All members of a stick use the box of their group. */
+    * All members of a stick use the box of their group. In that box, only
+    * the mark of the member waiting now is marked capturing. */
    const std::string captured = capture_active
          ? stop_id(catalog, FocusTarget::item(capture_control)) : std::string();
    for (index = 0; index < catalog.count; ++index)
@@ -245,40 +246,62 @@ void Controls::refresh()
       control_view.set_control_state(stop.c_str(), catalog.entries[index].id.c_str(),
             catalog.entries[index].label.c_str(), binding.c_str(), stop == captured);
       if (!catalog.entries[index].group.empty())
+      {
+         control_view.set_member_capturing(catalog.entries[index].id.c_str(),
+               capture_active && index == capture_control);
          document.set_element_text((document_contract::ControlGroupBindingPrefix
                + catalog.entries[index].group).c_str(), binding.c_str());
+      }
    }
    control_view.set_capturing(capture_active);
 }
 
+void Controls::end_capture(const std::string& words)
+{
+   capture_active = false;
+   this->status.set_controls(words.c_str());
+   screens.restore_footer();
+   refresh();
+}
+
+/* Members captured before CANCEL keep their new binding, because we saved
+ * each one when its capture finished. */
 void Controls::cancel_capture()
 {
    if (!capture_active)
       return;
    rib_host_capture_cancel();
-   capture_active = false;
-   this->status.set_controls(say(Word::BindingUnchanged).c_str());
-   screens.restore_footer();
+   end_capture(say(Word::BindingUnchanged));
+}
+
+bool Controls::capture_member(int index)
+{
+   if (!rib_host_capture_start(catalog.entries[index].bind_index,
+            RIB_CONTROL_CAPTURE_SECONDS))
+      return false;
+   capture_active = true;
+   capture_control = index;
+   /* The gesture that started the capture, or finished the previous member,
+    * is not input for this member. */
+   capture_ignore_pointer = true;
+   this->status.set_controls(say(Word::CaptureCountdown, {{"control", console_name(index)},
+         {"seconds", std::to_string(RIB_CONTROL_CAPTURE_SECONDS)}}).c_str());
    refresh();
+   return true;
 }
 
 void Controls::start_capture(int index)
 {
    if (!active(index))
       return;
-   if (!rib_host_capture_start(catalog.entries[index].bind_index,
-            RIB_CONTROL_CAPTURE_SECONDS))
+   capture_count = bind_members(index, capture_members);
+   capture_step = 0;
+   if (!capture_member(capture_members[0]))
    {
       this->status.set_controls(say(Word::CaptureFailed).c_str());
       return;
    }
-   capture_active = true;
-   capture_control = index;
-   capture_ignore_pointer = true;
-   this->status.set_controls(say(Word::CaptureCountdown, {{"control", console_name(index)},
-         {"seconds", std::to_string(RIB_CONTROL_CAPTURE_SECONDS)}}).c_str());
    screens.set_footer_hint(say(Word::CancelHint).c_str());
-   refresh();
 }
 
 int Controls::find_conflict(int changed_index) const
@@ -514,27 +537,25 @@ void Controls::poll_capture()
             !capture_ignore_pointer, &remaining);
       if (result == RIB_CAPTURE_CAPTURED)
       {
-         int conflict = find_conflict(capture_control);
-         capture_active = false;
+         /* We save each member when we capture it, and for a stick we go on
+          * to the next member. When a save fails, we stop there and say so. */
+         const int conflict = find_conflict(capture_control);
          rib_host_restore_keyboard_mapping();
          const bool saved = save();
-         if (!saved)
-            this->status.set_controls(say(Word::BindingSaveFailed).c_str());
+         if (saved && ++capture_step < capture_count)
+         {
+            if (!capture_member(capture_members[capture_step]))
+               end_capture(say(Word::CaptureFailed));
+         }
+         else if (!saved)
+            end_capture(say(Word::BindingSaveFailed));
          else if (conflict >= 0)
-            this->status.set_controls(say(Word::BindingConflict,
-                  {{"control", console_name(conflict)}}).c_str());
+            end_capture(say(Word::BindingConflict, {{"control", console_name(conflict)}}));
          else
-            this->status.set_controls(say(Word::BindingSaved).c_str());
-         refresh();
-         screens.restore_footer();
+            end_capture(say(Word::BindingSaved));
       }
       else if (result == RIB_CAPTURE_TIMED_OUT)
-      {
-         capture_active = false;
-         this->status.set_controls(say(Word::CaptureTimeout).c_str());
-         screens.restore_footer();
-         refresh();
-      }
+         end_capture(say(Word::CaptureTimeout));
       else
          this->status.set_controls(say(Word::CaptureCountdown,
                {{"control", console_name(capture_control)},

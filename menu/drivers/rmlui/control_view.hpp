@@ -25,6 +25,9 @@ public:
     * it in the scene, is waiting for input. */
    void set_control_state(const char *stop, const char *id, const char *label,
          const char *binding, bool capturing);
+   /* Whether the mark for stick member `id` on the pad, its arrow or dot, is
+    * the one waiting for input. A design may have no mark. */
+   void set_member_capturing(const char *id, bool capturing);
    /* We show CANCEL, marked capturing, only while we capture a binding. */
    void set_capturing(bool capturing);
 private:

@@ -47,6 +47,7 @@ public:
    void focus(FocusTarget target);
    /* End a capture that is waiting, and leave its binding as it was. */
    void cancel_capture();
+   /* Capture the binding of `index`, or of each member in turn for a stick. */
    void start_capture(int index);
    void poll_capture();
    void reset_defaults();
@@ -59,6 +60,7 @@ public:
 
    bool loaded = false;
    bool capture_active = false;
+   /* The control waiting for input now, or for a stick, the member we capture. */
    int capture_control = 0;
    bool capture_ignore_pointer = false;
    /* The pad applied now. */
@@ -78,6 +80,18 @@ private:
    std::string assets, defaults_path, path;
    /* The pad the game was exported with. */
    std::string exported_profile;
+   /* What we capture, in the order from bind_members: for a stick, its members
+    * up, right, down, left and then the click, and any other control alone.
+    * capture_members[capture_step] is capture_control. */
+   int capture_members[RIB_CONTROL_MAX] = {};
+   int capture_count = 0;
+   int capture_step = 0;
+   /* Wait in the host for input for `index`, with its name on the status
+    * line. False when the host cannot capture it. */
+   bool capture_member(int index);
+   /* End the capture, say on the status line how it ended, and put back the
+    * footer of the screen. */
+   void end_capture(const std::string& words);
    bool apply(const char *wanted, bool player_file);
    bool read_defaults(const char *wanted);
    bool read_player_file();

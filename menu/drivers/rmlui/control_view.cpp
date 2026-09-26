@@ -148,6 +148,14 @@ void ControlView::set_control_state(const char *stop, const char *id,
    document.set_element_text((document_contract::ControlBindingPrefix + suffix).c_str(), binding);
 }
 
+void ControlView::set_member_capturing(const char *id, bool capturing)
+{
+   if (!id)
+      return;
+   document.set_class((document_contract::ControlDirectionPrefix + std::string(id)).c_str(),
+         document_contract::Capturing, capturing);
+}
+
 void ControlView::set_capturing(bool capturing)
 {
    if (!document.root())
