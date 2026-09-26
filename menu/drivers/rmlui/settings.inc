@@ -24,7 +24,7 @@ RIB_SETTING_KEY(AudioVolume, "audio_volume")
 /* Whether the game pauses while its window is in the background. */
 RIB_SETTING_KEY(PauseNonactive, "pause_nonactive")
 
-/* A slider of evenly spaced positions between two values. */
+/* A slider of positions, each with the value the exporter declares for it. */
 RIB_SETTING_KIND(Level, "level")
 /* On or off. */
 RIB_SETTING_KIND(Switch, "switch")
