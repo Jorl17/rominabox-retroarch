@@ -1,5 +1,7 @@
 #include "words.hpp"
 
+#include <cstring>
+
 namespace rib {
 namespace {
 struct Known
@@ -14,6 +16,11 @@ const Known known[] = {
 };
 
 constexpr size_t count = kWordCount;
+
+const Known key_words[] = {
+#define RIB_KEY_WORD(name, word) {name, word},
+#include "key_words.inc"
+};
 
 std::vector<std::string>& wording()
 {
@@ -68,5 +75,13 @@ void use_words(const std::vector<std::pair<Word, std::string>>& given)
       words[index] = known[index].english;
    for (const auto& word : given)
       words[static_cast<size_t>(word.first)] = word.second;
+}
+
+std::string key_word(const char *name)
+{
+   for (const Known& key : key_words)
+      if (std::strcmp(name, key.id) == 0)
+         return key.english;
+   return name;
 }
 }

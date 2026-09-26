@@ -33,4 +33,8 @@ std::string say(Word word, std::initializer_list<std::pair<const char *, std::st
 /* Put the words from the design over the English, word by word, and use
  * the English for the rest. Once each time we load a design. */
 void use_words(const std::vector<std::pair<Word, std::string>>& given);
+
+/* The wording for the key with the config name `name` in RetroArch: its
+ * word in key_words.inc, or else the name. */
+std::string key_word(const char *name);
 }

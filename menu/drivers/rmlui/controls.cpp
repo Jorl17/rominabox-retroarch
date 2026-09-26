@@ -319,6 +319,15 @@ std::string Controls::bind_anchor(int index) const
    return document_contract::ControlPrefix + catalog.entries[index].id;
 }
 
+void Controls::bind_lines(unsigned bind_index, char details[][64], char kinds[][8], int *lines) const
+{
+   const int before = *lines;
+   rib_host_bind_lines(bind_index, details, kinds, lines);
+   for (int line = before; line < *lines; ++line)
+      if (std::strcmp(kinds[line], "KEY") == 0)
+         strlcpy(details[line], key_word(details[line]).c_str(), sizeof(details[line]));
+}
+
 std::string Controls::callout_text(int index) const
 {
    int members[RIB_CONTROL_MAX];
@@ -330,7 +339,7 @@ std::string Controls::callout_text(int index) const
       return say(Word::Unbound);
    const int member_count = bind_members(index, members);
    for (int member = 0; member < member_count; ++member)
-      rib_host_bind_lines(catalog.entries[members[member]].bind_index, details, kinds, &lines);
+      bind_lines(catalog.entries[members[member]].bind_index, details, kinds, &lines);
    if (lines <= 0)
       return say(Word::Unbound);
    std::string text;
@@ -357,7 +366,7 @@ void Controls::show_binds(int index)
    {
       int before = lines;
       const unsigned at = catalog.entries[members[member]].bind_index;
-      rib_host_bind_lines(at,
+      bind_lines(at,
             details, kinds, &lines);
       for (slot = before; slot < lines; ++slot)
          titles[slot] = console_name(members[member]);

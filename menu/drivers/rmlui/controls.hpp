@@ -90,6 +90,8 @@ private:
    bool same_bind_target(int left, int right) const;
    /* The element next to which we show the list of bindings of a control. */
    std::string bind_anchor(int index) const;
+   /* Append the host lines for one binding, each key in its words. */
+   void bind_lines(unsigned bind_index, char details[][64], char kinds[][8], int *lines) const;
    /* The bindings of a control, as we show them on its callout. */
    std::string callout_text(int index) const;
    void show_binds(int index);
