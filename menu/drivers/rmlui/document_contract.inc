@@ -229,6 +229,17 @@ RIB_ATTRIBUTE(FactAttribute, "data-fact", State, Optional)
 RIB_FACT(ChosenSlotFact, "chosen-slot")
 /* How many accounts QUICK SIGN IN offers, as a number. */
 RIB_FACT(SavedAccountsFact, "saved-accounts")
+/* The running game's shape, which the player sets on the document as its
+ * width divided by its height to three decimals ("1.333" for 4:3, "1.778"
+ * for 16:9), again each time the menu opens, since a game can change shape
+ * while it runs. A design styles anything by it, as with data-focus. */
+RIB_ATTRIBUTE(GameShapeAttribute, "data-game-shape", State, Optional)
+/* An element a design marks data-game-shaped takes the game's shape: the
+ * player sets its width and height, in dp, as large as the max-width and
+ * max-height its stylesheet gives it allow, and nothing else. Where it sits
+ * is the design's. One the stylesheet gives no largest size, as lengths,
+ * is left alone. */
+RIB_ATTRIBUTE(GameShapedAttribute, "data-game-shaped", Menu, Optional)
 
 #undef RIB_SLOT_COUNT
 #undef RIB_CANVAS
