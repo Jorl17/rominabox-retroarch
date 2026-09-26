@@ -4,6 +4,7 @@
 #include "files.h"
 #include "document.hpp"
 #include "control_view.hpp"
+#include "declarations.h"
 #include "lists.hpp"
 #include "status.hpp"
 #include "sounds.hpp"
@@ -81,8 +82,8 @@ FocusTarget focused_stop(const rib_controls_catalog& catalog, const std::string&
 void Controls::load(const char *assets, const char *data)
 {
    this->assets = assets ? assets : "";
-   defaults_path = this->assets + "/controls-defaults.cfg";
-   path = data && *data ? std::string(data) + "/controls.cfg" : std::string();
+   defaults_path = this->assets + "/" + files::ControlsDefaults;
+   path = data && *data ? std::string(data) + "/" + files::Controls : std::string();
    if (!apply(NULL, false))
       RARCH_WARN("[RmlUi] Controls defaults not found at %s.\n", defaults_path.c_str());
    if (path.empty())
@@ -190,7 +191,7 @@ void Controls::show_pad()
          ? control_view.scene_profile() : exported_profile;
    if (drawn != profile_id)
    {
-      const std::string scene = assets + "/scene-" + profile_id + ".rml";
+      const std::string scene = assets + "/" + files::Scene(profile_id);
       int64_t length = 0;
       void *markup = NULL;
       if (filestream_read_file(scene.c_str(), &markup, &length) && markup

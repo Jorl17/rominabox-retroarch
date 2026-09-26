@@ -4,8 +4,10 @@
  * means required whenever that screen ships; Shared, Menu and Slots are
  * required in every menu document, Splash in the logo-only document.
  * Generated ids are prefixes the exporter fills in, and State classes are set
- * by the player rather than written in markup. The exporter validates every
- * composed menu against this list (desktop/src-tauri/src/menu/contract.rs).
+ * by the player rather than written in markup. The exporter reads this file
+ * (desktop/src-tauri/src/menu/contract.rs): it writes every name it composes
+ * by the name declared here, read when it compiles, and validates every
+ * composed menu against this list.
  * Slots is the required slot-button prefix; kSlotCount expands it to the
  * numbered ids. */
 /* A reader defines the declarations it reads; the others read as nothing. */

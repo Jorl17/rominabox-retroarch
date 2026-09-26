@@ -1,9 +1,9 @@
 #pragma once
 
-/* The built-in document names, shared by the player and the composition tests.
+/* The built-in document names, shared by the player and the exporter.
  * document_contract.inc has one declaration per line on purpose, so we read
- * each one in the Rust contract test without scanning implementation source.
- * A selected design may add more screens and component classes. */
+ * each one in the exporter, as in this header. A selected design may add
+ * more screens and component classes. */
 namespace rib {
 namespace document_contract {
 #define RIB_SLOT_COUNT(count) inline constexpr int kSlotCount = count;

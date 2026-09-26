@@ -13,6 +13,22 @@
 #include <vector>
 
 namespace rib {
+/* The files we write for the menu at export, and their keys, as listed in
+ * declarations.inc. */
+namespace files {
+#define RIB_FILE(name, file) inline constexpr char name[] = file;
+#define RIB_DATA_FILE(name, file) inline constexpr char name[] = file;
+#define RIB_FILES(name, prefix, suffix) \
+   inline std::string name(const std::string& id) { return prefix + id + suffix; }
+#include "declarations.inc"
+}
+namespace keys {
+#define RIB_KEY(name, key) inline constexpr char name[] = key;
+#define RIB_KEYS(name, prefix) \
+   inline std::string name(const std::string& id) { return prefix + id; }
+#include "declarations.inc"
+}
+
 /* design.cfg, which we read once when we load the design. We keep every value
  * whole and never cut what we wrote at export to make it fit. */
 struct ScreenDeclaration

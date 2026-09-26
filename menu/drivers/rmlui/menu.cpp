@@ -340,8 +340,9 @@ static bool initialize(Menu *menu, const char *assets, int width, int height)
    if (!menu->view.initialize(assets, design.fonts, width, height,
             rib_host_core_gl_context(), menu->controls.catalog))
    {
-      RARCH_ERR("[RmlUi] Failed to initialize menu from %s: its menu.rml, or the "
-            "fonts its design.cfg lists, would not load.\n", assets);
+      RARCH_ERR("[RmlUi] Failed to initialize menu from %s: its %s, or the "
+            "fonts its %s lists, would not load.\n", assets, rib::files::Menu,
+            rib::files::Design);
       menu->overlays.stop();
       rib_host_overlay_frames(false);
       return false;
