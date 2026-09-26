@@ -1,4 +1,5 @@
 #include "document_contract.hpp"
+#include "declarations.h"
 #include "document.hpp"
 #include "../../../verbosity.h"
 #include "elements.hpp"
@@ -129,7 +130,7 @@ bool Document::initialize(const char *asset_directory,
    system.text_input = text_input.get();
 #endif
    context = Rml::CreateContext("rominabox-menu", Rml::Vector2i(width, height), nullptr, text_input.get());
-   document = context ? context->LoadDocument(asset_path("menu.rml")) : nullptr;
+   document = context ? context->LoadDocument(asset_path(files::Menu)) : nullptr;
    if (!context || !document)
    {
       Rml::Shutdown();

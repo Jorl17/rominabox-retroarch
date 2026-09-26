@@ -125,18 +125,18 @@ void discover_devices(config_file_t *config, rib_controls_catalog *catalog)
 
 void screens(config_file_t *config, rib::DesignDeclarations& design)
 {
-   for (const std::string& id : ids(value(config, "screens")))
+   for (const std::string& id : ids(value(config, rib::keys::Screens)))
    {
       rib::ScreenDeclaration screen;
       screen.id = id;
-      if (!read(config, "screen_panel_" + id, screen.panel) || screen.panel.empty())
+      if (!read(config, rib::keys::ScreenPanel(id), screen.panel) || screen.panel.empty())
          continue;
-      screen.heading = value(config, "screen_heading_" + id);
-      screen.footer = value(config, "screen_footer_" + id);
-      screen.buttons = ids(value(config, "screen_button_" + id));
-      screen.images = value(config, "screen_images_" + id);
+      screen.heading = value(config, rib::keys::ScreenHeading(id));
+      screen.footer = value(config, rib::keys::ScreenFooter(id));
+      screen.buttons = ids(value(config, rib::keys::ScreenButton(id)));
+      screen.images = value(config, rib::keys::ScreenImages(id));
       std::string role;
-      if (read(config, "screen_role_" + id, role))
+      if (read(config, rib::keys::ScreenRole(id), role))
       {
          screen.role = rib::screen_role(role);
          if (screen.role == rib::ScreenRole::None)
@@ -181,14 +181,14 @@ std::vector<float> levels(const std::string& list)
 
 void settings(config_file_t *config, rib::DesignDeclarations& design)
 {
-   for (const std::string& id : ids(value(config, "settings")))
+   for (const std::string& id : ids(value(config, rib::keys::Settings)))
    {
       rib::SettingDeclaration setting;
       setting.id = id;
-      setting.control = value(config, "setting_control_" + id);
-      setting.file = value(config, "setting_file_" + id);
-      const std::string kind = value(config, "setting_kind_" + id);
-      const std::string key = value(config, "setting_key_" + id);
+      setting.control = value(config, rib::keys::SettingControl(id));
+      setting.file = value(config, rib::keys::SettingFile(id));
+      const std::string kind = value(config, rib::keys::SettingKind(id));
+      const std::string key = value(config, rib::keys::SettingKey(id));
       if (!setting_kind_named(kind, setting.kind))
       {
          RARCH_ERR("[RIB] the setting '%s' is a '%s', which this player does "
@@ -204,10 +204,10 @@ void settings(config_file_t *config, rib::DesignDeclarations& design)
       switch (setting.kind)
       {
          case rib::SettingKind::Level:
-            setting.values = levels(value(config, "setting_values_" + id));
+            setting.values = levels(value(config, rib::keys::SettingValues(id)));
             break;
          case rib::SettingKind::Switch:
-            setting.inverted = value(config, "setting_inverted_" + id) == "true";
+            setting.inverted = value(config, rib::keys::SettingInverted(id)) == "true";
             break;
       }
       if (setting.control.empty() || setting.file.empty()
@@ -223,17 +223,17 @@ void settings(config_file_t *config, rib::DesignDeclarations& design)
 
 void overlays(config_file_t *config, const char *assets, rib::DesignDeclarations& design)
 {
-   for (const std::string& id : ids(value(config, "overlays")))
+   for (const std::string& id : ids(value(config, rib::keys::Overlays)))
    {
       rib::OverlayDeclaration overlay;
       overlay.id = id;
-      overlay.after_ms = number(config, "overlay_after_" + id, 0);
-      overlay.hold_ms = number(config, "overlay_hold_" + id, 0);
+      overlay.after_ms = number(config, rib::keys::OverlayAfter(id), 0);
+      overlay.hold_ms = number(config, rib::keys::OverlayHold(id), 0);
       if (overlay.hold_ms <= 0)
          continue;
-      overlay.leave_ms = number(config, "overlay_leave_" + id, 0);
-      overlay.follows = value(config, "overlay_follows_" + id);
-      overlay.needs = value(config, "overlay_needs_" + id);
+      overlay.leave_ms = number(config, rib::keys::OverlayLeave(id), 0);
+      overlay.follows = value(config, rib::keys::OverlayFollows(id));
+      overlay.needs = value(config, rib::keys::OverlayNeeds(id));
       if (!overlay.needs.empty()
             && !path_is_valid((std::string(assets) + "/" + overlay.needs).c_str()))
       {
@@ -263,7 +263,7 @@ DesignDeclarations load_design(const char *asset_directory)
    DesignDeclarations design;
    if (!asset_directory || !*asset_directory)
       return design;
-   const std::string path = std::string(asset_directory) + "/design.cfg";
+   const std::string path = std::string(asset_directory) + "/" + files::Design;
    std::unique_ptr<config_file_t, decltype(&config_file_free)> config(
          config_file_new_from_path_to_string(path.c_str()), config_file_free);
    if (!config)
@@ -275,16 +275,16 @@ DesignDeclarations load_design(const char *asset_directory)
    screens(config.get(), design);
    settings(config.get(), design);
    overlays(config.get(), asset_directory, design);
-   design.fonts = ids(value(config.get(), "fonts"));
-   design.binds.list = value(config.get(), "binds_list");
-   design.binds.after_ms = number(config.get(), "binds_after", design.binds.after_ms);
-   design.binds.hover_after_ms = number(config.get(), "binds_hover_after", design.binds.hover_after_ms);
-   design.binds.width = number(config.get(), "binds_width", design.binds.width);
+   design.fonts = ids(value(config.get(), keys::Fonts));
+   design.binds.list = value(config.get(), keys::BindsList);
+   design.binds.after_ms = number(config.get(), keys::BindsAfter, design.binds.after_ms);
+   design.binds.hover_after_ms = number(config.get(), keys::BindsHoverAfter, design.binds.hover_after_ms);
+   design.binds.width = number(config.get(), keys::BindsWidth, design.binds.width);
    for (size_t index = 0; index < kWordCount; ++index)
    {
       const Word word = static_cast<Word>(index);
       std::string text;
-      if (read(config.get(), std::string("word_") + word_id(word), text))
+      if (read(config.get(), keys::Word(word_id(word)), text))
          design.words.emplace_back(word, text);
    }
    return design;
@@ -299,12 +299,12 @@ void rib_load_shaders(const char *asset_directory, rib_shader_catalog *catalog)
    if (!asset_directory || !*asset_directory)
       return;
 
-   const std::string path = std::string(asset_directory) + "/shaders.cfg";
+   const std::string path = std::string(asset_directory) + "/" + rib::files::Shaders;
    std::unique_ptr<config_file_t, decltype(&config_file_free)> config(
          config_file_new_from_path_to_string(path.c_str()), config_file_free);
    if (!config)
       return;
-   for (const std::string& id : ids(value(config.get(), "shader_ids")))
+   for (const std::string& id : ids(value(config.get(), rib::keys::ShaderIds)))
    {
       if (catalog->count >= RIB_SHADER_MAX)
       {
@@ -314,7 +314,7 @@ void rib_load_shaders(const char *asset_directory, rib_shader_catalog *catalog)
       }
       rib_shader_declaration& shader = catalog->entries[catalog->count++];
       shader.id = id;
-      shader.preset = value(config.get(), "shader_preset_" + id);
+      shader.preset = value(config.get(), rib::keys::ShaderPreset(id));
    }
 }
 

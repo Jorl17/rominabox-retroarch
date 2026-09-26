@@ -58,7 +58,7 @@ bool Shaders::choose(const char *id)
 
    if (!data.empty())
    {
-      snprintf(choice_path, sizeof(choice_path), "%s/shader-choice", data.c_str());
+      snprintf(choice_path, sizeof(choice_path), "%s/%s", data.c_str(), files::ShaderChoice);
       if (absolute[0])
          snprintf(body, sizeof(body), "%s\n", absolute);
       else
