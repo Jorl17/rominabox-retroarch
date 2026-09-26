@@ -1,5 +1,6 @@
 #include "document_contract.hpp"
 #include "view.hpp"
+#include "sounds.hpp"
 #include "listeners.hpp"
 namespace rib {
 View& menu_view()
@@ -147,8 +148,14 @@ void View::follow_pointer()
    pointer_settled = true;
    settled_x = pointer_x;
    settled_y = pointer_y;
-   if (moved)
-      focus.set(focus.stop_at(document.get_context()->GetHoverElement()));
+   if (!moved)
+      return;
+   /* When the pointer moves onto another stop, we move the focus and play
+    * the same cue as for a key: up when the new stop is above the last one. */
+   Rml::Element *before = focus.current();
+   Rml::Element *to = focus.stop_at(document.get_context()->GetHoverElement());
+   if (focus.set(to) && to != before)
+      play_move_sound(before && to->GetAbsoluteTop() < before->GetAbsoluteTop());
 }
 
 bool View::move_pointer_to(const char *id)
