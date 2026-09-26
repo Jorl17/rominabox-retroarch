@@ -151,11 +151,11 @@ void View::follow_pointer()
    if (!moved)
       return;
    /* When the pointer moves onto another stop, we move the focus and play
-    * the same cue as for a key: up when the new stop is above the last one. */
+    * one cue, the same wherever the stop is. */
    Rml::Element *before = focus.current();
    Rml::Element *to = focus.stop_at(document.get_context()->GetHoverElement());
    if (focus.set(to) && to != before)
-      play_move_sound(before && to->GetAbsoluteTop() < before->GetAbsoluteTop());
+      play_move_sound(false);
 }
 
 bool View::move_pointer_to(const char *id)
