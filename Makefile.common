@@ -239,6 +239,12 @@ endif
 # ROM-in-a-Box: where a game's folders go, which every frontend asks.
 OBJ += rominabox_data_root.o
 
+# ROM-in-a-Box: the Windows player reads its arguments, and runs its cores,
+# in UTF-8 (rominabox.manifest).
+ifneq ($(findstring Win32,$(OS)),)
+   OBJ += rominabox_windows.o
+endif
+
 OBJ += frontend/frontend_driver.o \
        retroarch.o \
        runloop.o \

@@ -1,0 +1,4 @@
+/* ROM-in-a-Box's Windows resources for the player. The manifest takes the
+ * place of MinGW's default one (rominabox.manifest says why). 1 is the
+ * process manifest's id; 24 is RT_MANIFEST. */
+1 24 "rominabox.manifest"
