@@ -50,7 +50,7 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
 
    if (!started)
    {
-      const rib_environment_value given = rib_owned(rib_environment("ROMINABOX_MENU_SCRIPT"));
+      const rib_environment_value given = rib_owned(rib_environment(RIB_ENV_MENU_SCRIPT));
       started = true;
       running = scripted = given != nullptr;
       if (given)

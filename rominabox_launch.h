@@ -30,6 +30,10 @@
 #define RIB_ENV_SHOW_WINDOW "ROMINABOX_SHOW_WINDOW"
 /* A screenshot run: where the menu's picture goes. */
 #define RIB_ENV_MENU_SHOT "ROMINABOX_MENU_SHOT"
+/* A run driven by the menu script of a test build: the steps, comma-separated.
+ * We give such a run no controller in the launcher, so only the script steps
+ * affect it, whatever pads the machine has. */
+#define RIB_ENV_MENU_SCRIPT "ROMINABOX_MENU_SCRIPT"
 /* The program a person opens this game with, absolute, so that a Windows
  * taskbar button pinned from the running game opens it again. We set it only
  * in the Windows launcher, because the game window belongs to the player. */
