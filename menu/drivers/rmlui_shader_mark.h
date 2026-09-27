@@ -10,6 +10,22 @@
 #define RMLUI_SHADER_MARK_H__
 
 #include <string.h>
+#include <file/file_path.h>
+
+/* Whether `current` ends with `relative`, with any separator matching any
+ * other. Windows has two, and a path joined there can contain both. */
+static int rib_shader_mark_ends_with(const char *current, size_t current_len,
+      const char *relative, size_t relative_len)
+{
+   size_t offset;
+   const char *tail = current + current_len - relative_len;
+
+   for (offset = 0; offset < relative_len; ++offset)
+      if (tail[offset] != relative[offset]
+            && !(PATH_CHAR_IS_SLASH(tail[offset]) && PATH_CHAR_IS_SLASH(relative[offset])))
+         return 0;
+   return 1;
+}
 
 static int rib_shader_mark_index(const char *current,
       const char *const *relatives, int count)
@@ -39,11 +55,10 @@ static int rib_shader_mark_index(const char *current,
       current_len  = strlen(current);
       /* At launch we pass the menu-assets path plus this relative preset. We
        * match the end of that path and keep no copy of it elsewhere. With a
-       * slash before it, one preset name cannot match the end of another. */
+       * separator before it, one preset name cannot match the end of another. */
       if (current_len >= relative_len + 1
-            && current[current_len - relative_len - 1] == '/'
-            && !memcmp(current + current_len - relative_len,
-                  relative, relative_len))
+            && PATH_CHAR_IS_SLASH(current[current_len - relative_len - 1])
+            && rib_shader_mark_ends_with(current, current_len, relative, relative_len))
       {
          found = index;
          break;
