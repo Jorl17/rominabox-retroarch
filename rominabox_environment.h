@@ -28,7 +28,10 @@ static INLINE char *rib_environment(const char *name)
 #if defined(_WIN32)
    wchar_t *wide_name = name ? utf8_to_utf16_string_alloc(name) : NULL;
    const wchar_t *wide = wide_name ? _wgetenv(wide_name) : NULL;
-   char *value = wide ? utf16_to_utf8_string_alloc(wide) : NULL;
+   /* A variable is set even when it is empty, as with getenv, and the
+    * conversion returns nothing for an empty string. */
+   char *value = !wide ? NULL
+      : wide[0] ? utf16_to_utf8_string_alloc(wide) : (char*)calloc(1, 1);
    free(wide_name);
    return value;
 #else
