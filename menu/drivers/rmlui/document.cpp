@@ -4,6 +4,7 @@
 #include "../../../verbosity.h"
 #include "elements.hpp"
 #include <RmlUi/Core/StringUtilities.h>
+#include <streams/file_stream.h>
 #include "render/rmlui_gl.h"
 #include <filesystem>
 #include <algorithm>
@@ -78,6 +79,43 @@ void Document::System::JoinPath(Rml::String& output,
    output = (child.is_absolute() ? child : base / child).lexically_normal().u8string();
 }
 
+Rml::FileHandle Document::FileLayer::Open(const Rml::String& path)
+{
+   return reinterpret_cast<Rml::FileHandle>(filestream_open(path.c_str(),
+         RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE));
+}
+
+void Document::FileLayer::Close(Rml::FileHandle file)
+{
+   filestream_close(reinterpret_cast<RFILE*>(file));
+}
+
+size_t Document::FileLayer::Read(void *buffer, size_t size, Rml::FileHandle file)
+{
+   const int64_t read = filestream_read(reinterpret_cast<RFILE*>(file), buffer, (int64_t)size);
+   return read > 0 ? (size_t)read : 0;
+}
+
+bool Document::FileLayer::Seek(Rml::FileHandle file, long offset, int origin)
+{
+   const int position = origin == SEEK_CUR ? RETRO_VFS_SEEK_POSITION_CURRENT
+         : origin == SEEK_END ? RETRO_VFS_SEEK_POSITION_END
+         : RETRO_VFS_SEEK_POSITION_START;
+   return filestream_seek(reinterpret_cast<RFILE*>(file), offset, position) >= 0;
+}
+
+size_t Document::FileLayer::Tell(Rml::FileHandle file)
+{
+   const int64_t at = filestream_tell(reinterpret_cast<RFILE*>(file));
+   return at > 0 ? (size_t)at : 0;
+}
+
+size_t Document::FileLayer::Length(Rml::FileHandle file)
+{
+   const int64_t size = filestream_get_size(reinterpret_cast<RFILE*>(file));
+   return size > 0 ? (size_t)size : 0;
+}
+
 #ifdef RIB_RMLUI_HEADLESS
 double Document::System::GetElapsedTime()
 {
@@ -107,6 +145,7 @@ bool Document::initialize(const char *asset_directory,
 #endif
    renderer->SetViewport(width, height);
    Rml::SetSystemInterface(&system);
+   Rml::SetFileInterface(&file_layer);
    Rml::SetRenderInterface(renderer.get());
 
    if (!Rml::Initialise())

@@ -76,6 +76,19 @@ private:
       double GetElapsedTime() override;
 #endif
    } system;
+   /* We read documents, style sheets and fonts through the libretro file
+    * layer, with UTF-8 paths on every platform. RmlUi reads files with
+    * fopen, and on Windows fopen cannot open a file in a folder whose name
+    * has non-ASCII characters. */
+   struct FileLayer : Rml::FileInterface
+   {
+      Rml::FileHandle Open(const Rml::String& path) override;
+      void Close(Rml::FileHandle file) override;
+      size_t Read(void *buffer, size_t size, Rml::FileHandle file) override;
+      bool Seek(Rml::FileHandle file, long offset, int origin) override;
+      size_t Tell(Rml::FileHandle file) override;
+      size_t Length(Rml::FileHandle file) override;
+   } file_layer;
    void write_capture(int width, int height);
    std::unique_ptr<RominaboxRenderer> renderer;
    std::unique_ptr<TextInputPlatform> text_input;
