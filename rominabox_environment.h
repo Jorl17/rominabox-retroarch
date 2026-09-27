@@ -10,6 +10,7 @@
 #ifndef RIB_ENVIRONMENT_H
 #define RIB_ENVIRONMENT_H
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <boolean.h>
@@ -51,6 +52,21 @@ static INLINE char *rib_data_directory(void)
       return path;
    free(path);
    return NULL;
+}
+
+/* The game's data directory, or we end the process. Without one, we would
+ * use the RetroArch places in the player (folders next to the program on
+ * Windows, the user's Application Support on macOS) and mix the data of this
+ * game with every other. We call this in the frontend on every platform. */
+static INLINE char *rib_require_data_directory(void)
+{
+   char *path = rib_data_directory();
+   if (!path)
+   {
+      fprintf(stderr, "ROM-in-a-Box: " RIB_ENV_DATA_DIR " must be set to an absolute path.\n");
+      exit(1);
+   }
+   return path;
 }
 
 #ifdef __cplusplus

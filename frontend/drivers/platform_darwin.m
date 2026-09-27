@@ -88,7 +88,7 @@
 #include "../../msg_hash.h"
 #include "../../ui/ui_companion_driver.h"
 #include "../../paths.h"
-#include "../../rominabox_launch.h"
+#include "../../rominabox_environment.h"
 
 typedef enum
 {
@@ -407,20 +407,19 @@ static void frontend_darwin_get_env(int *argc, char *argv[],
    char bundle_path_buf[PATH_MAX_LENGTH]   = {0};
    char documents_dir_buf[DIR_MAX_LENGTH]  = {0};
    char application_data[PATH_MAX_LENGTH]  = {0};
-   const char *data_root                    = getenv(RIB_ENV_DATA_DIR);
 #if defined(OSX)
-   if (!data_root || data_root[0] != '/')
-   {
-      fprintf(stderr,
-            "ROM-in-a-Box: ROMINABOX_DATA_DIR must be set to an absolute path.\n");
-      exit(1);
-   }
+   char *data_root                          = rib_require_data_directory();
+#else
+   char *data_root                          = rib_data_directory();
 #endif
-   bool data_root_override                  = data_root && data_root[0] == '/';
+   bool data_root_override                  = data_root != NULL;
    CFBundleRef bundle                      = CFBundleGetMainBundle();
 
    if (!bundle)
+   {
+      free(data_root);
       return;
+   }
 
    bundle_url    = CFBundleCopyBundleURL(bundle);
    bundle_path   = CFURLCopyFileSystemPath(bundle_url, kCFURLPOSIXPathStyle);
@@ -468,6 +467,8 @@ static void frontend_darwin_get_env(int *argc, char *argv[],
       strlcpy(application_data, documents_dir_buf, sizeof(application_data));
 #endif
    }
+
+   free(data_root);
 
    /* By the time we are here:
     * bundle_path_buf is the full path of the .app

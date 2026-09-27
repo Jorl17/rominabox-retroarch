@@ -56,6 +56,7 @@
 #include "../../msg_hash_lbl_str.h"
 #include "../../ui/drivers/ui_win32.h"
 #include "../../gfx/common/win32_common.h"
+#include "../../rominabox_environment.h"
 
 #include "platform_win32.h"
 
@@ -768,6 +769,8 @@ static int frontend_win32_parse_drive_list(void *data, bool load_content)
 static void frontend_win32_env_get(int *argc, char *argv[],
       void *args, void *params_data)
 {
+   /* We start the player only with a data folder passed from the launcher. */
+   free(rib_require_data_directory());
    const char *tmp_dir = getenv("TMP");
    const char *libretro_directory = getenv("LIBRETRO_DIRECTORY");
    const char *libretro_assets_directory = getenv("LIBRETRO_ASSETS_DIRECTORY");
