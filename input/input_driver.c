@@ -8005,7 +8005,13 @@ void input_driver_collect_system_input(input_driver_state_t *input_st,
       /* Gather keyboard input, if enabled
        * Note: Keyboard input always read from
        * port 0 */
-      if (!display_kb && input && input->input_state)
+      if (!display_kb && input && input->input_state
+#ifdef HAVE_RMLUI
+            /* ROM-in-a-Box: we pass a key typed into the menu text entry as
+             * a key event, and as text, not also as a button. */
+            && !rib_rmlui_typing()
+#endif
+         )
       {
          struct menu_state *menu_st  = menu_state_get_ptr();
          bool swap_ok_cancel_buttons = settings->bools.input_menu_swap_ok_cancel_buttons;

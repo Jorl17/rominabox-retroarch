@@ -11,6 +11,9 @@ void rib_rmlui_begin_overlays(void);
 /* Events go to text input only while an account form has keyboard focus. */
 bool rib_rmlui_begin_native_text(void);
 bool rib_rmlui_text_event(bool down, unsigned key, uint32_t character, uint16_t modifiers);
+/* The text entry of the menu has the keyboard focus. We type every key sent to
+ * it, and no key that is down also counts as a button of the menu pad. */
+bool rib_rmlui_typing(void);
 /* Call this on every ordinary exit before teardown. False keeps the session open. */
 bool rib_rmlui_allow_quit(void);
 bool rib_rmlui_overlays_drawing(void);

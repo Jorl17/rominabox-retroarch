@@ -92,6 +92,12 @@ bool rib_rmlui_text_event(bool down, unsigned key, uint32_t character, uint16_t 
          active_menu->achievements.physical(down, key, character, modifiers);
 }
 
+bool rib_rmlui_typing(void)
+{
+   return active_menu && active_menu->initialized && rib_host_menu_open() &&
+         active_menu->achievements.typing();
+}
+
 bool rib_rmlui_begin_native_text(void)
 {
    return active_menu && active_menu->initialized && rib_host_menu_open() &&

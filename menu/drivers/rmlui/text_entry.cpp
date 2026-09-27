@@ -140,11 +140,16 @@ void TextEntry::ProcessEvent(Rml::Event& event)
    while (target && !target->HasAttribute(document_contract::KeyAttribute)) target = target->GetParentNode();
    if (target) rib_host_keyboard_choose(target->GetAttribute<unsigned>(document_contract::KeyAttribute, RIB_KEYBOARD_KEYS));
 }
-bool TextEntry::physical(bool down, unsigned key, uint32_t character, uint16_t modifiers)
+bool TextEntry::typing() const
 {
    if (panel_id.empty() || !document.root()) return false;
    auto *panel = document.root()->GetElementById(panel_id);
-   if (!panel || hidden(panel)) return false;
+   return panel && !hidden(panel);
+}
+bool TextEntry::physical(bool down, unsigned key, uint32_t character, uint16_t modifiers)
+{
+   if (!typing()) return false;
+   auto *panel = document.root()->GetElementById(panel_id);
    if (alt_enter_is_chord(key, modifiers)) return false;
    if (key == RETROK_TAB) {
       /* With Tab the player moves through the fields and buttons of the form,

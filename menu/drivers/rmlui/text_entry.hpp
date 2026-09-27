@@ -14,6 +14,9 @@ public:
    void enable(const char *panel, const char *submit, const char *cancel);
    void disable();
    void update();
+   /* A form is enabled and on screen, so the player types into it on the
+    * physical keyboard, through physical(). */
+   bool typing() const;
    bool physical(bool down, unsigned key, uint32_t character, uint16_t modifiers);
    bool controller(rib_key key);
    bool begin_native_input();

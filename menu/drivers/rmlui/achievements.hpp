@@ -21,6 +21,9 @@ public:
    bool key(rib_key key);
    bool begin_native_input();
    bool physical(bool down, unsigned key, uint32_t character, uint16_t modifiers);
+   /* The sign-in form has the keyboard focus, and in physical() we pass the
+    * keys to the text entry of the form. */
+   bool typing() const { return !modal() && text.typing(); }
    void leave_form();
    void context_lost();
    /* A screen has just been shown, this one when `showing`. The player may
