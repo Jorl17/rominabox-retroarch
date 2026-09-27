@@ -197,6 +197,14 @@ bool rib_host_load_state(void) { return command_event(CMD_EVENT_LOAD_STATE, NULL
 void rib_host_open_menu(void) { if (!rib_host_menu_open()) command_event(CMD_EVENT_MENU_TOGGLE, NULL); }
 void rib_host_resume(void) { command_event(CMD_EVENT_MENU_TOGGLE, NULL); }
 void rib_host_toggle_fullscreen(void) { command_event(CMD_EVENT_FULLSCREEN_TOGGLE, NULL); }
+void rib_host_show_pointer(bool menu_open)
+{
+   video_driver_state_t *video_st = video_state_get_ptr();
+   if (!config_get_ptr()->bools.video_fullscreen)
+      return;
+   if (video_st->poke && video_st->poke->show_mouse)
+      video_st->poke->show_mouse(video_st->data, menu_open);
+}
 void rib_host_quit(void) { command_event(CMD_EVENT_QUIT, NULL); }
 
 void rib_host_apply_device(const char *id, unsigned device)

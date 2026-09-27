@@ -50,6 +50,7 @@
 #endif
 
 #include "../input_keymaps.h"
+#include "../alt_enter_fullscreen.h"
 
 #include "../../configuration.h"
 #include "../../retroarch.h"
@@ -260,6 +261,12 @@ static void dinput_poll(void *data)
          /* Ignore 'unknown/undefined' key */
          di->state[RETROK_UNKNOWN] = 0;
       }
+
+      /* ROM-in-a-Box: Alt+Enter must not also press Return, which is OK in
+       * the menu and Start in a game. With Alt held, we report the key as
+       * up here, as in the Mac keyboard driver (cocoa_input.m). */
+      if (alt_enter_masks_return())
+         di->state[DIK_RETURN] = di->state[DIK_NUMPADENTER] = 0;
 
       /* If both shift keys are pressed simultaneously, the OS will not issue
        * a WM_KEYUP for the first one. That up event will be issued here. */

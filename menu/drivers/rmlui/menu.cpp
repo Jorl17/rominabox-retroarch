@@ -220,6 +220,7 @@ static void reset_interaction(Menu *menu, bool opening)
 void rib_menu_toggle(void *userdata, bool on)
 {
    reset_interaction((Menu*)userdata, on);
+   rib_host_show_pointer(on);
 }
 
 bool rib_menu_consume_toggle(void *userdata)
@@ -389,6 +390,9 @@ void rib_menu_frame(void *data, int width, int height)
             assets && *assets ? assets.get() : RIB_RMLUI_DEFAULT_ASSETS, width, height);
       if (!menu->initialized)
          return;
+      /* Going fullscreen starts a new video driver and hides the pointer, also
+       * with the menu open. */
+      rib_host_show_pointer(rib_host_menu_open());
    }
 
    menu->achievements.update();

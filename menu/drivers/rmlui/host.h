@@ -68,6 +68,9 @@ void rib_host_open_menu(void);
 void rib_host_resume(void);
 /* Switch between fullscreen and a window, as the player does with Alt+Enter. */
 void rib_host_toggle_fullscreen(void);
+/* We show the pointer while the menu is open and hide it while a fullscreen
+ * game runs, as RetroArch does. In a window we always show it. */
+void rib_host_show_pointer(bool menu_open);
 void rib_host_quit(void);
 /* Read or change a RetroArch setting that a player setting controls, while
  * the game runs. A switch is 1 or 0. Returns false if there are no settings. */
