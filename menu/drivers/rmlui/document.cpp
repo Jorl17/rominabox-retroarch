@@ -231,11 +231,7 @@ void Document::render(int width, int height)
    if (!context || !renderer)
       return;
    context->SetDimensions(Rml::Vector2i(width, height));
-   /* The design's canvas, scaled to fit the window whole. */
-   const float density = std::min(
-         static_cast<float>(width) / document_contract::kCanvasWidth,
-         static_cast<float>(height) / document_contract::kCanvasHeight);
-   context->SetDensityIndependentPixelRatio(std::max(density, 0.1f));
+   context->SetDensityIndependentPixelRatio(document_contract::canvas_density(width, height));
    renderer->SetViewport(width, height);
    context->Update();
    renderer->BeginFrame();
