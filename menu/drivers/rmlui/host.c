@@ -302,7 +302,10 @@ void rib_host_level_sound(bool up)
 void rib_host_load_level_cue(const char *path)
 {
 #ifdef HAVE_AUDIOMIXER
-   if (!path || !path_is_valid(path))
+   settings_t *settings = config_get_ptr();
+   /* With audio off the mixer in RetroArch has no output rate, and a sound
+    * loaded into it is resampled to 0 Hz past the end of its buffer. */
+   if (!settings || !settings->bools.audio_enable || !path || !path_is_valid(path))
       return;
    task_push_audio_mixer_load(path, NULL, NULL, true,
          AUDIO_MIXER_SLOT_SELECTION_MANUAL, AUDIO_MIXER_SYSTEM_SLOT_UP);
