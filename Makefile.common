@@ -1088,7 +1088,11 @@ ifeq ($(HAVE_MENU), 1)
       INCLUDE_DIRS += -I$(RMLUI_SOURCE_DIR)/Include -I$(RMLUI_SOURCE_DIR)/Backends
       INCLUDE_DIRS += -I$(RMLUI_SOURCE_DIR)/Dependencies/include $(shell pkg-config --cflags freetype2)
       INCLUDE_DIRS += -Imenu/drivers
-      LIBS += $(RMLUI_BUILD_DIR)/librmlui.a $(shell pkg-config --libs freetype2) -framework OpenGL
+      # OpenGL itself comes from GL_LIBS, which names each platform's library.
+      LIBS += $(RMLUI_BUILD_DIR)/librmlui.a $(shell pkg-config --libs freetype2)
+      # RmlUi is linked as a static archive; its headers otherwise declare
+      # dllimport on Windows.
+      DEFINES += -DRMLUI_STATIC_LIB
       CXXFLAGS += -std=c++17
       NEED_CXX_LINKER = 1
    endif
@@ -2474,12 +2478,19 @@ ifeq ($(HAVE_NETWORKING), 1)
       # ROM-in-a-Box's shared accounts store, which is not RetroArch code. The
       # player's build script hands over its sources; they are compiled here,
       # with RetroArch's own flags and macOS minimum.
-      ifeq ($(RIB_ACCOUNTS_DIR),)
-         $(error HAVE_CHEEVOS needs RIB_ACCOUNTS_DIR, the ROM-in-a-Box accounts store the player build script prepares)
+      # Cleaning compiles nothing, so it needs no store.
+      ifneq ($(MAKECMDGOALS),clean)
+         ifeq ($(RIB_ACCOUNTS_DIR),)
+            $(error HAVE_CHEEVOS needs RIB_ACCOUNTS_DIR, the ROM-in-a-Box accounts store the player build script prepares)
+         endif
       endif
       INCLUDE_DIRS += -I$(RIB_ACCOUNTS_DIR)/accounts -I$(RIB_ACCOUNTS_DIR)/launcher
       OBJ += $(RIB_ACCOUNTS_DIR)/accounts/accounts.o $(RIB_ACCOUNTS_DIR)/accounts/sealed.o \
              $(RIB_ACCOUNTS_DIR)/launcher/portable_fs.o
+      # The store seals account tokens with DPAPI on Windows.
+      ifneq ($(findstring Win32,$(OS)),)
+         LIBS += -lcrypt32
+      endif
 
       ifneq ($(HAVE_THREADS), 1)
          DEFINES += -DRC_NO_THREADS
