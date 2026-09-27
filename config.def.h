@@ -1772,7 +1772,9 @@
 #endif
 
 /* MIDI */
-#if defined(_WIN32) && !defined(_XBOX) && !defined(__WINRT__)
+/* ROM-in-a-Box: the synthesiser is a WinMM device. Without WinMM there is
+ * no driver for it, so we select it only in a WinMM build. */
+#if defined(_WIN32) && !defined(_XBOX) && !defined(__WINRT__) && defined(HAVE_WINMM)
 #define DEFAULT_MIDI_OUTPUT "Microsoft GS Wavetable Synth"
 #else
 #define DEFAULT_MIDI_OUTPUT "OFF"
