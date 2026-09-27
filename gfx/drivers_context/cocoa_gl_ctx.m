@@ -88,12 +88,6 @@ static GLKView *glk_view            = NULL;
 CocoaView *cocoaview_get(void);
 
 #ifdef OSX
-static bool rominabox_title_active(void)
-{
-   const char *title = getenv(RIB_ENV_TITLE);
-   return title && title[0];
-}
-
 /* Show the window, when not fullscreen, at the first swap only. We clear
  * this after showing it, and when going fullscreen, so that we never undo
  * a later hide or minimize. */
@@ -405,12 +399,12 @@ static void cocoa_gl_gfx_ctx_swap_buffers(void *data)
        * focus, so we neither make the window key nor bring it to the front.
        * We still order it in, because otherwise the GL context has no
        * drawable, and we leave it at alpha zero. */
-      if (rominabox_test_window_hidden())
+      if (rib_session_window_hidden())
       {
          [window orderFront:nil];
          rib_window_prepared = false;
       }
-      else if (getenv(RIB_ENV_MENU_SHOT) && !rominabox_test_window_shown())
+      else if (rib_session_menu_shot() && !rib_session_window_shown())
       {
          [window orderFront:nil];
          rib_window_prepared = false;
@@ -611,7 +605,7 @@ static bool cocoa_gl_gfx_ctx_set_video_mode(void *data,
 
    /* In a quiet test we need a drawable, not a display capture. In ordinary
     * launches and explicit hands-on runs we use the fullscreen path below. */
-   if (rominabox_test_window_hidden())
+   if (rib_session_window_hidden())
       fullscreen = false;
 
    if (fullscreen)
@@ -704,7 +698,7 @@ static bool cocoa_gl_gfx_ctx_set_video_mode(void *data,
       }
 
       [[g_view window] setContentSize:NSMakeSize(width, height)];
-      if (rominabox_title_active() && !rib_initial_window_presented
+      if (rib_session_title() && !rib_initial_window_presented
             && !rib_window_prepared && ![[g_view window] isVisible])
          rib_first_show_pending = true;
    }

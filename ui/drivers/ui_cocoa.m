@@ -88,32 +88,9 @@ typedef struct ui_application_cocoa
 static int waiting_argc;
 static char **waiting_argv;
 
-static const char *rominabox_window_title(void)
-{
-   const char *title = getenv(RIB_ENV_TITLE);
-
-   if (title && title[0])
-      return title;
-   return NULL;
-}
-
-static bool rominabox_advanced_access(void)
-{
-   const char *value = getenv(RIB_ENV_ADVANCED_ACCESS);
-
-   return value && string_is_equal(value, "1");
-}
-
-/* In ordinary ROM-in-a-Box exports we hide the stock emulator menus. In
- * standalone RetroArch, and in exports with Advanced unlocked, we keep them. */
-static bool rominabox_restricted_native_menus(void)
-{
-   return rominabox_window_title() && !rominabox_advanced_access();
-}
-
 static NSString *rominabox_menu_app_name(void)
 {
-   const char *title = rominabox_window_title();
+   const char *title = rib_session_title();
 
    if (title)
       return [NSString stringWithUTF8String:title];
@@ -164,7 +141,7 @@ static void ui_window_cocoa_set_title(void *data, char *buf)
    const char* const text   = buf; /* < Can't access buffer directly in the block */
 
    /* We keep the title from the launcher for exported games. */
-   if (rominabox_window_title())
+   if (rib_session_title())
       return;
 
    [[cocoa_view window] setTitle:[NSString stringWithCString:text encoding:NSUTF8StringEncoding]];
@@ -177,7 +154,7 @@ static void ui_window_cocoa_set_droppable(void *data, bool droppable)
 
    /* In restricted exports we must not open dropped files, which would
     * bypass the restriction. Loading content from argv at start is unchanged. */
-   if (rominabox_restricted_native_menus())
+   if (rib_session_restricted())
       droppable = false;
 
    if (droppable)
@@ -446,7 +423,7 @@ static ui_application_t ui_application_cocoa = {
 - (void)performClose:(id)sender
 {
    /* Keep the window open until quitting finishes in the managed session. */
-   if (rominabox_restricted_native_menus())
+   if (rib_session_restricted())
       command_event(CMD_EVENT_QUIT, NULL);
    else
       [super performClose:sender];
@@ -1068,7 +1045,7 @@ static ui_application_t ui_application_cocoa = {
 
 - (void)application:(NSApplication *)sender openFiles:(NSArray *)filenames
 {
-   if (rominabox_restricted_native_menus())
+   if (rib_session_restricted())
    {
       [sender replyToOpenOrPrint:NSApplicationDelegateReplyCancel];
       return;
@@ -1173,7 +1150,7 @@ static void open_document_handler(
 
 - (IBAction)openCore:(id)sender
 {
-   if (rominabox_restricted_native_menus())
+   if (rib_session_restricted())
       return;
 
    const ui_browser_window_t *browser =
@@ -1203,7 +1180,7 @@ static void open_document_handler(
 
 - (void)openDocument:(id)sender
 {
-   if (rominabox_restricted_native_menus())
+   if (rib_session_restricted())
       return;
 
    const ui_browser_window_t *browser =
@@ -1564,7 +1541,7 @@ static void cocoa_create_menu_bar(id delegate)
    NSMenu *menubar = [[NSMenu alloc] init];
    NSMenuItem *item;
    NSMenu *submenu;
-   bool restricted = rominabox_restricted_native_menus();
+   bool restricted = rib_session_restricted();
 
    /* RetroArch (Apple) menu, or a simple About/Hide/Quit menu. */
    item = [[NSMenuItem alloc] init];
@@ -1631,7 +1608,7 @@ static NSWindow *cocoa_create_main_window(void)
                                                     backing:NSBackingStoreBuffered
                                                       defer:NO];
    {
-      const char *rib_title = rominabox_window_title();
+      const char *rib_title = rib_session_title();
       if (rib_title)
          [window setTitle:[NSString stringWithUTF8String:rib_title]];
       else
@@ -1675,7 +1652,7 @@ int main(int argc, char *argv[])
       /* We make an automated run (ROMINABOX_QUIET) an accessory app for this
        * launch only, so a test game does not appear in the Dock. We never set
        * the switch in an ordinary launch. */
-      if (rominabox_test_window_hidden())
+      if (rib_session_window_hidden())
       {
          BOOL accessory = [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
          fprintf(stderr, "[RIB] quiet activation %s\n", accessory ? "accessory" : "refused");
@@ -1709,9 +1686,9 @@ int main(int argc, char *argv[])
 
       /* Keep the placeholder 480x360 window off-screen until the GL
        * context presents the first intended frame. */
-      if (!rominabox_window_title() && !rominabox_test_window_hidden())
+      if (!rib_session_title() && !rib_session_window_hidden())
          [window makeKeyAndOrderFront:nil];
-      if (!rominabox_test_window_hidden())
+      if (!rib_session_window_hidden())
          [NSApp activateIgnoringOtherApps:YES];
       [NSApp run];
 #ifdef HAVE_COCOA_METAL

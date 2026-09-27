@@ -58,6 +58,7 @@
 #include "../../gfx/common/win32_common.h"
 #include "../../rominabox_environment.h"
 #include "../../rominabox_data_root.h"
+#include "../../rominabox_session.h"
 
 #include "platform_win32.h"
 
@@ -96,7 +97,16 @@ static uint8_t g_plat_win32_flags = PLAT_WIN32_FLAG_USE_POWERSHELL;
 #endif
 
 /* static public global variable */
+/* DragAcceptFiles, with which we register every window for dropped files.
+ * In a restricted export we accept no dropped files, because dropping a
+ * file would load content or a core. */
 VOID (WINAPI *DragAcceptFiles_func)(HWND, BOOL);
+static VOID (WINAPI *rib_drag_accept_files)(HWND, BOOL);
+
+static VOID WINAPI rib_gated_drag_accept_files(HWND hwnd, BOOL accept)
+{
+   rib_drag_accept_files(hwnd, accept && !rib_session_restricted());
+}
 
 /* TODO/FIXME - static global variables */
 static char win32_cpu_model_name[64] = {0};
@@ -233,14 +243,15 @@ static bool gfx_init_dwm(void)
       return false;
    }
 
-   DragAcceptFiles_func =
+   rib_drag_accept_files =
       (VOID (WINAPI*)(HWND, BOOL))dylib_proc(shell32_lib, "DragAcceptFiles");
 
    mmcss =
       (HRESULT(WINAPI*)(BOOL))dylib_proc(dwm_lib, "DwmEnableMMCSS");
 #else
-   DragAcceptFiles_func = DragAcceptFiles;
+   rib_drag_accept_files = DragAcceptFiles;
 #endif
+   DragAcceptFiles_func = rib_drag_accept_files ? rib_gated_drag_accept_files : NULL;
 
    if (mmcss)
       mmcss(TRUE);

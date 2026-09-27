@@ -71,6 +71,7 @@
 
 #ifdef HAVE_MENU
 #include "../../menu/menu_driver.h"
+#include "../../rominabox_session.h"
 #endif
 
 #ifdef HAVE_THREADS
@@ -135,6 +136,9 @@ static void ui_window_win32_set_visible(void *data,
 static void ui_window_win32_set_title(void *data, char *buf)
 {
    ui_window_win32_t *window = (ui_window_win32_t*)data;
+   /* We keep the title from the launcher for exported games. */
+   if (rib_session_title())
+      return;
 #ifdef LEGACY_WIN32
    char         *title_local = utf8_to_local_string_alloc(buf);
    SetWindowText(window->hwnd, title_local);

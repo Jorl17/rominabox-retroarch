@@ -26,6 +26,8 @@
 /* An automated run: no sound, and the window stays out of the way. We set it
  * in the launcher for any launch not started by Launch Services. */
 #define RIB_ENV_QUIET "ROMINABOX_QUIET"
+/* A hands-on test: "1" shows the window of an automated run. */
+#define RIB_ENV_SHOW_WINDOW "ROMINABOX_SHOW_WINDOW"
 /* A screenshot run: where the menu's picture goes. */
 #define RIB_ENV_MENU_SHOT "ROMINABOX_MENU_SHOT"
 

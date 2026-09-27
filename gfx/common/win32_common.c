@@ -69,6 +69,7 @@
 
 #ifdef HAVE_MENU
 #include "../../menu/menu_driver.h"
+#include "../../rominabox_session.h"
 #endif
 
 #include <encodings/utf.h>
@@ -124,6 +125,14 @@ extern bool winraw_handle_message(UINT message,
 #endif
 
 HACCEL window_accelerators;
+
+/* The RetroArch menu bar, when the settings turn it on, except in a
+ * restricted export, where we offer none of the emulator menus. */
+static bool win32_menubar_shown(const settings_t *settings)
+{
+   return (settings ? settings->bools.ui_menubar_enable : true)
+      && !rib_session_restricted();
+}
 
 /* Power Request APIs */
 
@@ -461,7 +470,7 @@ static void win32_save_position(void)
             && !(video_st_flags & VIDEO_FLAG_FORCE_FULLSCREEN)
             && !(video_st_flags & VIDEO_FLAG_IS_SWITCHING_DISPLAY_MODE))
       {
-         bool ui_menubar_enable                     = settings->bools.ui_menubar_enable;
+         bool ui_menubar_enable                     = win32_menubar_shown(settings);
          bool window_show_decor                     = settings->bools.video_window_show_decorations;
          settings->uints.window_position_x          = g_win32->pos_x;
          settings->uints.window_position_y          = g_win32->pos_y;
@@ -590,7 +599,7 @@ static LRESULT CALLBACK wnd_proc_common(
             unsigned min_width             = MIN_WIDTH;
             unsigned min_height            = MIN_HEIGHT;
             bool window_show_decor         = settings ? settings->bools.video_window_show_decorations : true;
-            bool ui_menubar_enable         = settings ? settings->bools.ui_menubar_enable : true;
+            bool ui_menubar_enable         = win32_menubar_shown(settings);
 
             if (settings && settings->bools.video_window_save_positions)
                break;
@@ -1470,7 +1479,9 @@ static bool win32_window_create(void *data, unsigned style,
    bool    window_save_positions = settings->bools.video_window_save_positions;
    unsigned    user_width        = width;
    unsigned    user_height       = height;
-   const char *new_label         = msg_hash_to_str(MSG_PROGRAM);
+   /* We title an exported game's window with the game's name. */
+   const char *new_label         = rib_session_title()
+      ? rib_session_title() : msg_hash_to_str(MSG_PROGRAM);
 #ifdef LEGACY_WIN32
    char *title_local             = utf8_to_local_string_alloc(new_label);
 #else
@@ -1641,7 +1652,7 @@ bool win32_has_focus(void *data)
          extra_height            += border_thickness * 2 + title_bar_height;
       }
 
-      if (settings->bools.ui_menubar_enable)
+      if (win32_menubar_shown(settings))
          extra_height            += GetSystemMetrics(SM_CYMENU);
 
       if (     (     g_win32_resize_width  < min_width
@@ -1879,7 +1890,7 @@ void win32_set_window(unsigned *width, unsigned *height,
       settings_t *settings      = config_get_ptr();
       const ui_window_t *window = ui_companion_driver_get_window_ptr();
 #ifdef HAVE_MENU
-      bool ui_menubar_enable    = settings->bools.ui_menubar_enable;
+      bool ui_menubar_enable    = win32_menubar_shown(settings);
 
       if (!fullscreen && ui_menubar_enable)
       {
@@ -2121,18 +2132,19 @@ void win32_apply_dpi_awareness(void)
 }
 
 /* ACCELERATOR TABLE  (replaces IDR_ACCELERATOR1)
- *   Ctrl+O     → ID_M_LOAD_CONTENT
- *   Alt+Enter  → ID_M_FULL_SCREEN */
+ *   Alt+Enter  → ID_M_FULL_SCREEN
+ *   Ctrl+O     → ID_M_LOAD_CONTENT, except in a restricted export, which
+ *                opens no files */
 static HACCEL create_accelerator_table(void)
 {
    ACCEL accel[2];
-   accel[0].fVirt = FCONTROL | FVIRTKEY | FNOINVERT;
-   accel[0].key   = 'O';
-   accel[0].cmd   = ID_M_LOAD_CONTENT;
-   accel[1].fVirt = FALT | FVIRTKEY | FNOINVERT;
-   accel[1].key   = VK_RETURN;
-   accel[1].cmd   = ID_M_FULL_SCREEN;
-   return CreateAcceleratorTableW(accel, 2);
+   accel[0].fVirt = FALT | FVIRTKEY | FNOINVERT;
+   accel[0].key   = VK_RETURN;
+   accel[0].cmd   = ID_M_FULL_SCREEN;
+   accel[1].fVirt = FCONTROL | FVIRTKEY | FNOINVERT;
+   accel[1].key   = 'O';
+   accel[1].cmd   = ID_M_LOAD_CONTENT;
+   return CreateAcceleratorTableW(accel, rib_session_restricted() ? 1 : 2);
 }
 
 

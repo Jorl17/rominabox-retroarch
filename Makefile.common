@@ -236,8 +236,9 @@ ifeq ($(HAVE_DR_MP3), 1)
    DEFINES += -DHAVE_DR_MP3
 endif
 
-# ROM-in-a-Box: where a game's folders go, which every frontend asks.
-OBJ += rominabox_data_root.o
+# ROM-in-a-Box: where a game's folders go, and what the launcher says about
+# the run, which every frontend asks.
+OBJ += rominabox_data_root.o rominabox_session.o
 
 # ROM-in-a-Box: the Windows player reads its arguments, and runs its cores,
 # in UTF-8 (rominabox.manifest).
