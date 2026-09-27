@@ -2029,6 +2029,10 @@ endif
 
 ifeq ($(WANT_WGL), 1)
    OBJ += gfx/drivers_context/wgl_ctx.o
+   # ROM-in-a-Box: a fullscreen game presented through DXGI, which keeps an
+   # HDR desktop in HDR (wgl_dxgi.h). Direct3D is loaded only then.
+   OBJ += gfx/drivers_context/wgl_dxgi.o
+   DEFINES += -DHAVE_WGL_DXGI
 endif
 
 # Compression/Archive

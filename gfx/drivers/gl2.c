@@ -460,12 +460,22 @@ static void gl2_set_viewport(gl2_t *gl,
       unsigned vp_width, unsigned vp_height,
       bool force_full, bool allow_rotate);
 
+/* The framebuffer that represents the window, and the buffer in it from
+ * which we read a screenshot. */
 #ifdef IOS
 /* There is no default frame buffer on iOS. */
 void glkitview_bind_fbo(void);
 #define gl2_renderchain_bind_backbuffer() glkitview_bind_fbo()
+#define gl2_window_read_buffer() GL_BACK
+#elif defined(HAVE_WGL_DXGI)
+/* ROM-in-a-Box: when fullscreen on Windows, we draw into the framebuffer we
+ * present through DXGI (wgl_dxgi.h), and in a window into the default one. */
+#include "../drivers_context/wgl_dxgi.h"
+#define gl2_renderchain_bind_backbuffer() gl2_bind_fb(wgl_window_framebuffer())
+#define gl2_window_read_buffer() (wgl_window_framebuffer() ? RARCH_GL_COLOR_ATTACHMENT0 : GL_BACK)
 #else
 #define gl2_renderchain_bind_backbuffer() gl2_bind_fb(0)
+#define gl2_window_read_buffer() GL_BACK
 #endif
 
 /**
@@ -2583,7 +2593,7 @@ static void gl2_renderchain_readback(
    glPixelStorei(GL_PACK_ALIGNMENT, alignment);
 #ifndef HAVE_OPENGLES
    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
-   glReadBuffer(GL_BACK);
+   glReadBuffer(gl2_window_read_buffer());
 #endif
 
    glReadPixels(

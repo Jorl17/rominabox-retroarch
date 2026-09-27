@@ -48,6 +48,10 @@
 
 #include "../common/win32_common.h"
 
+#ifdef HAVE_WGL_DXGI
+#include "wgl_dxgi.h"
+#endif
+
 #ifdef HAVE_EGL
 #include "../common/egl_common.h"
 #ifdef HAVE_ANGLE
@@ -148,6 +152,16 @@ static unsigned         win32_major       = 0;
 static unsigned         win32_minor       = 0;
 static int              win32_interval    = 0;
 enum gfx_ctx_api win32_api                = GFX_CTX_NONE;
+#ifdef HAVE_WGL_DXGI
+/* ROM-in-a-Box: the presenter for a fullscreen game, through DXGI
+ * (wgl_dxgi.h), or NULL in a window. */
+static wgl_dxgi_t      *win32_dxgi        = NULL;
+
+unsigned wgl_window_framebuffer(void)
+{
+   return win32_dxgi ? wgl_dxgi_framebuffer(win32_dxgi) : 0;
+}
+#endif
 #ifdef HAVE_DYLIB
 static dylib_t          dll_handle        = NULL; /* Handle to OpenGL32.dll/libGLESv2.dll */
 #endif
@@ -487,6 +501,13 @@ static void gfx_ctx_wgl_swap_buffers(void *data)
 #ifdef __WINRT__
          wglSwapBuffers(win32_hdc);
 #else
+#ifdef HAVE_WGL_DXGI
+         if (win32_dxgi)
+         {
+            wgl_dxgi_present(win32_dxgi, win32_interval);
+            break;
+         }
+#endif
          SwapBuffers(win32_hdc);
 #endif
          break;
@@ -517,6 +538,11 @@ static void gfx_ctx_wgl_destroy(void *data)
          {
             uint32_t video_st_flags;
             video_driver_state_t *video_st = video_state_get_ptr();
+#ifdef HAVE_WGL_DXGI
+            /* While the OpenGL context is still current. */
+            wgl_dxgi_free(win32_dxgi);
+            win32_dxgi = NULL;
+#endif
             gl_finish();
             wglMakeCurrent(NULL, NULL);
 
@@ -655,6 +681,14 @@ static bool gfx_ctx_wgl_set_video_mode(void *data,
 
    if (win32_api == GFX_CTX_OPENGL_API)
       p_swap_interval = (BOOL (APIENTRY *)(int))gfx_ctx_wgl_get_proc_address("wglSwapIntervalEXT");
+
+#ifdef HAVE_WGL_DXGI
+   /* We restart the video driver, window and context to go fullscreen, so
+    * we make a context either for a window or for the screen, and present
+    * one for the screen through DXGI from its first frame. */
+   if (fullscreen && win32_api == GFX_CTX_OPENGL_API && win32_hrc && !win32_dxgi)
+      win32_dxgi = wgl_dxgi_new(win32_get_window());
+#endif
 
    gfx_ctx_wgl_swap_interval(data, win32_interval);
    return true;
