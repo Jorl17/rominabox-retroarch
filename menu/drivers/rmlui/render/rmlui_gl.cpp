@@ -32,6 +32,15 @@ struct LegacyGlState
       glGetIntegerv(GL_MATRIX_MODE, &matrix_mode);
       glPushAttrib(GL_ALL_ATTRIB_BITS);
       glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+      /* After the RetroArch GLSL path, generic vertex attribute arrays may
+       * still be enabled. Where attribute 0 is also the fixed-function vertex
+       * position (in the NVIDIA compatibility profile), an enabled array
+       * replaces the menu positions and nothing appears. We restore their
+       * enable bits with the client vertex-array state in the pop below. */
+      GLint attributes = 0;
+      glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &attributes);
+      for (GLint i = 0; i < attributes; i++)
+         glDisableVertexAttribArray((GLuint)i);
       glMatrixMode(GL_PROJECTION);
       glPushMatrix();
       glMatrixMode(GL_MODELVIEW);
