@@ -14,6 +14,10 @@ RETRO_BEGIN_DECLS
  * title updates in RetroArch do not replace it. */
 const char *rib_session_title(void);
 
+/* The game's identity, the name of its data folder, when the player runs as
+ * an exported game, or NULL when it runs as RetroArch. */
+const char *rib_session_identity(void);
+
 /* The builder unlocked the full emulator behind Advanced. */
 bool rib_session_advanced_access(void);
 
@@ -30,6 +34,11 @@ bool rib_session_window_shown(void);
 
 /* A run that is only here to photograph the menu. */
 bool rib_session_menu_shot(void);
+
+/* The program to open this game again, UTF-8, when the game window is a
+ * window of another program than the one a person opened (Windows), or NULL
+ * otherwise. Valid for the whole process. */
+const char *rib_session_relaunch(void);
 
 RETRO_END_DECLS
 

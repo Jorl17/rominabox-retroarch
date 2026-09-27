@@ -24,21 +24,35 @@ static bool rib_is_one(const char *name)
    return one;
 }
 
+/* The variable `name` as we read it at the first request, or NULL when it
+ * is unset or empty. */
+static const char *rib_text_once(const char *name, bool *read, char **value)
+{
+   if (!*read)
+   {
+      *read  = true;
+      *value = rib_environment(name);
+      if (*value && !(*value)[0])
+      {
+         free(*value);
+         *value = NULL;
+      }
+   }
+   return *value;
+}
+
 const char *rib_session_title(void)
 {
    static bool read;
    static char *title;
-   if (!read)
-   {
-      read  = true;
-      title = rib_environment(RIB_ENV_TITLE);
-      if (title && !title[0])
-      {
-         free(title);
-         title = NULL;
-      }
-   }
-   return title;
+   return rib_text_once(RIB_ENV_TITLE, &read, &title);
+}
+
+const char *rib_session_identity(void)
+{
+   static bool read;
+   static char *identity;
+   return rib_text_once(RIB_ENV_GAME_IDENTITY, &read, &identity);
 }
 
 bool rib_session_advanced_access(void)
@@ -64,4 +78,11 @@ bool rib_session_window_hidden(void)
 bool rib_session_menu_shot(void)
 {
    return rib_is_set(RIB_ENV_MENU_SHOT);
+}
+
+const char *rib_session_relaunch(void)
+{
+   static bool read;
+   static char *program;
+   return rib_text_once(RIB_ENV_RELAUNCH, &read, &program);
 }

@@ -1477,6 +1477,59 @@ LRESULT CALLBACK wnd_proc_gdi_common(HWND hwnd, UINT message,
 }
 #endif
 
+/* ROM-in-a-Box: the game window is a window of the player process, not of the
+ * launcher that a person opens, so pinning it would pin the player, which
+ * cannot run without the launcher. We give the window an application id per
+ * game, the launcher as its relaunch command, and the game's name and icon
+ * for the pinned button. */
+static const PROPERTYKEY rib_app_id          = {{0x9F4C2855, 0x9F79, 0x4B39,
+   {0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3}}, 5};
+static const PROPERTYKEY rib_relaunch_command = {{0x9F4C2855, 0x9F79, 0x4B39,
+   {0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3}}, 2};
+static const PROPERTYKEY rib_relaunch_icon    = {{0x9F4C2855, 0x9F79, 0x4B39,
+   {0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3}}, 3};
+static const PROPERTYKEY rib_relaunch_name    = {{0x9F4C2855, 0x9F79, 0x4B39,
+   {0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3}}, 4};
+static const IID rib_property_store_iid       = {0x886D8EEB, 0x8CF2, 0x4446,
+   {0x8D, 0x02, 0xCD, 0xBA, 0x1D, 0xBD, 0xCF, 0x99}};
+
+static void win32_set_window_text(IPropertyStore *store,
+      const PROPERTYKEY *key, const char *utf8)
+{
+   PROPVARIANT value;
+   wchar_t *text = utf8_to_utf16_string_alloc(utf8);
+   if (!text)
+      return;
+   memset(&value, 0, sizeof(value));
+   value.vt      = VT_LPWSTR;
+   value.pwszVal = text;
+   store->lpVtbl->SetValue(store, key, &value);
+   free(text);
+}
+
+static void win32_label_for_taskbar(HWND hwnd)
+{
+   char text[PATH_MAX_LENGTH + 16];
+   IPropertyStore *store  = NULL;
+   const char *program    = rib_session_relaunch();
+   const char *title      = rib_session_title();
+   const char *identity   = rib_session_identity();
+   if (program && title && identity
+         && SUCCEEDED(SHGetPropertyStoreForWindow(hwnd,
+               &rib_property_store_iid, (void**)&store)))
+   {
+      snprintf(text, sizeof(text), "ROMinaBox.Game.%s", identity);
+      win32_set_window_text(store, &rib_app_id, text);
+      snprintf(text, sizeof(text), "\"%s\"", program);
+      win32_set_window_text(store, &rib_relaunch_command, text);
+      snprintf(text, sizeof(text), "%s,0", program);
+      win32_set_window_text(store, &rib_relaunch_icon, text);
+      win32_set_window_text(store, &rib_relaunch_name, title);
+      store->lpVtbl->Commit(store);
+      store->lpVtbl->Release(store);
+   }
+}
+
 static bool win32_window_create(void *data, unsigned style,
       RECT *mon_rect, unsigned width,
       unsigned height, bool fullscreen)
@@ -1524,6 +1577,7 @@ static bool win32_window_create(void *data, unsigned style,
       return false;
 
    window_accelerators = win32_resources_get_accelerator();
+   win32_label_for_taskbar(main_window.hwnd);
 
 #ifdef HAVE_TASKBAR
    g_win32->taskbar_message            =
