@@ -81,10 +81,14 @@ void discover_controls(config_file_t *config, const std::string& profile_id,
       if (!belonging.empty()
             && std::find(belonging.begin(), belonging.end(), id) == belonging.end())
          continue;
-      if (!bind_index_resolver(id, &bind_index))
+      std::string slot = value(config, rib::keys::ControlPosition(id));
+      if (slot.empty())
+         slot = id;
+      if (!bind_index_resolver(slot.c_str(), &bind_index))
       {
          RARCH_WARN("[RIB] '%s' is not a libretro bind; the menu will not show "
-               "it. Check the id against DECLARE_BIND in configuration.c.\n", id);
+               "'%s'. Check it against DECLARE_BIND in configuration.c.\n",
+               slot.c_str(), id);
          continue;
       }
       if (catalog->count >= RIB_CONTROL_MAX)
@@ -98,6 +102,7 @@ void discover_controls(config_file_t *config, const std::string& profile_id,
       rib_control_declaration& control = catalog->entries[catalog->count];
       control.id = id;
       control.group = value(config, rib::keys::ControlGroup(id));
+      control.slot = slot;
       control.bind_index = bind_index;
       ++catalog->count;
    }

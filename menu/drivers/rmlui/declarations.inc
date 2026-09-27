@@ -47,7 +47,8 @@ RIB_DATA_FILE(ShaderChoice, "shader-choice")
 
 /* The controls files, beside RetroArch's own input_player1_ bindings: the pad
  * in use, the pads the picker offers, each pad's name, emulated device and
- * controls, and each control's label and the group it is drawn in. */
+ * controls, and each control's label, the group it is drawn in, and the pad
+ * position it is read from when that is not its own. */
 RIB_CONTROLS_KEY(ControlsProfile, "controls_profile")
 RIB_CONTROLS_KEY(ControlsVariants, "controls_variants")
 RIB_CONTROLS_KEYS(ControlsVariantName, "controls_variant_name_")
@@ -55,6 +56,7 @@ RIB_CONTROLS_KEYS(ControlsVariantDevice, "controls_variant_device_")
 RIB_CONTROLS_KEYS(ControlsVariantControls, "controls_variant_controls_")
 RIB_CONTROLS_KEYS(ControlLabel, "rib_label_")
 RIB_CONTROLS_KEYS(ControlGroup, "rib_group_")
+RIB_CONTROLS_KEYS(ControlPosition, "rib_position_")
 
 /* design.cfg: the design's screens, settings, overlays, bind list, fonts and
  * words. A list is ids separated by spaces. */

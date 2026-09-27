@@ -141,7 +141,7 @@ bool Controls::read_defaults(const char *wanted)
       catalog.entries[index].label.clear();
       rib_host_clear_bind(catalog.entries[index].bind_index);
       rib_controls_read_label(config, &catalog.entries[index]);
-      rib_host_load_bind(config, catalog.entries[index].id.c_str(), catalog.entries[index].bind_index);
+      rib_host_load_bind(config, catalog.entries[index].slot.c_str(), catalog.entries[index].bind_index);
    }
    rib_host_restore_keyboard_mapping();
    config_file_free(config);
@@ -175,7 +175,7 @@ bool Controls::read_player_file()
       if (!active(index))
          continue;
       rib_controls_read_label(config, &catalog.entries[index]);
-      rib_host_load_bind(config, catalog.entries[index].id.c_str(), catalog.entries[index].bind_index);
+      rib_host_load_bind(config, catalog.entries[index].slot.c_str(), catalog.entries[index].bind_index);
    }
    rib_host_restore_keyboard_mapping();
    config_file_free(config);
@@ -221,7 +221,7 @@ bool Controls::save()
          continue;
       const rib_control_declaration& control = catalog.entries[index];
       config_set_string(config, keys::ControlLabel(control.id).c_str(), control.label.c_str());
-      rib_host_write_bind(config, control.id.c_str(), control.bind_index);
+      rib_host_write_bind(config, control.slot.c_str(), control.bind_index);
    }
 
    saved = rib_write_menu_config(config, path.c_str());

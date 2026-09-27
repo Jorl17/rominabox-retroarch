@@ -129,6 +129,9 @@ struct rib_control_declaration
 {
    std::string id;
    std::string group;
+   /* The pad position we read it from, and so the bind under which we store
+    * its keys and buttons: its id unless the author moved it. */
+   std::string slot;
    unsigned bind_index = 0;
    bool enabled = false;
    std::string label;
