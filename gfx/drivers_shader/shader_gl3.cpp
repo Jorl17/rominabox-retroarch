@@ -157,6 +157,13 @@ GLuint gl3_cross_compile_program(
       opts.fragment.default_float_precision = spirv_cross::CompilerGLSL::Options::Precision::Highp;
       opts.fragment.default_int_precision   = spirv_cross::CompilerGLSL::Options::Precision::Highp;
       opts.enable_420pack_extension         = false;
+      /* ROM-in-a-Box: GLSL has arrays of arrays from 4.30 (ES 3.10). Below
+       * that, SPIRV-Cross requires GL_ARB_arrays_of_arrays, which OpenGL 4.1
+       * on macOS does not have, so some libretro crt presets do not compile.
+       * We write each as one array, and then they compile. */
+      opts.flatten_multidimensional_arrays  = opts.es
+         ? opts.version < 310
+         : opts.version < 430;
 
       vertex_compiler.set_common_options(opts);
       fragment_compiler.set_common_options(opts);
