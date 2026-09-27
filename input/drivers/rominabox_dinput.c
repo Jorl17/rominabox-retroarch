@@ -474,6 +474,8 @@ static HRESULT STDMETHODCALLTYPE input_create_device(IDirectInput8A *self, REFGU
    device->refs         = 1;
    device->pad          = (unsigned)pad;
    *out                 = &device->iface;
+   RARCH_LOG("[RIB] Controller \"%s\" opened through the launcher.\n",
+         relay->pads[pad].device.tszProductName);
    return DI_OK;
 }
 
