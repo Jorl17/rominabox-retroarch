@@ -96,6 +96,9 @@ private:
     * footer of the screen. */
    void end_capture(const std::string& words);
    bool apply(const char *wanted, bool player_file);
+   /* Apply the emulated device of pad `id` to the core, and write it to the
+    * remap we read at the next launch. */
+   void apply_device(const std::string& id);
    bool read_defaults(const char *wanted);
    bool read_player_file();
    std::string player_profile();

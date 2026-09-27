@@ -479,31 +479,33 @@ void Controls::update_binds(int x, int y, bool pointer_active)
       show_binds(current);
 }
 
+/* We apply it to the core now, not at the next launch. The emulated device
+ * is a setting in RetroArch, and we apply it again with
+ * CMD_EVENT_CONTROLLER_INIT, as for any other change of device in the
+ * frontend. A catalog device of 0 means "no subclass". The default in the
+ * frontend is then a joypad, and writing 0 would connect nothing. At the next
+ * launch we read the device from the remap and not from the per-game override. */
+void Controls::apply_device(const std::string& id)
+{
+   for (int index = 0; index < catalog.device_count; ++index)
+      if (catalog.devices[index].id == id)
+      {
+         rib_host_apply_device(id.c_str(), catalog.devices[index].libretro);
+         return;
+      }
+}
+
 void Controls::choose_device(const char *chosen)
 {
    device_picker_open = false;
    if (chosen && *chosen && profile_id != chosen)
    {
-      int index;
-
       profile_id = chosen;
       /* The pad belongs to the player who picks it, so we write it to the
        * per-game override and never to the author's fixed defaults. */
       save();
 
-      /* We apply it to the core now, not at the next launch. The
-       * emulated device is a setting in RetroArch, and we apply it again
-       * with CMD_EVENT_CONTROLLER_INIT, as for any other change of device
-       * in the frontend. A catalog device of 0 means "no subclass". The
-       * default in the frontend is then a joypad, and writing 0 would
-       * connect nothing. At the next launch we read the device from the
-       * remap and not from the per-game override. */
-      for (index = 0; index < catalog.device_count; ++index)
-         if (catalog.devices[index].id == chosen)
-         {
-            rib_host_apply_device(chosen, catalog.devices[index].libretro);
-            break;
-         }
+      apply_device(chosen);
 
       if (!apply(chosen, true))
          RARCH_ERR("[RIB] could not re-read controls from %s after changing "
@@ -521,8 +523,15 @@ void Controls::reset_defaults()
       cancel_capture();
    device_picker_open = false;
    if (!apply(NULL, false))
+   {
       this->status.set_controls(say(Word::DefaultsLoadFailed).c_str());
-   else if (!save())
+      refresh();
+      return;
+   }
+   /* The author's pad, and so the device for it, because the player may
+    * have picked another pad. */
+   apply_device(profile_id);
+   if (!save())
       this->status.set_controls(say(Word::DefaultsSaveFailed).c_str());
    else
       this->status.set_controls(say(Word::DefaultsRestored).c_str());
