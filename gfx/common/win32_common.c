@@ -1959,6 +1959,19 @@ bool win32_set_video_mode(void *data,
    if (rib_session_window_hidden())
       fullscreen         = false;
 
+   /* ROM-in-a-Box: we give a window's size in points, as on macOS, so a
+    * game opens as large on a 200% display as on a Retina one. We mark this
+    * process as DPI-aware, so that Windows does not scale it. */
+   if (!fullscreen)
+   {
+      HDC screen         = GetDC(NULL);
+      const int dpi      = screen ? GetDeviceCaps(screen, LOGPIXELSX) : 96;
+      if (screen)
+         ReleaseDC(NULL, screen);
+      width              = MulDiv(width,  dpi, 96);
+      height             = MulDiv(height, dpi, 96);
+   }
+
    rect.left             = 0;
    rect.top              = 0;
    rect.right            = 0;

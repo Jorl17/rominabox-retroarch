@@ -4006,8 +4006,10 @@ bool video_driver_init_internal(bool *video_is_threaded, bool verbosity_enabled)
       else
 #endif
       {
-#if (defined(_WIN32) && !defined(_XBOX) && !defined(__WINRT__)) ||  \
-    (defined(HAVE_COCOA_METAL) && !defined(HAVE_COCOATOUCH))
+         /* ROM-in-a-Box: in the Windows player we take the window size from
+          * video_window_custom_size_enable, as in the macOS GL player, so
+          * a game opens at the same size on both with one setting. */
+#if defined(HAVE_COCOA_METAL) && !defined(HAVE_COCOATOUCH)
          bool window_custom_size_enable = settings->bools.video_window_save_positions;
 #else
          bool window_custom_size_enable = settings->bools.video_window_custom_size_enable;
