@@ -84,6 +84,7 @@ void View::wire_document()
          element->AddEventListener(Rml::EventId::Mouseout, new HoverListener(hovered, event));
       }
 
+   lists.paginate_all();
    controls.wire(*catalog);
    parts.wire_part_toggles();
    parts.wire_arrows();

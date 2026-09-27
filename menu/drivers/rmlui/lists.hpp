@@ -31,6 +31,8 @@ public:
    // Replace generated data through the staged prototype from the design, and
    // keep the current page where possible. We leave static lists unchanged.
    void replace_rows(const char *list_id, const std::vector<Row>& rows);
+   /* Split every list in the document into pages, as it loads. */
+   void paginate_all() const;
    /* For a switch, set the fact `on` and the word for its state in `<id>-state`. */
    void set_toggle(const char *id, const char *state, bool on);
    Rml::Element *visible_list() const;
@@ -47,8 +49,8 @@ public:
    int rows_in(const char *list_id) const;
    /* The id of row `index` of the list, or "". */
    std::string row_in(const char *list_id, int index) const;
-   /* Hide the pages without rows and show the one with `keep_row`, or the
-    * first. */
+   /* Split the list again after we showed or hid rows, and show the page with
+    * `keep_row`, or the first. */
    void retarget_pages(const char *list_id, const char *keep_row = nullptr) const;
    void place_list(const char *list_id, const char *anchor_id, int width_dp) const;
 
@@ -56,7 +58,12 @@ private:
    Rml::Element *list_element(const char *list_id) const;
    void select_in(Rml::Element *list, const char *row_id,
          const char *on, const char *off) const;
+   static bool row_shown(Rml::Element *row);
    static bool page_has_row(Rml::Element *page);
+   static std::vector<Rml::Element*> paged_rows(Rml::Element *list);
+   Rml::Element *add_page(Rml::Element *list) const;
+   void paginate(Rml::Element *list, std::vector<Rml::Element*> rows,
+         int shown, Rml::Element *keep = nullptr) const;
    static void mark_pager(Rml::Element *list, int page, int pages);
    static std::vector<Rml::Element*> usable_pages(Rml::Element *list);
    static void show_page(Rml::Element *list, const std::vector<Rml::Element*>& pages, int shown);
