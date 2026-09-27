@@ -28,6 +28,7 @@
 #include <stdlib.h>
 
 #include "../common/gl3_defines.h"
+#include "../common/gl_window.h"
 
 #include <encodings/utf.h>
 #include <gfx/gl_capabilities.h>
@@ -240,6 +241,12 @@ static const float gl3_colors[16]          = {
 static void gl3_set_viewport(gl3_t *gl,
       unsigned vp_width, unsigned vp_height,
       bool force_full,   bool allow_rotate);
+
+/* Draw into the framebuffer that represents the window (gl_window.h). */
+static void gl3_bind_window(void)
+{
+   glBindFramebuffer(GL_FRAMEBUFFER, gl_window_framebuffer());
+}
 
 /**
  * GL3 COMMON
@@ -1462,7 +1469,7 @@ static void gl3_pbo_async_readback(gl3_t *gl)
    glPixelStorei(GL_PACK_ALIGNMENT, 4);
    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
 #ifndef HAVE_OPENGLES
-   glReadBuffer(GL_BACK);
+   glReadBuffer(gl_window_read_buffer());
 #endif
    if (gl->pbo_readback_index >= GL_CORE_NUM_PBOS)
       gl->pbo_readback_index = 0;
@@ -1844,7 +1851,7 @@ static bool gl3_init_hw_render(gl3_t *gl, unsigned width, unsigned height)
    gl->hw_render_max_width  = width;
    gl->hw_render_max_height = height;
    glBindTexture(GL_TEXTURE_2D, 0);
-   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+   gl3_bind_window();
 
    if (gl->flags & GL3_FLAG_USE_SHARED_CONTEXT)
       gl->ctx_driver->bind_hw_render(gl->ctx_data, false);
@@ -3935,7 +3942,7 @@ static void gl3_renderchain_render(
    fbo_tex_info_cnt++;
 
    /* Render our FBO texture to back buffer. */
-   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+   gl3_bind_window();
 
    gl->chain.shader->use(gl, gl->chain.shader_data,
          gl->chain.num_fbo_passes + 1, true);
@@ -4024,8 +4031,7 @@ static bool gl3_frame(void *data, const void *frame,
    if (gl->chain.active)
       gl->chain.shader->use(gl, gl->chain.shader_data, 1, true);
 
-#ifdef IOS
-   /* Apparently the viewport is lost each frame, thanks Apple. */
+#if GL_WINDOW_LOSES_VIEWPORT
    gl3_set_viewport(gl, width, height, false, true);
 #endif
 
@@ -4175,7 +4181,7 @@ static bool gl3_frame(void *data, const void *frame,
       {
          if (gl->chain.num_fbo_passes == 0)
          {
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            gl3_bind_window();
             gl3_set_viewport(gl, width, height, false, true);
          }
 
@@ -4339,7 +4345,7 @@ static bool gl3_frame(void *data, const void *frame,
       gl3_filter_chain_build_offscreen_passes(filter_chain,
             &gl->filter_chain_vp);
 
-      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      gl3_bind_window();
       glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
       glClear(GL_COLOR_BUFFER_BIT);
       gl3_filter_chain_build_viewport_pass(filter_chain,
@@ -4348,6 +4354,9 @@ static bool gl3_frame(void *data, const void *frame,
             ? gl->mvp.data
             : gl->mvp_yflip.data);
       gl3_filter_chain_end_frame(filter_chain);
+      /* We unbind the framebuffer of each pass at its end, and draw the
+       * overlays, the menu and messages over the picture in the window. */
+      gl3_bind_window();
    }
 #endif /* HAVE_SLANG */
 
@@ -4400,7 +4409,7 @@ static bool gl3_frame(void *data, const void *frame,
       glPixelStorei(GL_PACK_ROW_LENGTH, 0);
       glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 #ifndef HAVE_OPENGLES
-      glReadBuffer(GL_BACK);
+      glReadBuffer(gl_window_read_buffer());
 #endif
       glReadPixels(
             (gl->vp.x > 0) ? gl->vp.x : 0,
