@@ -72,6 +72,7 @@
 #include "../../menu/menu_driver.h"
 #include "../../command.h"
 #include "../../rominabox_session.h"
+#include "win32_quiet_window.h"
 #endif
 
 #include <encodings/utf.h>
@@ -1610,16 +1611,7 @@ static bool win32_window_create(void *data, unsigned style,
                window_opacity) / 100, LWA_ALPHA);
    }
 #endif
-   /* In an automated run we keep the window for the drawable, but out of the
-    * way of the person at the machine. It is fully transparent and never
-    * activated, clicks pass through it, and it has no taskbar button. */
-   if (rib_session_window_hidden())
-   {
-      SetWindowLongPtr(main_window.hwnd, GWL_EXSTYLE,
-            GetWindowLongPtr(main_window.hwnd, GWL_EXSTYLE)
-            | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
-      SetLayeredWindowAttributes(main_window.hwnd, 0, 0, LWA_ALPHA);
-   }
+   rominabox_prepare_test_window(main_window.hwnd);
    return true;
 }
 #endif
