@@ -157,6 +157,45 @@ struct CoreGlState
    }
 };
 
+/* The unpack state for the pictures of the menu, tightly packed, from the
+ * pointer from RmlUi. For the frame of a game we set these for its upload,
+ * and after glcore the row length is still the pitch of the frame. With that
+ * stride we would read every glyph wrong and garble the text of the menu.
+ * In RmlUi the pictures are made while we draw the menu, so we set these to
+ * the GL defaults for the frame of the menu and restore them after it, in
+ * either context. */
+struct UnpackState
+{
+   GLint buffer = 0;
+   GLint row_length = 0;
+   GLint skip_rows = 0;
+   GLint skip_pixels = 0;
+   GLint alignment = 4;
+
+   void save()
+   {
+      glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &buffer);
+      glGetIntegerv(GL_UNPACK_ROW_LENGTH, &row_length);
+      glGetIntegerv(GL_UNPACK_SKIP_ROWS, &skip_rows);
+      glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &skip_pixels);
+      glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
+      glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+      glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+      glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+      glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+      glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+   }
+
+   void restore() const
+   {
+      glBindBuffer(GL_PIXEL_UNPACK_BUFFER, buffer);
+      glPixelStorei(GL_UNPACK_ROW_LENGTH, row_length);
+      glPixelStorei(GL_UNPACK_SKIP_ROWS, skip_rows);
+      glPixelStorei(GL_UNPACK_SKIP_PIXELS, skip_pixels);
+      glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
+   }
+};
+
 Rml::TextureHandle load_png(Rml::RenderInterface& backend,
       Rml::Vector2i& dimensions, const Rml::String& source)
 {
@@ -205,12 +244,14 @@ public:
          core.save();
       else
          legacy.save();
+      unpack.save();
       backend.BeginFrame();
    }
 
    void EndFrame() override
    {
       backend.EndFrame();
+      unpack.restore();
       if constexpr (std::is_same<Backend, RenderInterface_GL3>::value)
          core.restore();
       else
@@ -338,6 +379,7 @@ private:
    Backend backend;
    LegacyGlState legacy;
    CoreGlState core;
+   UnpackState unpack;
 };
 }
 
