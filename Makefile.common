@@ -2621,9 +2621,11 @@ ifneq ($(findstring FPGA,$(OS)),)
    OBJ += gfx/drivers/fpga_gfx.o
 endif
 
+# ROM-in-a-Box: no media/rarch.o. A game's export writes the game's icon into
+# its player as group 1, the one RetroArch's window loads, so RetroArch's own
+# icon would be 296 KB of dead weight in every game.
 ifneq ($(findstring Win32,$(OS)),)
-   OBJ += media/rarch.o \
-          gfx/common/win32_common.o \
+   OBJ += gfx/common/win32_common.o \
           frontend/drivers/platform_win32.o \
           gfx/display_servers/dispserv_win32.o \
           gfx/common/dx_guids.o
