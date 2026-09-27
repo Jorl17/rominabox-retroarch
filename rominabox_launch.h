@@ -35,6 +35,11 @@
  * in the Windows launcher, because the game window belongs to the player. */
 #define RIB_ENV_RELAUNCH "ROMINABOX_RELAUNCH"
 
+/* For a Windows game in its sandbox, we read the controllers through the
+ * launcher (rominabox_pad_relay.h). These are the handles of that relay,
+ * "block,request,reply" in decimal. Unset when the game is not in a sandbox. */
+#define RIB_ENV_PAD_RELAY "ROMINABOX_PAD_RELAY"
+
 /* The application id of a Windows game is this and its identity. On the
  * taskbar the game's windows are grouped by it, and in the launcher we name
  * the game's sandbox with it. */

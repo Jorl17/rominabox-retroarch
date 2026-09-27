@@ -1421,6 +1421,8 @@ ifeq ($(HAVE_DINPUT), 1)
    DEFINES += -DHAVE_DINPUT
    OBJ += input/drivers/dinput.o
    OBJ += input/drivers_joypad/dinput_joypad.o
+   # ROM-in-a-Box: a sandboxed game's controllers, through the launcher.
+   OBJ += input/drivers/rominabox_dinput.o
 endif
 
 ifeq ($(HAVE_XINPUT), 1)

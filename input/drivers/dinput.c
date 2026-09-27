@@ -54,6 +54,7 @@
 #include "../../configuration.h"
 #include "../../retroarch.h"
 #include "../../verbosity.h"
+#include "rominabox_dinput.h"
 
 /* Context has to be global as joypads also ride on this context. */
 LPDIRECTINPUT8 g_dinput_ctx;
@@ -128,6 +129,9 @@ bool dinput_init_context(void)
                         (void**)&g_dinput_ctx, NULL))))
 #endif
             return false;
+      /* ROM-in-a-Box: in a sandboxed game we read the controllers through
+       * the launcher. */
+      g_dinput_ctx = rib_dinput_for_game(g_dinput_ctx);
    }
    return true;
 }
