@@ -86,6 +86,9 @@ private:
    int capture_members[RIB_CONTROL_MAX] = {};
    int capture_count = 0;
    int capture_step = 0;
+   /* The first control that a new binding in this capture clashed with,
+    * which we report when the capture ends, or -1 for none. */
+   int capture_clash = -1;
    /* Wait in the host for input for `index`, with its name on the status
     * line. False when the host cannot capture it. */
    bool capture_member(int index);

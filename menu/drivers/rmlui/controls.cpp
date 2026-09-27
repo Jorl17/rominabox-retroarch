@@ -265,13 +265,13 @@ void Controls::end_capture(const std::string& words)
 }
 
 /* Members captured before CANCEL keep their new binding, because we saved
- * each one when its capture finished. */
+ * each one when it finished, and for a stick stopped partway we say so. */
 void Controls::cancel_capture()
 {
    if (!capture_active)
       return;
    rib_host_capture_cancel();
-   end_capture(say(Word::BindingUnchanged));
+   end_capture(say(capture_step > 0 ? Word::BindingSaved : Word::BindingUnchanged));
 }
 
 bool Controls::capture_member(int index)
@@ -296,6 +296,7 @@ void Controls::start_capture(int index)
       return;
    capture_count = bind_members(index, capture_members);
    capture_step = 0;
+   capture_clash = -1;
    if (!capture_member(capture_members[0]))
    {
       this->status.set_controls(say(Word::CaptureFailed).c_str());
@@ -540,6 +541,8 @@ void Controls::poll_capture()
          /* We save each member when we capture it, and for a stick we go on
           * to the next member. When a save fails, we stop there and say so. */
          const int conflict = find_conflict(capture_control);
+         if (capture_clash < 0)
+            capture_clash = conflict;
          rib_host_restore_keyboard_mapping();
          const bool saved = save();
          if (saved && ++capture_step < capture_count)
@@ -549,13 +552,13 @@ void Controls::poll_capture()
          }
          else if (!saved)
             end_capture(say(Word::BindingSaveFailed));
-         else if (conflict >= 0)
-            end_capture(say(Word::BindingConflict, {{"control", console_name(conflict)}}));
+         else if (capture_clash >= 0)
+            end_capture(say(Word::BindingConflict, {{"control", console_name(capture_clash)}}));
          else
             end_capture(say(Word::BindingSaved));
       }
       else if (result == RIB_CAPTURE_TIMED_OUT)
-         end_capture(say(Word::CaptureTimeout));
+         end_capture(say(capture_step > 0 ? Word::BindingSaved : Word::CaptureTimeout));
       else
          this->status.set_controls(say(Word::CaptureCountdown,
                {{"control", console_name(capture_control)},
