@@ -9,6 +9,8 @@
 #include <OpenGL/gl3.h>
 #else
 #include <OpenGL/gl.h>
+/* gl.h contains only OpenGL 2.1, and the framebuffer calls are in glext.h. */
+#include <OpenGL/glext.h>
 #ifndef GL_VERTEX_ARRAY_BINDING
 #define GL_VERTEX_ARRAY_BINDING 0x85B5
 #endif
