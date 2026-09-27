@@ -196,6 +196,7 @@ bool rib_host_save_state(void) { return command_event(CMD_EVENT_SAVE_STATE, NULL
 bool rib_host_load_state(void) { return command_event(CMD_EVENT_LOAD_STATE, NULL); }
 void rib_host_open_menu(void) { if (!rib_host_menu_open()) command_event(CMD_EVENT_MENU_TOGGLE, NULL); }
 void rib_host_resume(void) { command_event(CMD_EVENT_MENU_TOGGLE, NULL); }
+void rib_host_toggle_fullscreen(void) { command_event(CMD_EVENT_FULLSCREEN_TOGGLE, NULL); }
 void rib_host_quit(void) { command_event(CMD_EVENT_QUIT, NULL); }
 
 void rib_host_apply_device(const char *id, unsigned device)

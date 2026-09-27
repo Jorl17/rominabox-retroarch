@@ -156,6 +156,15 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
       return;
    }
 
+   /* The Alt+Enter command. We restart the video driver for fullscreen or for
+    * a window. */
+   if (!strcmp(id, "fullscreen"))
+   {
+      rib_host_toggle_fullscreen();
+      RARCH_LOG("[RIB] menu script toggled fullscreen.\n");
+      return;
+   }
+
    if (!strncmp(id, "hover:", 6))
    {
       hover = id + 6;
