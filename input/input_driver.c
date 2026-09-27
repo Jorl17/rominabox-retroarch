@@ -206,20 +206,37 @@ static input_driver_t input_null = {
    input_null_keypress_vibrate
 };
 
+/* A controller driver with no controllers. We give it an init so that
+ * choosing "null" does not fall back to the first driver of the platform,
+ * with which we would open every pad. */
+static void *null_joypad_init(void *data) { return (void*)-1; }
+static bool null_joypad_query_pad(unsigned pad) { return false; }
+static void null_joypad_destroy(void) { }
+static int32_t null_joypad_button(unsigned port, uint16_t joykey) { return 0; }
+static int16_t null_joypad_state(rarch_joypad_info_t *joypad_info,
+      const struct retro_keybind *binds, unsigned port) { return 0; }
+static void null_joypad_get_buttons(unsigned port, input_bits_t *state)
+{
+   BIT256_CLEAR_ALL_PTR(state);
+}
+static int16_t null_joypad_axis(unsigned port, uint32_t joyaxis) { return 0; }
+static void null_joypad_poll(void) { }
+static const char *null_joypad_name(unsigned pad) { return NULL; }
+
 static input_device_driver_t null_joypad = {
-   NULL, /* init */
-   NULL, /* query_pad */
-   NULL, /* destroy */
-   NULL, /* button */
-   NULL, /* state */
-   NULL, /* get_buttons */
-   NULL, /* axis */
-   NULL, /* poll */
+   null_joypad_init,
+   null_joypad_query_pad,
+   null_joypad_destroy,
+   null_joypad_button,
+   null_joypad_state,
+   null_joypad_get_buttons,
+   null_joypad_axis,
+   null_joypad_poll,
    NULL, /* rumble */
    NULL, /* rumble_gain */
    NULL, /* set_sensor_state */
    NULL, /* get_sensor_input */
-   NULL, /* name */
+   null_joypad_name,
    "null",
 };
 
