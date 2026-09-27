@@ -1,11 +1,13 @@
 /* ROM-in-a-Box: DirectInput for a sandboxed Windows game
  * (rominabox_dinput.h). In the joypad driver we find the controllers, set
- * up their axes and read each one once per frame. For the controllers we
- * relay through the launcher (rominabox_pad_relay.h) we answer those calls
- * from the relay block, and pass every other call to DirectInput itself.
- * We request the controller states from the launcher again when we read a
- * controller for the second time since the last request, so the reading
- * once per frame in the driver costs one request per frame. */
+ * up their axes and rumble, and read each one once per frame. For the
+ * controllers we relay through the launcher (rominabox_pad_relay.h) we
+ * answer those calls through the relay, and pass every other call to
+ * DirectInput itself. We request the controller states from the launcher
+ * again when we read a controller for the second time since the last
+ * request, so the reading once per frame in the driver costs one request
+ * per frame. Setting an axis range or changing a rumble effect costs one
+ * request each time we do it in the driver. */
 
 #define WIN32_LEAN_AND_MEAN
 #ifndef DIRECTINPUT_VERSION
@@ -39,21 +41,219 @@ static bool relay_gone;
  * last read. */
 static bool relay_fresh[RIB_PAD_RELAY_PADS];
 
-static void relay_read(void)
+/* Send the request in relay->ask to the launcher and return its answer. */
+static HRESULT relay_exchange(void)
 {
-   unsigned i;
    if (relay_gone)
-      return;
+      return DIERR_INPUTLOST;
    SetEvent(relay_request);
    if (WaitForSingleObject(relay_reply, RELAY_WAIT_MS) != WAIT_OBJECT_0)
    {
       RARCH_ERR("[RIB] The launcher stopped answering for the game's controllers.\n");
       relay_gone = true;
-      return;
+      return DIERR_INPUTLOST;
    }
+   return relay->ask.answer;
+}
+
+static void relay_read(void)
+{
+   unsigned i;
+   relay->ask.what = RIB_PAD_RELAY_READ;
+   if (FAILED(relay_exchange()))
+      return;
    for (i = 0; i < RIB_PAD_RELAY_PADS; i++)
       relay_fresh[i] = true;
 }
+
+/* ---- a relayed controller's effect ------------------------------------- */
+
+typedef struct
+{
+   IDirectInputEffect iface;
+   LONG refs;
+   unsigned pad;
+   DWORD slot;
+} relay_effect;
+
+/* The parameters of `given` selected by `flags`, in the relay format. */
+static void carry_effect(rib_pad_relay_effect *carried, LPCDIEFFECT given, DWORD flags)
+{
+   DWORD i;
+   carried->flags = given->dwFlags;
+   if (flags & DIEP_DURATION)
+      carried->duration = given->dwDuration;
+   if (flags & DIEP_SAMPLEPERIOD)
+      carried->sample_period = given->dwSamplePeriod;
+   if (flags & DIEP_GAIN)
+      carried->gain = given->dwGain;
+   if (flags & DIEP_TRIGGERBUTTON)
+      carried->trigger_button = given->dwTriggerButton;
+   if (flags & DIEP_TRIGGERREPEATINTERVAL)
+      carried->trigger_repeat_interval = given->dwTriggerRepeatInterval;
+   if (flags & DIEP_STARTDELAY)
+      carried->start_delay = given->dwStartDelay;
+   if (flags & (DIEP_AXES | DIEP_DIRECTION))
+      carried->axis_count = given->cAxes;
+   for (i = 0; i < given->cAxes && i < RIB_PAD_RELAY_EFFECT_AXES; i++)
+   {
+      if (flags & DIEP_AXES)
+         carried->axes[i] = given->rgdwAxes[i];
+      if (flags & DIEP_DIRECTION)
+         carried->directions[i] = given->rglDirection[i];
+   }
+   if (flags & DIEP_ENVELOPE)
+   {
+      carried->has_envelope = given->lpEnvelope != NULL;
+      if (given->lpEnvelope)
+         carried->envelope = *given->lpEnvelope;
+   }
+   if (flags & DIEP_TYPESPECIFICPARAMS)
+      carried->force = *(const DICONSTANTFORCE*)given->lpvTypeSpecificParams;
+}
+
+/* Whether we can relay the parameters of `given` selected by `flags`. We
+ * relay a constant force along at most RIB_PAD_RELAY_EFFECT_AXES axes. */
+static bool carriable(LPCDIEFFECT given, DWORD flags)
+{
+   if (given->dwSize != sizeof(DIEFFECT))
+      return false;
+   if ((flags & (DIEP_AXES | DIEP_DIRECTION)) && given->cAxes > RIB_PAD_RELAY_EFFECT_AXES)
+      return false;
+   if ((flags & DIEP_AXES) && given->cAxes && !given->rgdwAxes)
+      return false;
+   if ((flags & DIEP_DIRECTION) && given->cAxes && !given->rglDirection)
+      return false;
+   return !(flags & DIEP_TYPESPECIFICPARAMS)
+      || (given->cbTypeSpecificParams == sizeof(DICONSTANTFORCE) && given->lpvTypeSpecificParams);
+}
+
+static HRESULT effect_ask(IDirectInputEffect *self, rib_pad_relay_asking what, DWORD flags)
+{
+   relay_effect *effect = (relay_effect*)self;
+   relay->ask.what      = what;
+   relay->ask.pad       = effect->pad;
+   relay->ask.item      = effect->slot;
+   relay->ask.flags     = flags;
+   return relay_exchange();
+}
+
+static HRESULT STDMETHODCALLTYPE effect_query_interface(IDirectInputEffect *self, REFIID riid, void **out)
+{
+   if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IDirectInputEffect))
+   {
+      self->lpVtbl->AddRef(self);
+      *out = self;
+      return S_OK;
+   }
+   *out = NULL;
+   return E_NOINTERFACE;
+}
+
+static ULONG STDMETHODCALLTYPE effect_add_ref(IDirectInputEffect *self)
+{
+   return (ULONG)InterlockedIncrement(&((relay_effect*)self)->refs);
+}
+
+static ULONG STDMETHODCALLTYPE effect_release(IDirectInputEffect *self)
+{
+   LONG refs = InterlockedDecrement(&((relay_effect*)self)->refs);
+   if (refs == 0)
+   {
+      effect_ask(self, RIB_PAD_RELAY_DROP_EFFECT, 0);
+      free(self);
+   }
+   return (ULONG)refs;
+}
+
+static HRESULT STDMETHODCALLTYPE effect_set_parameters(IDirectInputEffect *self, LPCDIEFFECT given, DWORD flags)
+{
+   if (!carriable(given, flags))
+      return DIERR_INVALIDPARAM;
+   carry_effect(&relay->ask.effect, given, flags);
+   return effect_ask(self, RIB_PAD_RELAY_SET_EFFECT, flags);
+}
+
+static HRESULT STDMETHODCALLTYPE effect_stop(IDirectInputEffect *self)
+{
+   return effect_ask(self, RIB_PAD_RELAY_STOP_EFFECT, 0);
+}
+
+/* Calls on an effect that we never make in the joypad driver. */
+static HRESULT STDMETHODCALLTYPE effect_initialize(IDirectInputEffect *self, HINSTANCE instance,
+      DWORD version, REFGUID guid)
+{
+   (void)self;
+   (void)instance;
+   (void)version;
+   (void)guid;
+   return DIERR_UNSUPPORTED;
+}
+
+static HRESULT STDMETHODCALLTYPE effect_get_effect_guid(IDirectInputEffect *self, LPGUID guid)
+{
+   (void)self;
+   *guid = GUID_ConstantForce;
+   return DI_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE effect_get_parameters(IDirectInputEffect *self, LPDIEFFECT out, DWORD flags)
+{
+   (void)self;
+   (void)out;
+   (void)flags;
+   return DIERR_UNSUPPORTED;
+}
+
+static HRESULT STDMETHODCALLTYPE effect_start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
+{
+   (void)self;
+   (void)iterations;
+   (void)flags;
+   return DIERR_UNSUPPORTED;
+}
+
+static HRESULT STDMETHODCALLTYPE effect_get_effect_status(IDirectInputEffect *self, LPDWORD status)
+{
+   (void)self;
+   (void)status;
+   return DIERR_UNSUPPORTED;
+}
+
+static HRESULT STDMETHODCALLTYPE effect_download(IDirectInputEffect *self)
+{
+   (void)self;
+   return DIERR_UNSUPPORTED;
+}
+
+static HRESULT STDMETHODCALLTYPE effect_unload(IDirectInputEffect *self)
+{
+   (void)self;
+   return DIERR_UNSUPPORTED;
+}
+
+static HRESULT STDMETHODCALLTYPE effect_escape(IDirectInputEffect *self, LPDIEFFESCAPE escape)
+{
+   (void)self;
+   (void)escape;
+   return DIERR_UNSUPPORTED;
+}
+
+static IDirectInputEffectVtbl effect_vtbl = {
+   .QueryInterface  = effect_query_interface,
+   .AddRef          = effect_add_ref,
+   .Release         = effect_release,
+   .Initialize      = effect_initialize,
+   .GetEffectGuid   = effect_get_effect_guid,
+   .GetParameters   = effect_get_parameters,
+   .SetParameters   = effect_set_parameters,
+   .Start           = effect_start,
+   .Stop            = effect_stop,
+   .GetEffectStatus = effect_get_effect_status,
+   .Download        = effect_download,
+   .Unload          = effect_unload,
+   .Escape          = effect_escape,
+};
 
 /* ---- a relayed controller ---------------------------------------------- */
 
@@ -109,26 +309,21 @@ static HRESULT STDMETHODCALLTYPE device_enum_objects(IDirectInputDevice8A *self,
    return DI_OK;
 }
 
-/* An axis range, which we set on the controller in the launcher before the
- * next read. */
+/* An axis range, which we set on the controller in the launcher. */
 static HRESULT STDMETHODCALLTYPE device_set_property(IDirectInputDevice8A *self,
       REFGUID property, LPCDIPROPHEADER header)
 {
-   rib_pad_relay_pad *pad = pad_of(self);
    const DIPROPRANGE *range = (const DIPROPRANGE*)header;
-   DWORD i;
    if (     property != DIPROP_RANGE
          || header->dwHow != DIPH_BYID
          || header->dwSize != sizeof(DIPROPRANGE))
       return DIERR_UNSUPPORTED;
-   for (i = 0; i < pad->axis_count; i++)
-      if (pad->axes[i].dwType == header->dwObj)
-      {
-         pad->range_min[i] = range->lMin;
-         pad->range_max[i] = range->lMax;
-         return DI_OK;
-      }
-   return DIERR_OBJECTNOTFOUND;
+   relay->ask.what      = RIB_PAD_RELAY_SET_RANGE;
+   relay->ask.pad       = ((relay_device*)self)->pad;
+   relay->ask.item      = header->dwObj;
+   relay->ask.range_min = range->lMin;
+   relay->ask.range_max = range->lMax;
+   return relay_exchange();
 }
 
 /* We open the controller in the launcher, so an acquire of the stand-in in
@@ -252,15 +447,39 @@ static HRESULT STDMETHODCALLTYPE device_initialize(IDirectInputDevice8A *self, H
    return DIERR_UNSUPPORTED;
 }
 
+/* A rumble effect that we create on the controller in the launcher. It is a
+ * constant force, the only kind we create in the joypad driver. */
 static HRESULT STDMETHODCALLTYPE device_create_effect(IDirectInputDevice8A *self, REFGUID guid,
-      LPCDIEFFECT effect, LPDIRECTINPUTEFFECT *out, LPUNKNOWN outer)
+      LPCDIEFFECT given, LPDIRECTINPUTEFFECT *out, LPUNKNOWN outer)
 {
-   (void)self;
-   (void)guid;
-   (void)effect;
-   (void)outer;
+   const DWORD every = DIEP_DURATION | DIEP_SAMPLEPERIOD | DIEP_GAIN | DIEP_TRIGGERBUTTON
+      | DIEP_TRIGGERREPEATINTERVAL | DIEP_STARTDELAY | DIEP_AXES | DIEP_DIRECTION | DIEP_ENVELOPE
+      | DIEP_TYPESPECIFICPARAMS;
+   relay_effect *effect;
+   HRESULT made;
    *out = NULL;
-   return DIERR_UNSUPPORTED;
+   if (outer || !IsEqualGUID(guid, &GUID_ConstantForce))
+      return DIERR_UNSUPPORTED;
+   if (!given || !carriable(given, every))
+      return DIERR_INVALIDPARAM;
+   memset(&relay->ask.effect, 0, sizeof(relay->ask.effect));
+   carry_effect(&relay->ask.effect, given, every);
+   relay->ask.what = RIB_PAD_RELAY_MAKE_EFFECT;
+   relay->ask.pad  = ((relay_device*)self)->pad;
+   if (FAILED(made = relay_exchange()))
+      return made;
+   if (!(effect = (relay_effect*)calloc(1, sizeof(*effect))))
+   {
+      relay->ask.what = RIB_PAD_RELAY_DROP_EFFECT;
+      relay_exchange();
+      return DIERR_OUTOFMEMORY;
+   }
+   effect->iface.lpVtbl = &effect_vtbl;
+   effect->refs         = 1;
+   effect->pad          = ((relay_device*)self)->pad;
+   effect->slot         = relay->ask.item;
+   *out                 = &effect->iface;
+   return made;
 }
 
 static HRESULT STDMETHODCALLTYPE device_enum_effects(IDirectInputDevice8A *self,
