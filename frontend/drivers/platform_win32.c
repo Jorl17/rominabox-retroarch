@@ -57,6 +57,7 @@
 #include "../../ui/drivers/ui_win32.h"
 #include "../../gfx/common/win32_common.h"
 #include "../../rominabox_environment.h"
+#include "../../rominabox_data_root.h"
 
 #include "platform_win32.h"
 
@@ -769,8 +770,14 @@ static int frontend_win32_parse_drive_list(void *data, bool load_content)
 static void frontend_win32_env_get(int *argc, char *argv[],
       void *args, void *params_data)
 {
-   /* We start the player only with a data folder passed from the launcher. */
-   free(rib_require_data_directory());
+   /* We start the player only with a data folder passed from the launcher,
+    * and keep every folder in it. We use neither the RetroArch layout beside
+    * the program below nor the LIBRETRO_* variables. */
+   char *data_root = rib_require_data_directory();
+   rib_place_game_directories(data_root);
+   free(data_root);
+   gfx_set_dwm();
+   return;
    const char *tmp_dir = getenv("TMP");
    const char *libretro_directory = getenv("LIBRETRO_DIRECTORY");
    const char *libretro_assets_directory = getenv("LIBRETRO_ASSETS_DIRECTORY");
