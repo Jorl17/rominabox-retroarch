@@ -2500,17 +2500,21 @@ ifeq ($(HAVE_NETWORKING), 1)
       DEFINES += -DHAVE_CHEEVOS -DRC_CLIENT_SUPPORTS_HASH
       INCLUDE_DIRS += -Ideps/rcheevos/include
       # ROM-in-a-Box's shared accounts store, which is not RetroArch code. The
-      # player's build script hands over its sources; they are compiled here,
-      # with RetroArch's own flags and macOS minimum.
+      # player's build script hands over its sources, with the file layer they
+      # are built on as this platform has it; every C file it hands over is
+      # compiled here, with RetroArch's own flags and macOS minimum.
       # Cleaning compiles nothing, so it needs no store.
       ifneq ($(MAKECMDGOALS),clean)
          ifeq ($(RIB_ACCOUNTS_DIR),)
             $(error HAVE_CHEEVOS needs RIB_ACCOUNTS_DIR, the ROM-in-a-Box accounts store the player build script prepares)
          endif
+         RIB_ACCOUNTS_SOURCES := $(wildcard $(RIB_ACCOUNTS_DIR)/*/*.c $(RIB_ACCOUNTS_DIR)/*/*/*.c)
+         ifeq ($(RIB_ACCOUNTS_SOURCES),)
+            $(error RIB_ACCOUNTS_DIR, $(RIB_ACCOUNTS_DIR), holds no accounts store sources)
+         endif
+         OBJ += $(RIB_ACCOUNTS_SOURCES:.c=.o)
       endif
       INCLUDE_DIRS += -I$(RIB_ACCOUNTS_DIR)/accounts -I$(RIB_ACCOUNTS_DIR)/launcher
-      OBJ += $(RIB_ACCOUNTS_DIR)/accounts/accounts.o $(RIB_ACCOUNTS_DIR)/accounts/sealed.o \
-             $(RIB_ACCOUNTS_DIR)/launcher/portable_fs.o
       # The store seals account tokens with DPAPI on Windows.
       ifneq ($(findstring Win32,$(OS)),)
          LIBS += -lcrypt32
