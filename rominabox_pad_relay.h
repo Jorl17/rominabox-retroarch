@@ -34,8 +34,12 @@
 #define RIB_PAD_RELAY_EFFECT_AXES 2
 
 typedef enum {
+   /* List the controllers attached now, each set up again, as in the joypad
+    * driver when it starts and whenever a device is added or removed. We
+    * release what the game made for the previous list. */
+   RIB_PAD_RELAY_LIST = 1,
    /* Read every controller. */
-   RIB_PAD_RELAY_READ = 1,
+   RIB_PAD_RELAY_READ,
    /* Set an axis's range: DIPROP_RANGE by the axis's id. */
    RIB_PAD_RELAY_SET_RANGE,
    /* Make an effect, a constant force, in a free slot. */
@@ -81,7 +85,7 @@ typedef struct {
 } rib_pad_relay_ask;
 
 typedef struct {
-   /* We write this in the launcher before the game starts. */
+   /* We write this in the launcher at each listing. */
    DIDEVICEINSTANCEA device;
    DWORD axis_count;
    DIDEVICEOBJECTINSTANCEA axes[RIB_PAD_RELAY_AXES];
@@ -92,7 +96,7 @@ typedef struct {
 } rib_pad_relay_pad;
 
 typedef struct {
-   /* We write this in the launcher before the game starts. */
+   /* We write this in the launcher at each listing. */
    DWORD pad_count;
    rib_pad_relay_pad pads[RIB_PAD_RELAY_PADS];
    rib_pad_relay_ask ask;

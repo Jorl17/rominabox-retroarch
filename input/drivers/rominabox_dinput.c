@@ -29,9 +29,9 @@
 #error "the DirectInput stand-in answers RetroArch's ANSI DirectInput calls"
 #endif
 
-/* How long we wait for one read of the controllers before we treat the
- * launcher as gone and the controllers as lost. */
-#define RELAY_WAIT_MS 1000
+/* How long we wait for an answer from the launcher before we treat it as
+ * gone and the controllers as lost. Listing the controllers takes longest. */
+#define RELAY_WAIT_MS 5000
 
 static rib_pad_relay *relay;
 static HANDLE relay_request;
@@ -698,13 +698,22 @@ static HRESULT STDMETHODCALLTYPE input_create_device(IDirectInput8A *self, REFGU
    return DI_OK;
 }
 
+/* We list the controllers in the joypad driver at start, and again, after
+ * releasing all, whenever a device is added or removed. We list them afresh
+ * in the launcher each time, and every controller listed is attached. */
 static HRESULT STDMETHODCALLTYPE input_enum_devices(IDirectInput8A *self, DWORD type,
       LPDIENUMDEVICESCALLBACKA callback, LPVOID context, DWORD flags)
 {
    DWORD i;
+   HRESULT listed;
    if (type != DI8DEVCLASS_GAMECTRL)
       return IDirectInput8_EnumDevices(real_of(self), type, callback, context, flags);
-   /* We read every relayed controller in the launcher, so it is attached. */
+   relay->ask.what = RIB_PAD_RELAY_LIST;
+   if (FAILED(listed = relay_exchange()))
+      return listed;
+   for (i = 0; i < RIB_PAD_RELAY_PADS; i++)
+      relay_fresh[i] = false;
+   RARCH_LOG("[RIB] %lu controller(s) come through the launcher.\n", (unsigned long)relay->pad_count);
    for (i = 0; i < relay->pad_count; i++)
       if (callback(&relay->pads[i].device, context) == DIENUM_STOP)
          break;
@@ -781,7 +790,6 @@ static bool relay_open(void)
    free(handles);
    relay_request = (HANDLE)(uintptr_t)request;
    relay_reply   = (HANDLE)(uintptr_t)reply;
-   RARCH_LOG("[RIB] %lu controller(s) come through the launcher.\n", (unsigned long)relay->pad_count);
    return true;
 }
 
