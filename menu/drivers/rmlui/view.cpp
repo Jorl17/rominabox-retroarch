@@ -152,9 +152,13 @@ void View::follow_pointer()
    if (!moved)
       return;
    /* When the pointer moves onto another stop, we move the focus and play
-    * one cue, the same wherever the stop is. */
+    * one cue, the same wherever the stop is. While the player types in a
+    * field, the keyboard focus stays there. Moving the pointer over a field
+    * does not move the keyboard focus to it, but pressing on it does. */
    Rml::Element *before = focus.current();
    Rml::Element *to = focus.stop_at(document.get_context()->GetHoverElement());
+   if (edits_text(before) || edits_text(to))
+      return;
    if (focus.set(to) && to != before)
       play_move_sound(false);
 }

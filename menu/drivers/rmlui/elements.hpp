@@ -44,6 +44,15 @@ inline bool hidden(Rml::Element *element)
    return false;
 }
 
+/* A field for text editing in RmlUi: a text area, or an input of type text
+ * or password, marked with the class for its type. */
+inline bool edits_text(Rml::Element *element)
+{
+   return dynamic_cast<Rml::ElementFormControlTextArea*>(element)
+         || (dynamic_cast<Rml::ElementFormControlInput*>(element)
+            && (element->IsClassSet("text") || element->IsClassSet("password")));
+}
+
 /* The writes from the menu to the document. Whatever we write is laid out or
  * drawn again in RmlUi, even the same value, so we write only changes, and
  * there is no work while nobody touches the menu. */

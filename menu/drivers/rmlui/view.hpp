@@ -30,7 +30,7 @@ public:
    bool move_pointer_to(const char *id);
    /* Once a frame, after every pointer move. When the pointer moved onto a
     * stop, focus it without a sound. When it did not move, the focus stays
-    * where the keys put it. */
+    * where the keys put it. Never move focus into or out of a text field. */
    void follow_pointer();
    Document document;
    EventQueue intents;
