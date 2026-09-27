@@ -212,8 +212,14 @@ void Document::write_capture(int width, int height)
 
 void Document::release_texture(const std::string& path)
 {
-   if (renderer)
-      Rml::ReleaseTexture(path, renderer.get());
+   if (!renderer)
+      return;
+   /* In RmlUi a file texture is stored under the normalised path from
+    * JoinPath. On Windows a slash in the data folder path becomes a
+    * backslash, so we release the texture by that path, not the written one. */
+   Rml::String source;
+   system.JoinPath(source, "", path);
+   Rml::ReleaseTexture(source, renderer.get());
 }
 
 void Document::capture_next(const char *path)
