@@ -397,9 +397,17 @@ static void dinput_poll(void *data)
       /* No simple way to get absolute coordinates
        * for RETRO_DEVICE_POINTER. Just use Win32 APIs. */
       GetCursorPos(&point);
-      ScreenToClient((HWND)video_driver_window_get(), &point);
-      di->mouse_x = point.x;
-      di->mouse_y = point.y;
+      /* ROM-in-a-Box: we give the pointer to the game only over the game
+       * window. Over another window, or over a window that clicks pass
+       * through, as in an automated run, we treat it as elsewhere. */
+      {
+         HWND window = (HWND)video_driver_window_get();
+         HWND under  = WindowFromPoint(point);
+         bool over   = under && (under == window || IsChild(window, under));
+         ScreenToClient(window, &point);
+         di->mouse_x = over ? point.x : -0x8000;
+         di->mouse_y = over ? point.y : -0x8000;
+      }
 
       /* Ignore application focusing mouse clicks */
       if (di->flags & DINP_FLAG_MOUSE_IGNORE)

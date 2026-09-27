@@ -194,7 +194,10 @@ static void read_game(Menu *menu)
 
 static void reset_interaction(Menu *menu, bool opening)
 {
-   if (!menu)
+   /* After a new video driver there is no document until we build it again
+    * in the next frame, as for a menu opened afresh. Opening or closing the
+    * menu before then has nothing to reset. */
+   if (!menu || !menu->initialized)
       return;
    menu->achievements.leave_form();
    if (menu->controls.capture_active)
@@ -390,9 +393,6 @@ void rib_menu_frame(void *data, int width, int height)
             assets && *assets ? assets.get() : RIB_RMLUI_DEFAULT_ASSETS, width, height);
       if (!menu->initialized)
          return;
-      /* Going fullscreen starts a new video driver and hides the pointer, also
-       * with the menu open. */
-      rib_host_show_pointer(rib_host_menu_open());
    }
 
    menu->achievements.update();

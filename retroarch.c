@@ -5326,7 +5326,14 @@ bool command_event(enum event_command cmd, void *data)
             {
                if (     video_st->poke
                      && video_st->poke->show_mouse)
+#ifdef HAVE_RMLUI
+                  /* ROM-in-a-Box: the player uses the menu with the pointer, so
+                   * we hide it only in fullscreen (rib_host_show_pointer). */
+                  video_st->poke->show_mouse(video_st->data,
+                        (menu_state_get_ptr()->flags & MENU_ST_FLAG_ALIVE) != 0);
+#else
                   video_st->poke->show_mouse(video_st->data, false);
+#endif
                if (!settings->bools.video_windowed_fullscreen)
                   if (input_driver_grab_mouse())
                      input_st->flags |= INP_FLAG_GRAB_MOUSE_STATE;
