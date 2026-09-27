@@ -66,9 +66,11 @@
 #include <dbt.h>
 #include "../../input/input_keymaps.h"
 #include <shellapi.h>
+#include <propsys.h>
 
 #ifdef HAVE_MENU
 #include "../../menu/menu_driver.h"
+#include "../../command.h"
 #include "../../rominabox_session.h"
 #endif
 
@@ -569,6 +571,17 @@ static LRESULT CALLBACK wnd_proc_common(
          }
          return TRUE;
       case WM_CLOSE:
+         /* ROM-in-a-Box: as with the Cocoa window, we keep the window of a
+          * restricted export open until quitting finishes. Before quitting
+          * we can ask a question about achievements not yet sent, and we
+          * need the window to draw it, so we do not mark it closed here. */
+         if (rib_session_restricted())
+         {
+            command_event(CMD_EVENT_QUIT, NULL);
+            *quit       = true;
+            break;
+         }
+         /* fall-through */
       case WM_DESTROY:
       case WM_QUIT:
          g_win32_flags |= WIN32_CMN_FLAG_QUIT;
