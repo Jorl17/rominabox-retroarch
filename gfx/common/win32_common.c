@@ -1543,6 +1543,16 @@ static bool win32_window_create(void *data, unsigned style,
                window_opacity) / 100, LWA_ALPHA);
    }
 #endif
+   /* In an automated run we keep the window for the drawable, but out of the
+    * way of the person at the machine. It is fully transparent and never
+    * activated, clicks pass through it, and it has no taskbar button. */
+   if (rib_session_window_hidden())
+   {
+      SetWindowLongPtr(main_window.hwnd, GWL_EXSTYLE,
+            GetWindowLongPtr(main_window.hwnd, GWL_EXSTYLE)
+            | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
+      SetLayeredWindowAttributes(main_window.hwnd, 0, 0, LWA_ALPHA);
+   }
    return true;
 }
 #endif
@@ -1911,12 +1921,20 @@ void win32_set_window(unsigned *width, unsigned *height,
       }
 #endif
 
-      ShowWindow(main_window.hwnd, SW_RESTORE);
-      UpdateWindow(main_window.hwnd);
-      SetForegroundWindow(main_window.hwnd);
+      if (rib_session_window_hidden())
+      {
+         ShowWindow(main_window.hwnd, SW_SHOWNOACTIVATE);
+         UpdateWindow(main_window.hwnd);
+      }
+      else
+      {
+         ShowWindow(main_window.hwnd, SW_RESTORE);
+         UpdateWindow(main_window.hwnd);
+         SetForegroundWindow(main_window.hwnd);
 
-      if (window)
-         window->set_focused(&main_window);
+         if (window)
+            window->set_focused(&main_window);
+      }
    }
 
    win32_show_cursor(NULL, !fullscreen);
@@ -1936,6 +1954,10 @@ bool win32_set_video_mode(void *data,
    HMONITOR hm_to_use    = NULL;
    settings_t *settings  = config_get_ptr();
    bool windowed_full    = settings->bools.video_windowed_fullscreen;
+
+   /* We never go fullscreen in an automated run. */
+   if (rib_session_window_hidden())
+      fullscreen         = false;
 
    rect.left             = 0;
    rect.top              = 0;
