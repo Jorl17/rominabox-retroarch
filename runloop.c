@@ -2527,6 +2527,7 @@ bool runloop_environment_cb(unsigned cmd, void *data)
 
          RARCH_LOG("[Environ] GET_RUMBLE_INTERFACE.\n");
          iface->set_rumble_state = input_set_rumble_state;
+         sys_info->supports_rumble = true;
          break;
       }
 

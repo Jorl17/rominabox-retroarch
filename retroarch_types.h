@@ -187,6 +187,8 @@ typedef struct rarch_system_info
    char valid_extensions[256];
    bool load_no_content;
    bool supports_vfs;
+   /* ROM-in-a-Box: the core asked for the rumble interface. */
+   bool supports_rumble;
 } rarch_system_info_t;
 
 typedef struct retro_ctx_input_state_info

@@ -51,6 +51,7 @@ RIB_WORD(DiscMark, "disc-mark", "IN")
  * a level's ends into the document; the menu keeps a switch's state current. */
 RIB_WORD(Volume, "volume", "VOLUME")
 RIB_WORD(PlayInBackground, "play-in-background", "PLAY IN BACKGROUND")
+RIB_WORD(Rumble, "rumble", "RUMBLE")
 RIB_WORD(LevelLow, "level-low", "LOW")
 RIB_WORD(LevelHigh, "level-high", "HIGH")
 RIB_WORD(SwitchOn, "switch-on", "ON")

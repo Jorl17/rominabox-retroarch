@@ -114,6 +114,7 @@ void PlayerSettings::paint() const
 {
    for (const SettingDeclaration& setting : entries)
    {
+      document.set_disabled(setting.control.c_str(), !rib_host_setting_used(setting.key));
       const float current = value(setting);
       if (setting.kind == SettingKind::Level)
          parts.set_slider(setting.control.c_str(),

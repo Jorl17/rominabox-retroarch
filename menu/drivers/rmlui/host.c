@@ -258,8 +258,28 @@ static void rib_host_apply_PauseNonactive(settings_t *settings, float value)
    configuration_set_bool(settings, settings->bools.pause_nonactive, value != 0.0f);
 }
 
-/* Every key declared in settings.inc has its pair of functions above. For a
- * key declared there and not handled here, the build stops on the name of a
+static float rib_host_read_InputRumbleEnable(settings_t *settings)
+{
+   return settings->bools.input_rumble_enable ? 1.0f : 0.0f;
+}
+
+static void rib_host_apply_InputRumbleEnable(settings_t *settings, float value)
+{
+   configuration_set_bool(settings, settings->bools.input_rumble_enable, value != 0.0f);
+}
+
+/* Whether each key applies to the running game. Every game has a volume and
+ * a window, but we can rumble a pad only when the core uses the rumble
+ * interface. */
+static bool rib_host_used_AudioVolume(void) { return true; }
+static bool rib_host_used_PauseNonactive(void) { return true; }
+static bool rib_host_used_InputRumbleEnable(void)
+{
+   return runloop_state_get_ptr()->system.supports_rumble;
+}
+
+/* Every key declared in settings.inc has its functions above. For a key
+ * declared there and not handled here, the build stops on the name of a
  * function that does not exist. */
 bool rib_host_setting(enum rib_setting_key key, float *value)
 {
@@ -285,6 +305,18 @@ bool rib_host_set_setting(enum rib_setting_key key, float value)
    {
 #define RIB_SETTING_KEY(name, retroarch) \
       case RIB_SETTING_##name: rib_host_apply_##name(settings, value); return true;
+#include "settings.inc"
+      default:
+         return false;
+   }
+}
+
+bool rib_host_setting_used(enum rib_setting_key key)
+{
+   switch (key)
+   {
+#define RIB_SETTING_KEY(name, retroarch) \
+      case RIB_SETTING_##name: return rib_host_used_##name();
 #include "settings.inc"
       default:
          return false;

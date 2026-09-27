@@ -50,7 +50,7 @@ struct Menu
    /* The list of each screen that has one. We pass a chosen row to the list of
     * the screen showing, which we find by the declared role of the screen. */
    rib::ListOwner *const owners[3] = {&discs, &shaders, &accounts};
-   rib::PlayerSettings settings{view.parts, view.lists};
+   rib::PlayerSettings settings{view.document, view.parts, view.lists};
    rib::Focus& focus = view.focus;
    rib::Screens& screens = view.screens;
    rib::Controls controls{focus, screens, view.document, view.controls,

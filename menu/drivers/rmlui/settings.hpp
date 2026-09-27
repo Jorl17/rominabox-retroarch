@@ -7,6 +7,7 @@
 #include <vector>
 
 namespace rib {
+class Document;
 class Lists;
 class Parts;
 
@@ -14,11 +15,13 @@ class Parts;
  * declare them in the exporter. Each controls one RetroArch key. We apply a
  * change at once through the host, save it in a file in the data folder of
  * the game, and apply that file in the launcher at the next launch. The
- * value is in RetroArch, and here we keep the declarations and show them. */
+ * value is in RetroArch, and here we keep and show the declarations. We
+ * disable a setting with no effect in the game, and the design may hide it. */
 class PlayerSettings
 {
 public:
-   PlayerSettings(Parts& parts, Lists& lists) : parts(parts), lists(lists) {}
+   PlayerSettings(Document& document, Parts& parts, Lists& lists)
+      : document(document), parts(parts), lists(lists) {}
    void load(const DesignDeclarations& design, const char *data_directory);
    /* Call once the document is loaded. We set the step of each level, and move
     * a level between two positions onto one. */
@@ -35,6 +38,7 @@ private:
    const SettingDeclaration *owning(const char *control, SettingKind kind) const;
    float value(const SettingDeclaration& setting) const;
    void set(const SettingDeclaration& setting, float value, bool persist);
+   Document& document;
    Parts& parts;
    Lists& lists;
    std::vector<SettingDeclaration> entries;

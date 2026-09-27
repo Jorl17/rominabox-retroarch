@@ -1677,6 +1677,10 @@
  * sensor input, if supported */
 #define DEFAULT_INPUT_SENSORS_ENABLE true
 
+/* ROM-in-a-Box: whether we pass rumble from the core to the pads. When it
+ * is off, we send zero strength to every pad, on every joypad driver. */
+#define DEFAULT_INPUT_RUMBLE_ENABLE true
+
 /* Automatically enable game focus when running or
  * resuming content */
 #define DEFAULT_INPUT_AUTO_GAME_FOCUS AUTO_GAME_FOCUS_OFF

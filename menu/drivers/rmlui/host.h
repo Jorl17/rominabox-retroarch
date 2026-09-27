@@ -76,6 +76,9 @@ void rib_host_quit(void);
  * the game runs. A switch is 1 or 0. Returns false if there are no settings. */
 bool rib_host_setting(enum rib_setting_key key, float *value);
 bool rib_host_set_setting(enum rib_setting_key key, float value);
+/* Whether the key has an effect in the running game. For example, the rumble
+ * key has none with a core that does not support rumble. */
+bool rib_host_setting_used(enum rib_setting_key key);
 void rib_host_scroll_sound(bool up);
 /* Play the movement cue at the volume of the game, so the player hears a
  * change of level at the new level. We do not call this at the lowest,

@@ -5,8 +5,9 @@
  * each setting it declares names its key and its kind by the first field,
  * and it writes the quoted word to design.cfg, so a key or kind this file
  * does not declare stops the export. The menu reads design.cfg's words back
- * through this list, and the host reads and applies each key through
- * rib_host_read_<name> and rib_host_apply_<name>, so a key the host cannot
+ * through this list, and the host reads and applies each key, and says
+ * whether the running game has any use for it, through rib_host_read_<name>,
+ * rib_host_apply_<name> and rib_host_used_<name>, so a key the host cannot
  * apply stops the build.
  *
  * RIB_SETTING_KEY(name, "retroarch_config_key")
@@ -23,6 +24,8 @@
 RIB_SETTING_KEY(AudioVolume, "audio_volume")
 /* Whether the game pauses while its window is in the background. */
 RIB_SETTING_KEY(PauseNonactive, "pause_nonactive")
+/* Whether a pad rumbles when the game asks it to. */
+RIB_SETTING_KEY(InputRumbleEnable, "input_rumble_enable")
 
 /* A slider of positions, each with the value the exporter declares for it. */
 RIB_SETTING_KIND(Level, "level")

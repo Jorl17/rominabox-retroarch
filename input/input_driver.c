@@ -539,6 +539,12 @@ bool input_driver_set_rumble(
    if (joy_idx >= MAX_USERS)
       return false;
 
+   /* ROM-in-a-Box: with rumble off, we send zero strength to every joypad
+    * driver, so a rumbling pad stops, whether or not the driver scales the
+    * strength itself. We send every rumble to a pad through here. */
+   if (!config_get_ptr()->bools.input_rumble_enable)
+      strength = 0;
+
    primary_joypad = input_driver_st.primary_joypad;
    sec_joypad     = input_driver_st.secondary_joypad;
 
