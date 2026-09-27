@@ -71,6 +71,7 @@
 #ifdef HAVE_MENU
 #include "../../menu/menu_driver.h"
 #include "../../command.h"
+#include "../../rominabox_launch.h"
 #include "../../rominabox_session.h"
 #include "win32_quiet_window.h"
 #endif
@@ -1519,7 +1520,7 @@ static void win32_label_for_taskbar(HWND hwnd)
          && SUCCEEDED(SHGetPropertyStoreForWindow(hwnd,
                &rib_property_store_iid, (void**)&store)))
    {
-      snprintf(text, sizeof(text), "ROMinaBox.Game.%s", identity);
+      snprintf(text, sizeof(text), RIB_GAME_APP_ID_PREFIX "%s", identity);
       win32_set_window_text(store, &rib_app_id, text);
       snprintf(text, sizeof(text), "\"%s\"", program);
       win32_set_window_text(store, &rib_relaunch_command, text);

@@ -35,4 +35,9 @@
  * in the Windows launcher, because the game window belongs to the player. */
 #define RIB_ENV_RELAUNCH "ROMINABOX_RELAUNCH"
 
+/* The application id of a Windows game is this and its identity. On the
+ * taskbar the game's windows are grouped by it, and in the launcher we name
+ * the game's sandbox with it. */
+#define RIB_GAME_APP_ID_PREFIX "ROMinaBox.Game."
+
 #endif
