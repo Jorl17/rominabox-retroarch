@@ -733,7 +733,16 @@ static void net_http_conn_pool_remove_expired(void)
    entry = conn_pool;
    while (entry)
    {
+      /* On POSIX an fd_set has room for descriptors below FD_SETSIZE. On
+       * Windows it has room for up to FD_SETSIZE sockets of any value, and
+       * socket values are not small, so we do not compare the value there.
+       * Otherwise we would reuse a pooled connection that the server had
+       * closed, and get no response to its request. */
+#if defined(_WIN32)
+      if (!entry->in_use && entry->fd >= 0 && fds.fd_count < FD_SETSIZE)
+#else
       if (!entry->in_use && entry->fd >= 0 && entry->fd < FD_SETSIZE)
+#endif
       {
          FD_SET(entry->fd, &fds);
          if (entry->fd >= max)
