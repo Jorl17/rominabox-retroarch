@@ -1086,8 +1086,16 @@ ifeq ($(HAVE_MENU), 1)
              menu/drivers/rmlui/shaders.o menu/drivers/rmlui/discs.o menu/drivers/rmlui/saved_accounts.o menu/drivers/rmlui/settings.o menu/drivers/rmlui/controls.o \
              menu/drivers/rmlui/render/rmlui_gl.o menu/drivers/rmlui/render/rmlui_gl3.o \
              menu/drivers/third_party/lodepng.o
+      # The menu's text input: the platform's own text service, or none.
       ifeq ($(HAVE_COCOA), 1)
          OBJ += menu/drivers/rmlui/text_input_macos.o
+      else
+         ifneq ($(findstring Win32,$(OS)),)
+            OBJ += menu/drivers/rmlui/text_input_windows.o
+            LIBS += -limm32
+         else
+            OBJ += menu/drivers/rmlui/text_input_none.o
+         endif
       endif
       ifneq ($(HAVE_CHEEVOS), 1)
          OBJ += cheevos/rominabox_stub.o

@@ -504,6 +504,7 @@ enum rib_capture_result rib_host_capture_poll(bool allow_pointer, float *remaini
 
 int64_t rib_host_time_us(void) { return cpu_features_get_time_usec(); }
 bool rib_host_core_gl_context(void) { return gl_query_core_context_in_use(); }
+uintptr_t rib_host_native_window(void) { return video_driver_window_get(); }
 rib_pointer rib_host_pointer(void)
 {
    menu_input_pointer_t pointer;

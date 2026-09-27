@@ -38,6 +38,9 @@ typedef struct rib_pointer { int x, y; bool pressed; } rib_pointer;
 rib_pointer rib_host_pointer(void);
 int64_t rib_host_time_us(void);
 bool rib_host_core_gl_context(void);
+/* Return the platform handle of the menu window (an HWND on Windows), or 0
+ * when there is no window. */
+uintptr_t rib_host_native_window(void);
 /* For the test script driver, in a test build only. Take the capture
  * before the usual frame-limit exit. */
 bool rib_host_prepare_script_shot(void);

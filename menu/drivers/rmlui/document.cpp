@@ -164,10 +164,10 @@ bool Document::initialize(const char *asset_directory,
       return false;
    }
 
-#ifdef HAVE_COCOA
+   /* The text service for the platform, as chosen in the build. With none,
+    * we use the RmlUi clipboard. */
    text_input = make_text_input_platform(*this);
    system.text_input = text_input.get();
-#endif
    context = Rml::CreateContext("rominabox-menu", Rml::Vector2i(width, height), nullptr, text_input.get());
    document = context ? context->LoadDocument(asset_path(files::Menu)) : nullptr;
    if (!context || !document)
