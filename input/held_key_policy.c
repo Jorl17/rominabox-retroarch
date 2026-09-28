@@ -45,12 +45,30 @@ int held_key_menu_toggle_fires(
       int other_held,
       unsigned *flushing)
 {
+   return held_key_menu_toggle_fires_any(&escape_code, 1, escape_level,
+         other_held, flushing);
+}
+
+int held_key_menu_toggle_fires_any(
+      const unsigned *codes,
+      unsigned count,
+      int escape_level,
+      int other_held,
+      unsigned *flushing)
+{
    int edge_down = 0;
    int edge_up = 0;
+   unsigned index;
 
    int fires = 0;
 
-   take(escape_code, &edge_down, &edge_up);
+   for (index = 0; index < count; index++)
+   {
+      int down, up;
+      take(codes[index], &down, &up);
+      edge_down |= down;
+      edge_up |= up;
+   }
    /* We have read the edges of this sample. Drop everything else, so that a
     * key pressed and released is not still pending at the next sample. */
    memset(went_down, 0, sizeof(went_down));

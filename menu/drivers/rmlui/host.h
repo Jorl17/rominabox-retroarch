@@ -34,6 +34,22 @@ enum rib_capture_result { RIB_CAPTURE_PENDING, RIB_CAPTURE_CAPTURED, RIB_CAPTURE
 bool rib_host_capture_start(unsigned index, unsigned seconds);
 void rib_host_capture_cancel(void);
 enum rib_capture_result rib_host_capture_poll(bool allow_pointer, float *remaining);
+/* The actions of the menu (menu_controls.inc), read from the keyboard and
+ * the pad of the first player. Pass a key by its name in the RetroArch
+ * config, and a pad input by its id, as in pad_inputs.h. Both return false
+ * for a name or id that is not a key or pad input. */
+bool rib_host_key_code(const char *name, unsigned *code);
+bool rib_host_key_down(unsigned code);
+bool rib_host_pad_input(const char *id, unsigned *bind);
+bool rib_host_pad_down(unsigned bind);
+/* Capture an input for one of those actions. We use the RetroArch capture,
+ * as on the Controls screen, but write into none of the RetroArch binds.
+ * Poll and cancel it as any other capture. After a poll that returns
+ * captured, `binding` contains the input in the menu_controls.inc format,
+ * or is empty for an input that is neither a key nor a pad input, such as a
+ * mouse button, a stick, or a button with no bind in the pad profile. */
+bool rib_host_capture_input_start(unsigned seconds);
+void rib_host_captured_input(char *binding, size_t length);
 typedef struct rib_pointer { int x, y; bool pressed; } rib_pointer;
 rib_pointer rib_host_pointer(void);
 int64_t rib_host_time_us(void);

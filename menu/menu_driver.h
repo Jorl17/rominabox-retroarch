@@ -772,6 +772,10 @@ enum menu_rib_bind_result
 
 /* Focused single-bind capture used by the ROM-in-a-Box Controls page. */
 bool menu_input_rib_bind_start(unsigned bind_index, unsigned timeout_seconds);
+/* The same capture into `output`, a bind in none of the RetroArch tables, as
+ * on MENU CONTROLS for one of the menu actions. We clear it first, and
+ * afterwards it contains the one input captured. */
+bool menu_input_rib_capture_start(struct retro_keybind *output, unsigned timeout_seconds);
 enum menu_rib_bind_result menu_input_rib_bind_poll(
       retro_time_t current_time, float *seconds_remaining, bool accept_input);
 void menu_input_rib_bind_cancel(void);

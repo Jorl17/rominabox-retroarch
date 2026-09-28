@@ -15,6 +15,7 @@ inline Sound action_sound(int action)
       case RIB_RMLUI_ACTION_RESUME:
       case RIB_RMLUI_ACTION_CONTROLS_BACK:
       case RIB_RMLUI_ACTION_CONTROLS_CANCEL:
+      case RIB_RMLUI_ACTION_MENU_CONTROLS_CANCEL:
          return Sound::Cancel;
       default:
          return Sound::Confirm;

@@ -20,4 +20,13 @@ int held_key_menu_toggle_fires(
       int other_held,
       unsigned *flushing);
 
+/* The same decision when any of `count` keys toggles the menu. A press of
+ * any of them counts, and `level` is whether any of them is down. */
+int held_key_menu_toggle_fires_any(
+      const unsigned *codes,
+      unsigned count,
+      int level,
+      int other_held,
+      unsigned *flushing);
+
 #endif

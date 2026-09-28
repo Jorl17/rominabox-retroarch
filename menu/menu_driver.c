@@ -5015,7 +5015,10 @@ static bool menu_input_key_bind_iterate(
    return false;
 }
 
-bool menu_input_rib_bind_start(unsigned bind_index, unsigned timeout_seconds)
+/* `bind_index` is the bind we describe the capture as. `output`, when set,
+ * is where we write the capture instead of that bind. */
+static bool menu_input_rib_capture_into(unsigned bind_index,
+      struct retro_keybind *output, unsigned timeout_seconds)
 {
    uint64_t current_usec;
    input_driver_state_t *input_st = input_state_get_ptr();
@@ -5039,7 +5042,7 @@ bool menu_input_rib_bind_start(unsigned bind_index, unsigned timeout_seconds)
    binds->order                 = 0;
    binds->begin                 = MENU_SETTINGS_BIND_BEGIN + bind_index;
    binds->last                  = binds->begin;
-   binds->output                = &input_config_binds[0][bind_index];
+   binds->output                = output ? output : &input_config_binds[0][bind_index];
    binds->buffer                = *binds->output;
    binds->user                  = 0;
    binds->port                  = settings->uints.input_joypad_index[0];
@@ -5072,6 +5075,23 @@ bool menu_input_rib_bind_start(unsigned bind_index, unsigned timeout_seconds)
    }
    menu_st->flags                      |= MENU_ST_FLAG_IS_BINDING;
    return true;
+}
+
+bool menu_input_rib_bind_start(unsigned bind_index, unsigned timeout_seconds)
+{
+   return menu_input_rib_capture_into(bind_index, NULL, timeout_seconds);
+}
+
+bool menu_input_rib_capture_start(struct retro_keybind *output, unsigned timeout_seconds)
+{
+   if (!output)
+      return false;
+   output->key     = RETROK_UNKNOWN;
+   output->joykey  = NO_BTN;
+   output->joyaxis = AXIS_NONE;
+   output->mbutton = NO_BTN;
+   /* We describe it as the menu toggle, the meta bind closest to its purpose. */
+   return menu_input_rib_capture_into(RARCH_MENU_TOGGLE, output, timeout_seconds);
 }
 
 enum menu_rib_bind_result menu_input_rib_bind_poll(

@@ -27,6 +27,7 @@
 #include "saved_accounts.hpp"
 #include "settings.hpp"
 #include "controls.hpp"
+#include "menu_controls.hpp"
 #include "slots.hpp"
 #include "view.hpp"
 #include "navigation.hpp"
@@ -55,6 +56,8 @@ struct Menu
    rib::Screens& screens = view.screens;
    rib::Controls controls{focus, screens, view.document, view.controls,
          view.lists, view.status, view.hovered};
+   rib::MenuControls menu_controls{view.document, focus, screens, view.status,
+         view.intents, view.hovered};
    bool pointer_pressed;
    rib::Slots& slots = view.slots;
    rib::Navigation navigation{focus, screens, controls, slots,
@@ -112,6 +115,52 @@ bool rib_rmlui_allow_quit(void)
 }
 
 /* The list of the screen showing now, if it has one. */
+/* Whether we are capturing a binding, on either screen with a capture. */
+static bool capturing(const Menu *menu)
+{
+   return menu && (menu->controls.capture_active || menu->menu_controls.capturing());
+}
+
+static void cancel_captures(Menu *menu)
+{
+   if (menu->controls.capture_active)
+      menu->controls.cancel_capture();
+   menu->menu_controls.cancel_capture();
+}
+
+unsigned rib_rmlui_menu_keys(unsigned *codes, unsigned capacity)
+{
+   if (!active_menu || !codes || rib_rmlui_typing())
+      return 0;
+   unsigned count = 0;
+   for (unsigned code : active_menu->menu_controls.read().keys(rib::MenuAction::Menu))
+      if (count < capacity)
+         codes[count++] = code;
+   return count;
+}
+
+bool rib_rmlui_menu_pad_held(void)
+{
+   return active_menu && active_menu->menu_controls.read().held(rib::MenuAction::Menu, false);
+}
+
+void rib_rmlui_menu_buttons(uint32_t *buttons, unsigned ok, unsigned cancel)
+{
+   if (!active_menu || !buttons || ok >= 32 || cancel >= 32)
+      return;
+   const rib::MenuBindings& bindings = active_menu->menu_controls.read();
+   const bool keys = !rib_rmlui_typing();
+   uint32_t read_here = (1u << ok) | (1u << cancel);
+   for (unsigned bind : bindings.pad_binds())
+      if (bind < 16)
+         read_here |= 1u << bind;
+   *buttons &= ~read_here;
+   if (bindings.held(rib::MenuAction::Confirm, keys))
+      *buttons |= 1u << ok;
+   if (bindings.held(rib::MenuAction::Back, keys))
+      *buttons |= 1u << cancel;
+}
+
 static rib::ListOwner *showing_list(Menu *menu)
 {
    const rib::ScreenRole role = menu->screens.current_role();
@@ -127,6 +176,7 @@ static void screen_shown(Menu *menu)
 {
    const rib::ScreenRole role = menu->screens.current_role();
    menu->controls.screen_shown(role == rib::ScreenRole::Controls);
+   menu->menu_controls.screen_shown(role == rib::ScreenRole::MenuControls);
    menu->achievements.screen_shown(role == rib::ScreenRole::Achievements);
    /* We measure the slider from the box of the track. While the panel is
     * hidden its width is zero, so painting leaves the thumb at its position in
@@ -200,8 +250,7 @@ static void reset_interaction(Menu *menu, bool opening)
    if (!menu || !menu->initialized)
       return;
    menu->achievements.leave_form();
-   if (menu->controls.capture_active)
-      menu->controls.cancel_capture();
+   cancel_captures(menu);
    menu->pointer_pressed = false;
    menu->controls.capture_ignore_pointer = false;
    /* When the menu closes during a drag, we end the drag where it is and keep
@@ -229,7 +278,7 @@ void rib_menu_toggle(void *userdata, bool on)
 bool rib_menu_consume_toggle(void *userdata)
 {
    Menu *menu = (Menu*)userdata;
-   return menu && (menu->achievements.modal() || menu->controls.capture_active
+   return menu && (menu->achievements.modal() || capturing(menu)
          || !menu->screens.showing(rib::ScreenRole::Pause));
 }
 
@@ -239,7 +288,8 @@ bool rib_menu_consume_toggle(void *userdata)
  * screens and leave the menu. */
 static void perform_action(Menu *menu, const rib::Event& event)
 {
-   if (!menu || menu->achievements.handle(event) || menu->controls.handle(event)
+   if (!menu || menu->achievements.handle(event) || menu->menu_controls.handle(event)
+         || menu->controls.handle(event)
          || menu->slots.handle(event) || menu->settings.handle(event))
       return;
 
@@ -291,6 +341,15 @@ void *rib_menu_create(void)
    if (!menu)
       return nullptr;
    menu->navigation.on_shown([menu] { screen_shown(menu); });
+   menu->navigation.on_capturing([menu] { return capturing(menu); });
+   {
+      /* We read the input that opens the menu while the game runs, before we
+       * have ever drawn the menu. */
+      const rib_environment_value assets = rib_owned(rib_environment(RIB_ENV_RML_ASSETS));
+      const rib_environment_value data = rib_owned(rib_data_directory());
+      menu->menu_controls.load(assets && *assets ? assets.get() : RIB_RMLUI_DEFAULT_ASSETS,
+            data.get());
+   }
    menu->slots.reset_transfer();
    menu->slots.set_selected_slot(1);
    active_menu = menu;
@@ -307,8 +366,8 @@ void rib_menu_destroy(void *data)
    Menu *menu = (Menu*)data;
    if (active_menu == data)
       active_menu = NULL;
-   if (menu && menu->controls.capture_active)
-      menu->controls.cancel_capture();
+   if (menu)
+      cancel_captures(menu);
    if (menu) menu->achievements.context_lost();
    rib::menu_view().shutdown();
    pending_overlay_start = false;
@@ -319,8 +378,8 @@ void rib_menu_destroy(void *data)
 void rib_menu_context_destroy(void *data)
 {
    Menu *menu = (Menu*)data;
-   if (menu && menu->controls.capture_active)
-      menu->controls.cancel_capture();
+   if (menu)
+      cancel_captures(menu);
    if (menu) menu->achievements.context_lost();
    rib::menu_view().shutdown();
    if (menu)
@@ -362,6 +421,7 @@ static bool initialize(Menu *menu, const char *assets, int width, int height)
    apply_design(menu, design, data);
    menu->achievements.bind();
    menu->accounts.bind();
+   menu->menu_controls.bind();
    menu->shaders.load(assets, data);
    menu->slots.paint();
    read_game(menu);
@@ -423,7 +483,7 @@ void rib_menu_frame(void *data, int width, int height)
           * want frames after the overlays are done, and we can learn that only
           * after asking it. */
          menu->script.run(menu, {menu->screens.current().c_str(), menu->slots.transfer_pending(),
-               menu->controls.capture_active, menu->controls.profile_id.c_str(),
+               capturing(menu), menu->controls.profile_id.c_str(),
                menu->controls.binds_list()});
          menu->overlays.update(menu->script.wants_frames());
          menu->view.render(width, height);
@@ -443,7 +503,7 @@ void rib_menu_frame(void *data, int width, int height)
          /* While we capture a binding, a press moves nothing. In RmlUi a press
           * focuses what is under it, so we give the focus back to the
           * control being bound. The press can still reach CANCEL. */
-         const std::string kept = menu->controls.capture_active
+         const std::string kept = capturing(menu)
                ? menu->focus.current_id() : std::string();
          menu->view.pointer_button(pointer_pressed);
          if (!kept.empty())
@@ -456,6 +516,8 @@ void rib_menu_frame(void *data, int width, int height)
          menu->controls.capture_ignore_pointer = true;
       if (menu->controls.capture_ignore_pointer && !pointer_pressed)
          menu->controls.capture_ignore_pointer = false;
+      if (pointer_pressed != menu->pointer_pressed)
+         menu->menu_controls.ignore_pointer(pointer_pressed);
       menu->pointer_pressed = pointer_pressed;
    }
 
@@ -478,13 +540,13 @@ void rib_menu_frame(void *data, int width, int height)
     * that is still display:none in the document. */
    menu->discs.sync();
    menu->script.run(menu, {menu->screens.current().c_str(), menu->slots.transfer_pending(),
-               menu->controls.capture_active, menu->controls.profile_id.c_str(),
+               capturing(menu), menu->controls.profile_id.c_str(),
                menu->controls.binds_list()});
    menu->script.restore_hover();
    /* Once we have put the pointer back after the script, we silently focus
     * the stop the pointer moved onto, before the click of this frame. We never
     * take the focus away from the keys for a pointer at rest. */
-   if (!menu->controls.capture_active)
+   if (!capturing(menu))
       menu->view.follow_pointer();
 
    for (;;)
@@ -496,6 +558,7 @@ void rib_menu_frame(void *data, int width, int height)
    }
 
    menu->controls.poll_capture();
+   menu->menu_controls.poll_capture();
    menu->slots.follow();
    menu->controls.update_binds(pointer.x, pointer.y,
          !menu->script.wants_frames());

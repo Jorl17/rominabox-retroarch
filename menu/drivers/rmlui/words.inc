@@ -26,6 +26,16 @@ RIB_WORD(DefaultsSaveFailed, "defaults-save-failed", "DEFAULTS RESTORED; SAVE FA
 RIB_WORD(DefaultsLoadFailed, "defaults-load-failed", "DEFAULTS COULD NOT BE LOADED")
 RIB_WORD(Unbound, "unbound", "---")
 
+/* MENU CONTROLS' statuses, beside the pad screen's capture words, which it
+ * shares. {control} is an action as its row names it. */
+RIB_WORD(BindingRemoved, "binding-removed", "BINDING REMOVED")
+RIB_WORD(BindingSwapped, "binding-swapped", "SWAPPED WITH {control}")
+RIB_WORD(BindingMoved, "binding-moved", "TAKEN FROM {control}")
+RIB_WORD(BindingNoRoom, "binding-no-room", "NO ROOM IN {control}")
+RIB_WORD(BindingNeeded, "binding-needed", "{control} NEEDS A BINDING")
+RIB_WORD(KeyNeeded, "key-needed", "{control} NEEDS A KEY")
+RIB_WORD(BindingUnusable, "binding-unusable", "USE A KEY OR A PAD BUTTON")
+
 /* The save slots and what saving and loading say. */
 RIB_WORD(Slot, "slot", "SLOT {slot}")
 RIB_WORD(Occupied, "occupied", "OCCUPIED")

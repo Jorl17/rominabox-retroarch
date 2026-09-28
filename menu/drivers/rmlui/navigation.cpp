@@ -250,11 +250,12 @@ Event Navigation::move(rib_key action)
 
 Event Navigation::key(rib_key action)
 {
-   if (controls.capture_active)
+   if (capturing && capturing())
    {
       if (action == RIB_KEY_CANCEL || action == RIB_KEY_RESUME ||
           action == RIB_KEY_TOGGLE)
-         return RIB_RMLUI_ACTION_CONTROLS_CANCEL;
+         return screens.showing(ScreenRole::MenuControls)
+               ? RIB_RMLUI_ACTION_MENU_CONTROLS_CANCEL : RIB_RMLUI_ACTION_CONTROLS_CANCEL;
       return {};
    }
 
