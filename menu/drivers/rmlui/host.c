@@ -471,15 +471,8 @@ static void rib_rmlui_save_mouse_button(config_file_t *config,
 {
    switch (mouse_button)
    {
-      case RETRO_DEVICE_ID_MOUSE_LEFT: config_set_uint(config, key, 1); break;
-      case RETRO_DEVICE_ID_MOUSE_RIGHT: config_set_uint(config, key, 2); break;
-      case RETRO_DEVICE_ID_MOUSE_MIDDLE: config_set_uint(config, key, 3); break;
-      case RETRO_DEVICE_ID_MOUSE_BUTTON_4: config_set_uint(config, key, 4); break;
-      case RETRO_DEVICE_ID_MOUSE_BUTTON_5: config_set_uint(config, key, 5); break;
-      case RETRO_DEVICE_ID_MOUSE_WHEELUP: config_set_string(config, key, "wu"); break;
-      case RETRO_DEVICE_ID_MOUSE_WHEELDOWN: config_set_string(config, key, "wd"); break;
-      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELUP: config_set_string(config, key, "whu"); break;
-      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELDOWN: config_set_string(config, key, "whd"); break;
+#define RIB_MOUSE_BUTTON(value, id, word) case id: config_set_string(config, key, value); break;
+#include "mouse_buttons.inc"
       default: config_set_string(config, key, "nul"); break;
    }
 }

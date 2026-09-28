@@ -18,15 +18,8 @@ static inline void rib_mouse_label(uint16_t button, char *out, size_t length)
    const char *label = NULL;
    switch (button)
    {
-      case RETRO_DEVICE_ID_MOUSE_LEFT: label = "Left"; break;
-      case RETRO_DEVICE_ID_MOUSE_RIGHT: label = "Right"; break;
-      case RETRO_DEVICE_ID_MOUSE_MIDDLE: label = "Middle"; break;
-      case RETRO_DEVICE_ID_MOUSE_BUTTON_4: label = "Button 4"; break;
-      case RETRO_DEVICE_ID_MOUSE_BUTTON_5: label = "Button 5"; break;
-      case RETRO_DEVICE_ID_MOUSE_WHEELUP: label = "Wheel up"; break;
-      case RETRO_DEVICE_ID_MOUSE_WHEELDOWN: label = "Wheel down"; break;
-      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELUP: label = "Wheel left"; break;
-      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELDOWN: label = "Wheel right"; break;
+#define RIB_MOUSE_BUTTON(value, id, word) case id: label = word; break;
+#include "mouse_buttons.inc"
       default: break;
    }
    if (label)
