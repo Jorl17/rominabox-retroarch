@@ -57,6 +57,8 @@ public:
 #ifdef RIB_RMLUI_HEADLESS
    void advance(double seconds) { system.clock_offset += seconds; }
    unsigned texture_loads() const { return texture_count; }
+   /* Pictures in the document whose file is missing. */
+   const std::vector<std::string>& missing_pictures() const { return missing_picture_paths; }
    /* How much geometry we have built. In a frame with no change we build
     * none. */
    unsigned geometry_compiled() const { return geometry_count; }
@@ -91,6 +93,7 @@ private:
 #ifdef RIB_RMLUI_HEADLESS
    unsigned texture_count = 0;
    unsigned geometry_count = 0;
+   std::vector<std::string> missing_picture_paths;
 #endif
 };
 }

@@ -26,8 +26,10 @@ namespace
 class HeadlessRenderer : public RominaboxRenderer
 {
 public:
-   HeadlessRenderer(unsigned &texture_count, unsigned &geometry_count)
-      : texture_count(texture_count), geometry_count(geometry_count) {}
+   HeadlessRenderer(unsigned &texture_count, unsigned &geometry_count,
+         std::vector<std::string> &missing_pictures)
+      : texture_count(texture_count), geometry_count(geometry_count),
+        missing_pictures(missing_pictures) {}
    void SetViewport(int, int) override {}
    void BeginFrame() override {}
    void EndFrame() override {}
@@ -40,9 +42,16 @@ public:
    void RenderGeometry(Rml::CompiledGeometryHandle, Rml::Vector2f,
          Rml::TextureHandle) override {}
    void ReleaseGeometry(Rml::CompiledGeometryHandle) override {}
+   /* As in the menu renderer, a picture with no file does not load. We keep
+    * a list of those pictures for the tests. */
    Rml::TextureHandle LoadTexture(Rml::Vector2i& dimensions,
-         const Rml::String&) override
+         const Rml::String& source) override
    {
+      if (!filestream_exists(source.c_str()))
+      {
+         missing_pictures.push_back(source);
+         return 0;
+      }
       ++texture_count;
       dimensions = {1, 1};
       return 1;
@@ -58,6 +67,7 @@ public:
 
 private:
    unsigned &texture_count;
+   std::vector<std::string> &missing_pictures;
    /* The count of geometry pieces built in RmlUi. After a change, only what
     * must be laid out or drawn again is built again. */
    unsigned &geometry_count;
@@ -99,7 +109,7 @@ bool Document::initialize(const char *asset_directory,
    asset_dir = asset_directory;
 #ifdef RIB_RMLUI_HEADLESS
    (void)core_context;
-   renderer = std::make_unique<HeadlessRenderer>(texture_count, geometry_count);
+   renderer = std::make_unique<HeadlessRenderer>(texture_count, geometry_count, missing_picture_paths);
 #else
    renderer = rib_menu_renderer(core_context);
 #endif
