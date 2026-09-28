@@ -1084,6 +1084,7 @@ ifeq ($(HAVE_MENU), 1)
              menu/drivers/rmlui/achievements.o menu/drivers/rmlui/text_entry.o menu/drivers/rmlui/text_host.o \
              menu/drivers/rmlui/overlays.o menu/drivers/rmlui/script.o menu/drivers/rmlui/script_report.o \
              menu/drivers/rmlui/shaders.o menu/drivers/rmlui/discs.o menu/drivers/rmlui/saved_accounts.o menu/drivers/rmlui/settings.o menu/drivers/rmlui/controls.o \
+             menu/drivers/rmlui/menu_bindings.o menu/drivers/rmlui/menu_controls.o menu/drivers/rmlui/pad_inputs.o \
              menu/drivers/rmlui/render/rmlui_gl.o menu/drivers/rmlui/render/rmlui_gl3.o \
              menu/drivers/third_party/lodepng.o
       # The menu's text input: the platform's own text service, or none.

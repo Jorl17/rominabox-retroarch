@@ -1,6 +1,7 @@
 #include "host.h"
 #include "files.h"
 #include "bind_lines.h"
+#include "pad_inputs.h"
 #include "../../menu_input.h"
 #include <gfx/gl_capabilities.h>
 #include <features/features_cpu.h>
@@ -525,6 +526,58 @@ bool rib_host_capture_start(unsigned index, unsigned seconds)
 }
 
 void rib_host_capture_cancel(void) { menu_input_rib_bind_cancel(); }
+
+bool rib_host_key_code(const char *name, unsigned *code)
+{
+   enum retro_key key;
+   if (!name || !*name || !code)
+      return false;
+   key = input_config_translate_str_to_rk(name, strlen(name));
+   if (key == RETROK_UNKNOWN)
+      return false;
+   *code = (unsigned)key;
+   return true;
+}
+
+bool rib_host_key_down(unsigned code) { return input_driver_keyboard_pressed(code) != 0; }
+bool rib_host_pad_input(const char *id, unsigned *bind) { return rib_pad_input_bind(id, bind); }
+bool rib_host_pad_down(unsigned bind) { return rib_pad_input_down(bind); }
+
+/* Where we write a capture for one of the menu actions. It is none of the
+ * RetroArch binds, so no input of the game changes while it runs. */
+static struct retro_keybind rib_captured_input;
+
+bool rib_host_capture_input_start(unsigned seconds)
+{
+   return menu_input_rib_capture_start(&rib_captured_input, seconds);
+}
+
+void rib_host_captured_input(char *binding, size_t length)
+{
+#define RIB_MENU_BINDING(name, prefix) static const char name##_prefix[] = prefix;
+#include "menu_controls.inc"
+   const struct retro_keybind *input = &rib_captured_input;
+   char key[64];
+   unsigned bind;
+
+   if (!binding || !length)
+      return;
+   binding[0] = '\0';
+   /* During the capture we marked the key as used by a bind, but none uses it. */
+   if (input->key != RETROK_UNKNOWN)
+   {
+      input_keyboard_mapping_bits(0, input->key);
+      rib_host_restore_keyboard_mapping();
+      key[0] = '\0';
+      input_keymaps_translate_rk_to_str(input->key, key, sizeof(key));
+      if (key[0] && !string_is_equal(key, "nul"))
+         snprintf(binding, length, "%s%s", Key_prefix, key);
+      return;
+   }
+   rib_host_restore_keyboard_mapping();
+   if (rib_pad_input_of(input->joykey, input->joyaxis, &bind))
+      snprintf(binding, length, "%s%s", Pad_prefix, rib_pad_input_id(bind));
+}
 
 enum rib_capture_result rib_host_capture_poll(bool allow_pointer, float *remaining)
 {

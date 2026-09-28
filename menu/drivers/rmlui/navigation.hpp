@@ -69,6 +69,9 @@ public:
         document(document), lists(lists), parts(parts) {}
    /* What we do in the menu after we show any screen. */
    void on_shown(std::function<void()> shown) { this->shown = std::move(shown); }
+   /* Whether we are capturing a binding, when we take every key except the
+    * cancel key. */
+   void on_capturing(std::function<bool()> capturing) { this->capturing = std::move(capturing); }
    Event key(rib_key action);
    /* We open the menu on Pause, at the start marked in the design. */
    void open();
@@ -104,6 +107,7 @@ private:
    Lists& lists;
    Parts& parts;
    std::function<void()> shown;
+   std::function<bool()> capturing;
    /* The screen from which the player opened each screen, for Back. */
    std::map<std::string, std::string> openers;
    std::string before_dialog;

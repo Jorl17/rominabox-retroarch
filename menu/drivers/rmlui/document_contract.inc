@@ -52,6 +52,8 @@ RIB_ROLE(Achievements, "achievements")
 RIB_ROLE(Discs, "discs")
 /* QUICK SIGN IN's list of the accounts other games saved. */
 RIB_ROLE(Accounts, "accounts")
+/* MENU CONTROLS: what opens the menu, and confirms and goes back in it. */
+RIB_ROLE(MenuControls, "menu-controls")
 
 /* Every document. */
 RIB_ELEMENT(Body, "body", Shared, Required)
@@ -110,6 +112,24 @@ RIB_CLASS(DirectionPress, "direction-press", Controls, Optional)
 RIB_CLASS(ControlCallout, "control-callout", Controls, Optional)
 RIB_CLASS(ControlPickerLabel, "control-picker-label", Controls, Optional)
 RIB_CLASS(ControlPickerCurrent, "control-picker-current", Controls, Optional)
+
+/* MENU CONTROLS: one row for each action menu_controls.inc declares, its
+ * ids the row prefix and the action's id. Each row has its + (the add
+ * suffix), which captures a new binding, and chips numbered from 1, each
+ * showing one binding, which choosing removes; as many chips as the design
+ * draws are as many bindings as the row holds. The row's label (the label
+ * suffix) names the action wherever the menu says what happened to it.
+ * A chip holding a key is marked `key`, one holding pad inputs `pad`; an
+ * unused chip is hidden, and a full row's + is disabled. */
+RIB_ELEMENT(MenuControlsPanel, "menu-controls-panel", MenuControls, Required)
+RIB_ELEMENT(MenuControlsBack, "menu-controls-back", MenuControls, Required)
+RIB_ELEMENT(MenuControlsReset, "menu-controls-reset", MenuControls, Required)
+RIB_ELEMENT(MenuControlsCancel, "menu-controls-cancel", MenuControls, Required)
+RIB_ELEMENT(MenuControlsStatus, "menu-controls-status", MenuControls, Required)
+RIB_CLASS(MenuControlChip, "menu-control-chip", MenuControls, Required)
+RIB_CLASS(MenuControlAdd, "menu-control-add", MenuControls, Required)
+RIB_CLASS(ChipKey, "key", MenuControls, Optional)
+RIB_CLASS(ChipPad, "pad", MenuControls, Optional)
 
 /* The options screen, the volume control in it, and its entries. */
 RIB_CLASS(OptionsBack, "options-back", Options, Required)
@@ -196,6 +216,11 @@ RIB_ELEMENT(ControlGroupBindingPrefix, "control-group-binding-", Generated, Opti
 RIB_ELEMENT(ControlDirectionPrefix, "control-direction-", Generated, Optional)
 RIB_ELEMENT(AchievementRowPrefix, "achievement-", Generated, Optional)
 RIB_ELEMENT(AccountRowPrefix, "account-", Generated, Optional)
+/* A MENU CONTROLS row, by the action's id: <prefix><action>, and its +,
+ * label and chips, <prefix><action><suffix> and <prefix><action>-<n>. */
+RIB_ELEMENT(MenuControlPrefix, "menu-control-", Generated, Optional)
+RIB_ELEMENT(AddSuffix, "-add", Generated, Optional)
+RIB_ELEMENT(LabelSuffix, "-label", Generated, Optional)
 /* Ids the exporter builds from a screen's or a row's own id. */
 RIB_ELEMENT(ListSuffix, "-list", Generated, Optional)
 RIB_ELEMENT(StatusSuffix, "-status", Generated, Optional)

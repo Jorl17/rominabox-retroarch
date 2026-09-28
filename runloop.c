@@ -5811,6 +5811,18 @@ static enum runloop_state_enum runloop_check_state(
     * is down cannot leave that bit stuck off, and the two paths cannot
     * disagree. */
    BIT256_CLEAR(current_bits, RARCH_MENU_TOGGLE);
+#ifdef HAVE_RMLUI
+   /* ROM-in-a-Box: the menu opens with what the player binds to MENU on
+    * MENU CONTROLS, which we read in the menu, and we ignore the menu toggle
+    * and gamepad combo of RetroArch. Its pad bindings are down or not, and
+    * its keys go through the held-key rule below. */
+   if (string_is_equal(settings->arrays.menu_driver, "rmlui"))
+   {
+      if (rib_rmlui_menu_pad_held())
+         BIT256_SET(current_bits, RARCH_MENU_TOGGLE);
+   }
+   else
+#endif
    if (     menu_toggle_gamepad_combo != INPUT_COMBO_NONE
          && input_driver_button_combo(
                menu_toggle_gamepad_combo,
@@ -5827,7 +5839,9 @@ static enum runloop_state_enum runloop_check_state(
       bool toggle_already = BIT256_GET(current_bits, RARCH_MENU_TOGGLE);
       int other_held      = 0;
       unsigned bind;
-      unsigned toggle_key = 0;
+      unsigned toggle_keys[8];
+      unsigned toggle_count = 0;
+      int toggle_level      = 0;
       int fire;
 
       for (bind = 0; bind < RARCH_FIRST_CUSTOM_BIND; bind++)
@@ -5835,13 +5849,21 @@ static enum runloop_state_enum runloop_check_state(
          if (BIT256_GET(current_bits, bind))
             other_held = 1;
       }
+#ifdef HAVE_RMLUI
+      if (string_is_equal(settings->arrays.menu_driver, "rmlui"))
+         toggle_count = rib_rmlui_menu_keys(toggle_keys, ARRAY_SIZE(toggle_keys));
+      else
+#endif
       /* The default bind is Escape. Use the key that is bound, so a
        * different menu key also goes through this path. */
       if (input_config_binds[0][RARCH_MENU_TOGGLE].valid)
-         toggle_key = (unsigned)input_config_binds[0][RARCH_MENU_TOGGLE].key;
-      fire = held_key_menu_toggle_fires(
-            toggle_key,
-            input_driver_keyboard_pressed(toggle_key),
+         toggle_keys[toggle_count++] = (unsigned)input_config_binds[0][RARCH_MENU_TOGGLE].key;
+      for (bind = 0; bind < toggle_count; bind++)
+         toggle_level |= input_driver_keyboard_pressed(toggle_keys[bind]);
+      fire = held_key_menu_toggle_fires_any(
+            toggle_keys,
+            toggle_count,
+            toggle_level,
             other_held,
             &menu_st->input_driver_flushing_input);
 
@@ -6292,8 +6314,23 @@ static enum runloop_state_enum runloop_check_state(
       static enum menu_action
          old_action                 = MENU_ACTION_CANCEL;
       bool focused                  = false;
-      input_bits_t trigger_input    = current_bits;
+      input_bits_t trigger_input;
       unsigned screensaver_timeout  = settings->uints.menu_screensaver_timeout;
+
+#ifdef HAVE_RMLUI
+      /* ROM-in-a-Box: inside the menu, RetroPad A and B are what the player
+       * binds to CONFIRM and BACK on MENU CONTROLS, not the RetroArch mapping,
+       * and a position bound to one of the menu actions is only that action.
+       * Not while we capture a binding, when we read nothing here. */
+      if (string_is_equal(settings->arrays.menu_driver, "rmlui")
+            && !menu_driver_binding_state)
+         rib_rmlui_menu_buttons(&current_bits.data[0],
+               settings->bools.input_menu_swap_ok_cancel_buttons
+               ? RETRO_DEVICE_ID_JOYPAD_B : RETRO_DEVICE_ID_JOYPAD_A,
+               settings->bools.input_menu_swap_ok_cancel_buttons
+               ? RETRO_DEVICE_ID_JOYPAD_A : RETRO_DEVICE_ID_JOYPAD_B);
+#endif
+      trigger_input                 = current_bits;
 
       /* Get current time */
       menu_st->current_time_us      = current_time;
