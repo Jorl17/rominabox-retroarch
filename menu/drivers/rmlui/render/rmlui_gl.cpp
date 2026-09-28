@@ -3,6 +3,7 @@
 
 #include <RmlUi_Renderer_GL2.h>
 #include <RmlUi_Renderer_GL2.cpp>
+#include "gl2_layers.hpp"
 #include <RmlUi_Renderer_GL3.h>
 #include "../../third_party/lodepng.h"
 #include "../file_layer.hpp"
@@ -414,5 +415,5 @@ std::unique_ptr<RominaboxRenderer> rib_menu_renderer(bool core_context)
       return renderer;
    }
    std::fprintf(stderr, "[RIB] menu renderer is GL2.\n");
-   return std::make_unique<RominaboxGl<RenderInterface_GL2>>();
+   return std::make_unique<RominaboxGl<RenderInterface_GL2Layers>>();
 }
