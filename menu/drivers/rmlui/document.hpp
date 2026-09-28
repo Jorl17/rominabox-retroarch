@@ -39,6 +39,8 @@ public:
    /* Write `text` into `id`, or into its child marked `into` when there is
     * one, so a design can draw more next to the text. */
    void set_element_text(const char *id, const char *text, const char *into = nullptr);
+   /* A hint's words, its key in brackets (write_hint). */
+   void set_hint(const char *id, const char *hint);
    /* Show `text` in every element that shows `fact` (data-fact). */
    void show_fact(const char *fact, const std::string& text);
    /* The proportions of the running game, width over height. We state them

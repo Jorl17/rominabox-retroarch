@@ -11,7 +11,7 @@
 
 /* The footer while a binding is captured. A screen's own heading and footer
  * are its design.json "screens" entry's. */
-RIB_WORD(CancelHint, "cancel-hint", "ESC  CANCEL")
+RIB_WORD(CancelHint, "cancel-hint", "[ESC]  CANCEL")
 
 /* The pad screen's statuses. */
 RIB_WORD(CaptureCountdown, "capture-countdown", "{control}: PRESS AN INPUT ({seconds})")

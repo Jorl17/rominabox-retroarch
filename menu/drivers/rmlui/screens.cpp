@@ -74,7 +74,7 @@ bool Screens::show_screen(const std::string& id)
       show(document.root()->GetElementById(screen.panel), &screen == wanted);
    document.set_element_text(document_contract::Heading, wanted->heading.c_str());
    if (!wanted->footer.empty())
-      document.set_element_text(document_contract::FooterHint, wanted->footer.c_str());
+      document.set_hint(document_contract::FooterHint, wanted->footer.c_str());
    return true;
 }
 
@@ -101,7 +101,7 @@ const std::string& Screens::screen_panel(const std::string& id) const
 
 void Screens::set_footer_hint(const char *hint) const
 {
-   document.set_element_text(document_contract::FooterHint, hint ? hint : "");
+   document.set_hint(document_contract::FooterHint, hint ? hint : "");
 }
 
 void Screens::restore_footer() const

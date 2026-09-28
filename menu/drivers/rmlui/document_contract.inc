@@ -78,6 +78,9 @@ RIB_CLASS(Toggle, "toggle", Menu, Optional)
 /* Anything else that switches on and off when pressed, as a player setting
  * drawn as an Options entry. */
 RIB_CLASS(Switch, "switch", Menu, Optional)
+/* In a hint, such as the footer's "[ESC]  BACK", the key it names: the
+ * words in brackets, written as their own element for a design to style. */
+RIB_CLASS(HintKey, "hint-key", Menu, Optional)
 
 /* The pause screen, and its save slots. */
 RIB_ELEMENT(PausePanel, "pause-panel", Pause, Required)

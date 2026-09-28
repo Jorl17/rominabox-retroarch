@@ -70,7 +70,7 @@ const char *rib::Script::report(const char *screen, bool menu_open,
             ? view.document.root()->GetElementById(id) : nullptr;
       if (!element || hidden(element)) continue;
       if (comma) report += ',';
-      report += quote(id) + ':' + quote(element->GetInnerRML());
+      report += quote(id) + ':' + quote(Rml::StringUtilities::EncodeRml(words_of(element)));
       comma = true;
    }
    report += "},\"slots\":[";

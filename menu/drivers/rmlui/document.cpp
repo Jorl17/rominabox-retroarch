@@ -337,6 +337,12 @@ void Document::set_element_text(const char *id, const char *text, const char *in
    write_text(inner ? inner : element, text ? text : "");
 }
 
+void Document::set_hint(const char *id, const char *hint)
+{
+   if (root() && id && *id)
+      write_hint(root()->GetElementById(id), hint ? hint : "");
+}
+
 void Document::show_fact(const char *fact, const std::string& text)
 {
    if (!root() || !fact || !*fact) return;

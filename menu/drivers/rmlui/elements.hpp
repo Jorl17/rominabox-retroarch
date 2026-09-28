@@ -78,6 +78,46 @@ inline void write_text(Rml::Element *element, const std::string& text)
       element->SetInnerRML(encoded);
 }
 
+/* The words of a hint, such as "[ESC]  BACK". We write each word in brackets,
+ * the name of a key, as a separate element (`hint-key`) for the design to
+ * style, and the rest as it is. */
+inline void write_hint(Rml::Element *element, const std::string& hint)
+{
+   if (!element)
+      return;
+   Rml::String markup;
+   for (size_t at = 0; at < hint.size();)
+   {
+      const size_t open = hint.find('[', at);
+      const size_t close = open == std::string::npos ? std::string::npos : hint.find(']', open);
+      if (close == std::string::npos)
+      {
+         markup += Rml::StringUtilities::EncodeRml(hint.substr(at));
+         break;
+      }
+      markup += Rml::StringUtilities::EncodeRml(hint.substr(at, open - at));
+      markup += std::string("<span class=\"") + document_contract::HintKey + "\">"
+            + Rml::StringUtilities::EncodeRml(hint.substr(open + 1, close - open - 1)) + "</span>";
+      at = close + 1;
+   }
+   if (element->GetInnerRML() != markup)
+      element->SetInnerRML(markup);
+}
+
+/* An element's words as a reader has them: its text and its children's,
+ * without the markup a design styles them with. */
+inline std::string words_of(Rml::Element *element)
+{
+   if (!element)
+      return {};
+   if (auto *text = rmlui_dynamic_cast<Rml::ElementText *>(element))
+      return text->GetText();
+   std::string words;
+   for (int index = 0; index < element->GetNumChildren(); ++index)
+      words += words_of(element->GetChild(index));
+   return words;
+}
+
 /* We always set both the `disabled` class, for the design, and the disabled
  * attribute, for RmlUi and the listeners. */
 inline void disable(Rml::Element *element, bool disabled)
