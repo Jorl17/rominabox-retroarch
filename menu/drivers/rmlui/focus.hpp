@@ -176,6 +176,12 @@ public:
       memory.erase(found);
       return stop(element) ? element : nullptr;
    }
+   /* The element to focus when `screen` is shown again, if we still have it. */
+   Rml::Element *remembered(const std::string& screen) const
+   {
+      const auto found = memory.find(screen);
+      return found == memory.end() || !document ? nullptr : document->GetElementById(found->second);
+   }
    void forget(const std::string& screen) { memory.erase(screen); }
    void forget() { memory.clear(); }
 

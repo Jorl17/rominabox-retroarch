@@ -13,9 +13,7 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
    if (!list || !prototype || !pager) return;
    std::vector<Rml::Element*> pages;
    collect(list, document_contract::ListPage, pages);
-   int current = 0;
-   for (size_t index = 0; index < pages.size(); ++index)
-      if (!display_none(pages[index])) current = (int)index;
+   const int current = current_page(list);
    std::unordered_map<std::string, Rml::Element*> existing;
    for (auto *row : paged_rows(list)) existing.emplace(row->GetId(), row);
    const std::string prefix = prototype->GetId();
