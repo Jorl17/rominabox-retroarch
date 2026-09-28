@@ -45,8 +45,8 @@ public:
          size = viewport;
       }
       RenderInterface_GL2::BeginFrame();
-      /* In RmlUi the scissor region is set where needed. We clear all of
-       * layer 0, because we draw all of it in EndFrame. */
+      /* In RmlUi the scissor test is enabled with each region. We clear all
+       * of layer 0, because we draw all of it in EndFrame. */
       glDisable(GL_SCISSOR_TEST);
       PushLayer();
    }
