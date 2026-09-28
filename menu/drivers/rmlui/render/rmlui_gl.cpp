@@ -241,7 +241,10 @@ public:
    void BeginFrame() override
    {
       if constexpr (std::is_same<Backend, RenderInterface_GL3>::value)
+      {
          core.save();
+         rib_menu_gl3_window((unsigned)core.framebuffer);
+      }
       else
          legacy.save();
       unpack.save();

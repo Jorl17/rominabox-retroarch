@@ -17,3 +17,8 @@ public:
 };
 
 std::unique_ptr<RominaboxRenderer> rib_menu_renderer(bool core_context);
+
+/* The framebuffer for the finished menu in the GL3 backend, which is the one
+ * bound for the window when the frame of the menu began. We set it in the
+ * renderer at the start of each frame, and keep it in rmlui_gl3.cpp. */
+void rib_menu_gl3_window(unsigned framebuffer);
