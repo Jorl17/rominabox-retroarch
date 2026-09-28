@@ -587,11 +587,11 @@ static LRESULT CALLBACK wnd_proc_common(
          }
          return TRUE;
       case WM_CLOSE:
-         /* ROM-in-a-Box: as with the Cocoa window, we keep the window of a
-          * restricted export open until quitting finishes. Before quitting
-          * we can ask a question about achievements not yet sent, and we
-          * need the window to draw it, so we do not mark it closed here. */
-         if (rib_session_restricted())
+         /* ROM-in-a-Box: we keep an exported game's window open until
+          * quitting finishes (rominabox_session.h). Before quitting we can
+          * ask a question, and we need the window to draw it, so we do not
+          * mark the window closed first. */
+         if (rib_session_close_asks_to_quit())
          {
             command_event(CMD_EVENT_QUIT, NULL);
             *quit       = true;

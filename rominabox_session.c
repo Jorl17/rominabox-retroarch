@@ -65,6 +65,11 @@ bool rib_session_restricted(void)
    return rib_session_title() && !rib_session_advanced_access();
 }
 
+bool rib_session_close_asks_to_quit(void)
+{
+   return rib_session_title() != NULL;
+}
+
 bool rib_session_window_shown(void)
 {
    return rib_is_one(RIB_ENV_SHOW_WINDOW);

@@ -422,8 +422,10 @@ static ui_application_t ui_application_cocoa = {
 
 - (void)performClose:(id)sender
 {
-   /* Keep the window open until quitting finishes in the managed session. */
-   if (rib_session_restricted())
+   /* We keep the window of an exported game open until quitting finishes
+    * (rominabox_session.h), because we draw the question that quitting can
+    * ask in that window. */
+   if (rib_session_close_asks_to_quit())
       command_event(CMD_EVENT_QUIT, NULL);
    else
       [super performClose:sender];

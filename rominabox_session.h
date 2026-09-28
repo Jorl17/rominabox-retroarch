@@ -25,6 +25,13 @@ bool rib_session_advanced_access(void);
  * neither the emulator menus nor opening or dropping files. */
 bool rib_session_restricted(void);
 
+/* When the player closes the game window, we quit the game as with QUIT in
+ * the pause menu, and keep the window open until quitting finishes. Quitting
+ * can first ask the player a question, for example when achievements have
+ * not been sent yet, and we draw that question in this window. We do this
+ * for every exported game, with or without Advanced, and not in RetroArch. */
+bool rib_session_close_asks_to_quit(void);
+
 /* An automated run. The window exists, for its drawable, but we never put it in
  * front of the person at the machine or move the focus to it. */
 bool rib_session_window_hidden(void);
