@@ -47,7 +47,7 @@ public:
    Rml::TextureHandle LoadTexture(Rml::Vector2i& dimensions,
          const Rml::String& source) override
    {
-      if (!filestream_exists(source.c_str()))
+      if (!filestream_exists(from_rml_path(source).c_str()))
       {
          missing_pictures.push_back(source);
          return 0;
@@ -95,7 +95,7 @@ double Document::System::GetElapsedTime()
 
 std::string Document::asset_path(const char *name) const
 {
-   return asset_dir + "/" + name;
+   return to_rml_path(asset_dir + "/" + name);
 }
 
 bool Document::initialize(const char *asset_directory,

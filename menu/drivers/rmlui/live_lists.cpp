@@ -61,7 +61,8 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
             created->SetClass(document_contract::ListRowIcon, true);
             icon = row->AppendChild(std::move(created));
          }
-         if (icon->GetAttribute<std::string>("src", "") != data.icon) icon->SetAttribute("src", data.icon);
+         const std::string source = to_rml_path(data.icon);
+         if (icon->GetAttribute<std::string>("src", "") != source) icon->SetAttribute("src", source);
          show(icon, true);
       } else show(icon, false);
       ordered.push_back(row);

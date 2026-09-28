@@ -11,6 +11,8 @@
 #include <RmlUi/Core/FileInterface.h>
 #include <RmlUi/Core/Types.h>
 
+#include <string>
+
 namespace rib {
 
 struct FileLayer : Rml::FileInterface
@@ -22,6 +24,15 @@ struct FileLayer : Rml::FileInterface
    size_t Tell(Rml::FileHandle file) override;
    size_t Length(Rml::FileHandle file) override;
 };
+
+/* The path of a file as we pass it to RmlUi, and back. In RmlUi the path of
+ * a document is a URL, and the folder of an image is the part before a '?'.
+ * For a game in a folder whose name contains '?', we would look for its
+ * pictures one folder above the menu. In every path we pass to RmlUi we
+ * write '%' and '?' as %25 and %3F, and we reverse that for every file we
+ * open. Nothing else in a path changes. */
+std::string to_rml_path(const std::string& path);
+std::string from_rml_path(const std::string& path);
 
 /* What JoinPath in a SystemInterface returns: `path` relative to the
  * document at `document_path`. */

@@ -5,6 +5,7 @@
 #include <RmlUi_Renderer_GL2.cpp>
 #include <RmlUi_Renderer_GL3.h>
 #include "../../third_party/lodepng.h"
+#include "../file_layer.hpp"
 #include <streams/file_stream.h>
 
 #include <cstdio>
@@ -204,7 +205,7 @@ Rml::TextureHandle load_png(Rml::RenderInterface& backend,
     * with it we could not open a slot picture under a non-ASCII folder name. */
    void *file = nullptr;
    int64_t size = 0;
-   if (!filestream_read_file(source.c_str(), &file, &size))
+   if (!filestream_read_file(rib::from_rml_path(source).c_str(), &file, &size))
    {
       Rml::Log::Message(Rml::Log::LT_ERROR,
             "Could not read PNG texture %s", source.c_str());

@@ -88,7 +88,7 @@ void Overlays::paint_notification()
    document.set_element_text(document_contract::UnlockTitle, notification.title.c_str());
    document.set_element_text(document_contract::UnlockDetail, notification.detail.c_str());
    if (auto *badge = document.root() ? document.root()->GetElementById(document_contract::UnlockBadge) : nullptr) {
-      if (!notification.badge.empty()) badge->SetAttribute("src", notification.badge);
+      if (!notification.badge.empty()) badge->SetAttribute("src", to_rml_path(notification.badge));
       document.set_shown(document_contract::UnlockBadge, !notification.badge.empty());
    }
    document.set_shown(document_contract::UnlockRow, true);

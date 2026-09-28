@@ -7,6 +7,32 @@
 
 namespace rib {
 
+std::string to_rml_path(const std::string& path)
+{
+   std::string escaped;
+   escaped.reserve(path.size());
+   for (const char c : path)
+      escaped += c == '%' ? "%25" : c == '?' ? "%3F" : std::string(1, c);
+   return escaped;
+}
+
+std::string from_rml_path(const std::string& path)
+{
+   std::string plain;
+   plain.reserve(path.size());
+   for (size_t at = 0; at < path.size(); ++at)
+   {
+      if (path.compare(at, 3, "%25") == 0 || path.compare(at, 3, "%3F") == 0)
+      {
+         plain += path[at + 2] == '5' ? '%' : '?';
+         at += 2;
+         continue;
+      }
+      plain += path[at];
+   }
+   return plain;
+}
+
 void join_menu_path(Rml::String& output, const Rml::String& document_path,
       const Rml::String& path)
 {
@@ -18,7 +44,7 @@ void join_menu_path(Rml::String& output, const Rml::String& document_path,
 
 Rml::FileHandle FileLayer::Open(const Rml::String& path)
 {
-   return reinterpret_cast<Rml::FileHandle>(filestream_open(path.c_str(),
+   return reinterpret_cast<Rml::FileHandle>(filestream_open(from_rml_path(path).c_str(),
          RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE));
 }
 

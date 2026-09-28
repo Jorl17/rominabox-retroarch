@@ -82,7 +82,7 @@ void Slots::paint() const
       {
          if (slots[index].occupied && !slots[index].thumbnail_path.empty())
             image->SetProperty("decorator", "image(\"" +
-                  quoted_css_path(slots[index].thumbnail_path) + "\" fill)");
+                  quoted_css_path(to_rml_path(slots[index].thumbnail_path)) + "\" fill)");
          else
             image->RemoveProperty("decorator");
       }
