@@ -533,11 +533,25 @@ static LRESULT CALLBACK wnd_proc_common(
    {
       case WM_SYSCOMMAND:
          /* Prevent screensavers, etc, while running. */
-         switch (wparam)
+         switch (wparam & 0xFFF0)
          {
             case SC_SCREENSAVE:
             case SC_MONITORPOWER:
                *quit = true;
+               break;
+            case SC_KEYMENU:
+               /* ROM-in-a-Box: pressing and releasing Alt alone puts a window
+                * into menu mode, and the next key only leaves that mode. We
+                * create a new window for fullscreen while the Alt of Alt+Enter
+                * is still down, so the new window gets a release of Alt alone,
+                * and the next Escape would only leave menu mode. With no menu
+                * bar there is nothing to open, so we ignore this. Alt+Space
+                * (lparam is the key) still opens the system menu. */
+               if (lparam == 0 && !GetMenu(hwnd))
+               {
+                  *quit = true;
+                  return 0;
+               }
                break;
          }
          break;

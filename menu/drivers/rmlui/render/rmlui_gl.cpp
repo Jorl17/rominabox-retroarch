@@ -278,16 +278,28 @@ public:
       backend.ReleaseGeometry(geometry);
    }
 
+   /* We also use the GL default unpack state for a texture made outside the
+    * frame. In RmlUi the pictures of a document are loaded during layout,
+    * before the frame, and reading a picture with the row length of the game
+    * frame can crash the NVIDIA driver. */
    Rml::TextureHandle LoadTexture(Rml::Vector2i& dimensions,
          const Rml::String& source) override
    {
-      return load_png(backend, dimensions, source);
+      UnpackState upload;
+      upload.save();
+      const Rml::TextureHandle texture = load_png(backend, dimensions, source);
+      upload.restore();
+      return texture;
    }
 
    Rml::TextureHandle GenerateTexture(Rml::Span<const Rml::byte> source,
          Rml::Vector2i dimensions) override
    {
-      return backend.GenerateTexture(source, dimensions);
+      UnpackState upload;
+      upload.save();
+      const Rml::TextureHandle texture = backend.GenerateTexture(source, dimensions);
+      upload.restore();
+      return texture;
    }
 
    void ReleaseTexture(Rml::TextureHandle texture) override

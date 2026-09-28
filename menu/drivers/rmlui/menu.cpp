@@ -393,6 +393,9 @@ void rib_menu_frame(void *data, int width, int height)
             assets && *assets ? assets.get() : RIB_RMLUI_DEFAULT_ASSETS, width, height);
       if (!menu->initialized)
          return;
+      /* We treat a new document as the whole menu until we change that below,
+       * also when we build it for a new video driver while the game runs. */
+      menu->overlay_mode = false;
    }
 
    menu->achievements.update();
