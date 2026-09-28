@@ -17,10 +17,9 @@ class Lists;
 class Parts;
 
 /* Move the focus for an arrow with the RmlUi navigation, from the focused
- * element to the next stop on screen, or not at all at an edge, and play the
- * move cue for a move. Use this for every arrow, including the physical keys
- * of the text path. Returns whether the focus moved. */
-inline bool navigate(Rml::Context *context, rib_key key)
+ * element to the next stop on screen, or not at all at an edge, without a
+ * sound. Returns whether the focus moved. */
+inline bool step(Rml::Context *context, rib_key key)
 {
    Rml::Input::KeyIdentifier identifier;
    switch (key)
@@ -38,18 +37,26 @@ inline bool navigate(Rml::Context *context, rib_key key)
    Rml::Element *before = context->GetFocusElement();
    context->ProcessKeyDown(identifier, 0);
    context->ProcessKeyUp(identifier, 0);
-   if (context->GetFocusElement() == before)
+   return context->GetFocusElement() != before;
+}
+
+/* Call `step` and play the move cue for a move. Use this for every arrow,
+ * including the physical keys of the text path. */
+inline bool navigate(Rml::Context *context, rib_key key)
+{
+   if (!step(context, key))
       return false;
    play_move_sound(key == RIB_KEY_UP || key == RIB_KEY_LEFT);
    return true;
 }
 
 /* Keys, screens and focus. We let RmlUi choose where an arrow goes, and keep
- * here the rules of our menu. Left and Right move sliders and turn list
- * pages. The arrows stay inside an open picker or dialog. We start a screen
- * on its first stop, and on return we focus the element the player left it
- * from. We return immediate intents to Menu to dispatch, and on OK we click
- * the focused element, through the same listener as for a pointer.
+ * here the rules of our menu. Left and Right move sliders, and turn a list
+ * page at its edge. The arrows stay inside an open picker or dialog. We start
+ * a screen on its first stop, and on return we focus the element the player
+ * left it from, with its lists split again from their visible rows. We return
+ * immediate intents to Menu to dispatch, and on OK we click the focused
+ * element, through the same listener as for a pointer.
  *
  * We show every screen through here, and finish each one the same way, on
  * screen, focused, and reported to `shown`. */
@@ -76,7 +83,8 @@ public:
    /* Focus the first stop of the open dialog, or else the first stop of the
     * current screen, or the remembered element. */
    void enter();
-   /* Turn the list with `from` (or the visible one) and focus its first row. */
+   /* Turn the list with `from` (or the visible one) and focus the first stop
+    * on the new page. */
    bool turn_page(int delta, Rml::Element *from = nullptr);
    /* While a dialog is open, the arrows stay in it, and when it closes we put
     * the focus back where it was. nullptr when no dialog is open. */

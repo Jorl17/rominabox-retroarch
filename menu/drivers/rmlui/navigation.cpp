@@ -56,6 +56,10 @@ bool Navigation::present(const std::string& id)
    if (!screens.show_screen(to))
       return false;
    screens.remember(to);
+   /* Split its lists again from the visible rows, because a row we showed or
+    * hid since the last split, such as a switch with no effect in the game,
+    * would leave a gap on a page, or an empty page. */
+   lists.resplit(panel(), focus.remembered(to));
    enter();
    if (shown)
       shown();
@@ -117,15 +121,13 @@ void Navigation::back()
 
 bool Navigation::turn_page(int delta, Rml::Element *from)
 {
-   Rml::Element *list = from;
-   while (list && !list->IsClassSet(document_contract::List))
-      list = list->GetParentNode();
+   Rml::Element *list = Lists::list_of(from);
    if (lists.turn_list_page(delta, list) < 0)
       return false;
    /* When the player turns the page with an arrow, we keep the focus on it,
     * so another press turns again. At the end we move the focus to the other
-    * arrow. After a turn from a row, we focus the first row of the page. */
-   Rml::Element *to = lists.first_row(list);
+    * arrow. After a turn from a row, we focus the first stop of the page. */
+   Rml::Element *to = focus.first(lists.shown_page(list));
    const bool previous = from && from->IsClassSet(document_contract::ListPagerPrev);
    if (previous || (from && from->IsClassSet(document_contract::ListPagerNext)))
    {
@@ -220,10 +222,17 @@ Event Navigation::move(rib_key action)
       parts.nudge_slider(from->GetId().c_str(), direction);
       return {};
    }
-   if (sideways && from->IsClassSet(document_contract::ListRow))
+   /* On a list page, Left and Right move to the next stop on the same page,
+    * when there is one, and turn the page at its edge. */
+   if (Rml::Element *page = sideways ? Lists::page_of(from) : nullptr)
    {
-      if (turn_page(direction, from))
+      const bool beside = step(document.get_context(), action)
+            && Lists::page_of(focus.current()) == page;
+      if (!beside)
+         focus.set(from);
+      if (beside || turn_page(direction, from))
          play_move_sound(action == RIB_KEY_LEFT);
+      focus.paint();
       return {};
    }
    if (navigate(document.get_context(), action))

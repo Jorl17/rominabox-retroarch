@@ -108,28 +108,60 @@ void Lists::set_toggle(const char *id, const char *state, bool on)
    document.set_element_text((std::string(id) + document_contract::StateSuffix).c_str(), state);
 }
 
+std::vector<Rml::Element*> Lists::paged_lists(Rml::Element *scope)
+{
+   /* The lists with a page size from the exporter. A design may also give the
+    * class list to the box around a list, to place it on the screen, and that
+    * box has no pages. */
+   std::vector<Rml::Element*> lists, paged;
+   collect(scope, document_contract::List, lists);
+   for (auto *list : lists)
+      if (list->HasAttribute(document_contract::PageSizeAttribute))
+         paged.push_back(list);
+   return paged;
+}
+
+Rml::Element *Lists::list_of(Rml::Element *element)
+{
+   for (auto *at = element; at; at = at->GetParentNode())
+      if (at->IsClassSet(document_contract::List)
+            && at->HasAttribute(document_contract::PageSizeAttribute))
+         return at;
+   return nullptr;
+}
+
 Rml::Element *Lists::visible_list() const
 {
    if (!document.root()) return nullptr;
-   std::vector<Rml::Element*> lists;
-   collect(document.root(), document_contract::List, lists);
-   for (auto *list : lists)
+   for (auto *list : paged_lists(document.root()))
       if (!hidden(list)) return list;
    return nullptr;
 }
 
 bool Lists::row_shown(Rml::Element *row)
 {
-   /* The page may be hidden, so we read only the local display of the row. */
+   /* The page may be hidden, so we read only the display of the row, set on
+    * it or by the rules of the design. For example, we disable a switch with
+    * no effect in the game, and the design sets whether it is hidden. Update
+    * the styles before calling. */
    const auto *property = row->GetLocalProperty("display");
    return !property || property->ToString() != "none";
 }
 
 bool Lists::page_has_row(Rml::Element *page)
 {
-   std::vector<Rml::Element*> rows;
-   collect(page, document_contract::ListRow, rows);
+   const auto rows = rows_on(page);
    return std::any_of(rows.begin(), rows.end(), row_shown);
+}
+
+std::vector<Rml::Element*> Lists::rows_on(Rml::Element *page)
+{
+   /* Everything on a page is a row. That is a row of the list, or an entry in
+    * the design that we page but that the player cannot choose. */
+   std::vector<Rml::Element*> rows;
+   for (int index = 0; page && index < page->GetNumChildren(); ++index)
+      rows.push_back(page->GetChild(index));
+   return rows;
 }
 
 std::vector<Rml::Element*> Lists::paged_rows(Rml::Element *list)
@@ -138,8 +170,25 @@ std::vector<Rml::Element*> Lists::paged_rows(Rml::Element *list)
    std::vector<Rml::Element*> pages, rows;
    collect(list, document_contract::ListPage, pages);
    for (auto *page : pages)
-      collect(page, document_contract::ListRow, rows);
+      for (auto *row : rows_on(page))
+         rows.push_back(row);
    return rows;
+}
+
+int Lists::current_page(Rml::Element *list)
+{
+   std::vector<Rml::Element*> pages;
+   collect(list, document_contract::ListPage, pages);
+   int current = 0;
+   for (size_t index = 0; index < pages.size(); ++index)
+      if (!display_none(pages[index])) current = (int)index;
+   return current;
+}
+
+void Lists::refresh() const
+{
+   if (document.get_context())
+      document.get_context()->Update();
 }
 
 Rml::Element *Lists::add_page(Rml::Element *list) const
@@ -149,26 +198,36 @@ Rml::Element *Lists::add_page(Rml::Element *list) const
    return list->InsertBefore(std::move(page), find_class(list, document_contract::ListPager));
 }
 
-/* Split a list into pages. We put the visible rows in order on pages of the
- * page size of the list, and the hidden rows after them on the last page. We
- * do not move rows already in place, so focus and hover stay on them. */
+/* Split a list into pages, keeping the rows in document order. We put the
+ * visible rows on pages of the page size of the list, and a hidden row on
+ * the page of the visible row before it, so it is in its place when we show
+ * it. We do not move rows already in place, so focus and hover stay on
+ * them. */
 void Lists::paginate(Rml::Element *list, std::vector<Rml::Element*> rows,
       int shown, Rml::Element *keep) const
 {
    if (!list || !document.root()) return;
+   refresh();
    const int size = std::max(1, list->GetAttribute<int>(document_contract::PageSizeAttribute, 1));
-   std::stable_partition(rows.begin(), rows.end(), row_shown);
-   const int visible = (int)std::count_if(rows.begin(), rows.end(), row_shown);
+   std::vector<int> page_for(rows.size());
+   int visible = 0;
+   for (size_t index = 0; index < rows.size(); ++index)
+   {
+      const bool on = row_shown(rows[index]);
+      page_for[index] = (on ? visible : std::max(visible - 1, 0)) / size;
+      visible += on ? 1 : 0;
+   }
    const int page_count = (visible + size - 1) / size;
    const int kept = std::max(page_count, (int)rows.size() > visible ? 1 : 0);
    std::vector<Rml::Element*> pages;
    collect(list, document_contract::ListPage, pages);
    while ((int)pages.size() < kept)
       pages.push_back(add_page(list));
-   for (int index = 0; index < (int)rows.size(); ++index)
+   std::vector<int> filled(pages.size(), 0);
+   for (size_t index = 0; index < rows.size(); ++index)
    {
-      const int page = std::min(index / size, kept - 1);
-      Rml::Element *at = pages[page]->GetChild(index - page * size);
+      const int page = page_for[index];
+      Rml::Element *at = pages[page]->GetChild(filled[page]++);
       if (rows[index] == at) continue;
       auto moved = rows[index]->GetParentNode()->RemoveChild(rows[index]);
       pages[page]->InsertBefore(std::move(moved), at);
@@ -189,10 +248,14 @@ void Lists::paginate(Rml::Element *list, std::vector<Rml::Element*> rows,
 void Lists::paginate_all() const
 {
    if (!document.root()) return;
-   std::vector<Rml::Element*> lists;
-   collect(document.root(), document_contract::List, lists);
-   for (auto *list : lists)
+   for (auto *list : paged_lists(document.root()))
       paginate(list, paged_rows(list), 0);
+}
+
+void Lists::resplit(Rml::Element *scope, Rml::Element *keep) const
+{
+   for (auto *list : paged_lists(scope))
+      paginate(list, paged_rows(list), current_page(list), keep);
 }
 
 void Lists::mark_pager(Rml::Element *list, int page, int pages)
@@ -231,6 +294,7 @@ int Lists::turn_list_page(int delta, Rml::Element *list) const
 {
    if (!list) list = visible_list();
    if (!list) return -1;
+   refresh();
    const auto usable = usable_pages(list);
    if (usable.size() < 2) return -1;
    int current = 0;
@@ -242,17 +306,24 @@ int Lists::turn_list_page(int delta, Rml::Element *list) const
    return next;
 }
 
-Rml::Element *Lists::first_row(Rml::Element *list) const
+Rml::Element *Lists::shown_page(Rml::Element *list) const
 {
    if (!list) list = visible_list();
-   Rml::Element *found = nullptr;
-   walk(list, [&](Rml::Element *element) {
-      if (display_none(element)) return Walk::SkipChildren;
-      if (!element->IsClassSet(document_contract::ListRow)) return Walk::Continue;
-      found = element;
-      return Walk::Stop;
-   });
-   return found;
+   std::vector<Rml::Element*> pages;
+   collect(list, document_contract::ListPage, pages);
+   for (auto *page : pages)
+      if (!display_none(page)) return page;
+   return nullptr;
+}
+
+Rml::Element *Lists::page_of(Rml::Element *element)
+{
+   for (auto *at = element; at; at = at->GetParentNode())
+   {
+      if (at->IsClassSet(document_contract::ListPage)) return at;
+      if (at->IsClassSet(document_contract::List)) return nullptr;
+   }
+   return nullptr;
 }
 
 void Lists::select_in(Rml::Element *list, const char *row_id,
