@@ -106,7 +106,8 @@ void MenuControls::refresh()
          document.set_shown(id, used);
          if (!used)
             continue;
-         document.set_element_text(id, bindings.words(list[chip]).c_str());
+         document.set_element_text(id, bindings.words(list[chip]).c_str(),
+               document_contract::MenuControlWords);
          document.set_class(id, document_contract::ChipKey,
                list[chip].kind == MenuBinding::Kind::Key);
          document.set_class(id, document_contract::ChipPad,
@@ -158,7 +159,7 @@ void MenuControls::start_capture(MenuAction action)
    }
    capture.active = true;
    capture.action = action;
-   capture.ignore_pointer = true;
+   pointer.start();
    focus.set(shown->add.c_str());
    status.set_menu_controls(say(Word::CaptureCountdown, {{"control", name(action)},
          {"seconds", std::to_string(RIB_CONTROL_CAPTURE_SECONDS)}}).c_str());
@@ -184,29 +185,23 @@ void MenuControls::cancel_capture()
    end_capture(say(Word::BindingUnchanged));
 }
 
-void MenuControls::ignore_pointer(bool pressed)
-{
-   if (!capture.active)
-      return;
-   if (pressed && hovered.kind == RIB_RMLUI_ACTION_MENU_CONTROLS_CANCEL)
-      capture.ignore_pointer = true;
-   else if (!pressed)
-      capture.ignore_pointer = false;
-}
-
 void MenuControls::poll_capture()
 {
    if (!capture.active)
       return;
    float remaining = 0.0f;
-   switch (rib_host_capture_poll(!capture.ignore_pointer, &remaining))
+   switch (rib_host_capture_poll(pointer.counts(), &remaining))
    {
       case RIB_CAPTURE_CAPTURED:
       {
          char text[128];
          rib_host_captured_input(text, sizeof(text));
          MenuBinding binding;
-         if (!*text || !read_menu_binding(text, binding))
+         const bool read = *text && read_menu_binding(text, binding);
+         /* It may now be bound to an action, so we ignore it until released. */
+         if (read)
+            bindings.until_released(binding);
+         if (!read)
             end_capture(say(Word::BindingUnusable));
          else if (cancels_capture(binding))
             end_capture(say(Word::BindingUnchanged));

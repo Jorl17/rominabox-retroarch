@@ -36,7 +36,9 @@ public:
    bool element_box(const char *id, int *x, int *y, int *w, int *h);
    bool pointer_inside(const char *id, int x, int y);
    bool has_element(const char *id);
-   void set_element_text(const char *id, const char *text);
+   /* Write `text` into `id`, or into its child marked `into` when there is
+    * one, so a design can draw more next to the text. */
+   void set_element_text(const char *id, const char *text, const char *into = nullptr);
    /* Show `text` in every element that shows `fact` (data-fact). */
    void show_fact(const char *fact, const std::string& text);
    /* The proportions of the running game, width over height. We state them

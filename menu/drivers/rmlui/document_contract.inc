@@ -128,6 +128,9 @@ RIB_ELEMENT(MenuControlsCancel, "menu-controls-cancel", MenuControls, Required)
 RIB_ELEMENT(MenuControlsStatus, "menu-controls-status", MenuControls, Required)
 RIB_CLASS(MenuControlChip, "menu-control-chip", MenuControls, Required)
 RIB_CLASS(MenuControlAdd, "menu-control-add", MenuControls, Required)
+/* Where a chip's words go, when the design draws more in the chip (a
+ * mark that choosing it removes it); otherwise the chip itself. */
+RIB_CLASS(MenuControlWords, "menu-control-words", MenuControls, Optional)
 RIB_CLASS(ChipKey, "key", MenuControls, Optional)
 RIB_CLASS(ChipPad, "pad", MenuControls, Optional)
 

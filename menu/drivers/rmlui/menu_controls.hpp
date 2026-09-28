@@ -1,5 +1,6 @@
 #pragma once
 
+#include "capture_pointer.hpp"
 #include "events.h"
 #include "menu_bindings.hpp"
 #include <cstdint>
@@ -23,9 +24,9 @@ class MenuControls
 {
 public:
    MenuControls(Document& document, Focus& focus, Screens& screens, Status& status,
-         EventQueue& intents, Event& hovered)
+         EventQueue& intents, Event& hovered, CapturePointer& pointer)
       : document(document), focus(focus), screens(screens), status(status),
-        intents(intents), hovered(hovered) {}
+        intents(intents), hovered(hovered), pointer(pointer) {}
    /* The bindings, read before any document, because we need them while the
     * game runs, before we have ever drawn the menu. */
    void load(const char *assets, const char *data) { bindings.load(assets, data); }
@@ -40,8 +41,6 @@ public:
    void poll_capture();
    void cancel_capture();
    bool capturing() const { return capture.active; }
-   /* We do not capture a press that began on CANCEL. */
-   void ignore_pointer(bool pressed);
    void refresh();
 
 private:
@@ -65,14 +64,13 @@ private:
    Status& status;
    EventQueue& intents;
    Event& hovered;
+   CapturePointer& pointer;
    MenuBindings bindings;
    std::vector<Row> rows;
    struct Capture
    {
       bool active = false;
       MenuAction action = MenuAction::Menu;
-      /* We do not capture the press that started the capture. */
-      bool ignore_pointer = false;
    } capture;
 };
 }

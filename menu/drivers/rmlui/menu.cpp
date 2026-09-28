@@ -54,10 +54,11 @@ struct Menu
    rib::PlayerSettings settings{view.document, view.parts, view.lists};
    rib::Focus& focus = view.focus;
    rib::Screens& screens = view.screens;
+   rib::CapturePointer capture_pointer;
    rib::Controls controls{focus, screens, view.document, view.controls,
-         view.lists, view.status, view.hovered};
+         view.lists, view.status, view.hovered, capture_pointer};
    rib::MenuControls menu_controls{view.document, focus, screens, view.status,
-         view.intents, view.hovered};
+         view.intents, view.hovered, capture_pointer};
    bool pointer_pressed;
    rib::Slots& slots = view.slots;
    rib::Navigation navigation{focus, screens, controls, slots,
@@ -252,7 +253,7 @@ static void reset_interaction(Menu *menu, bool opening)
    menu->achievements.leave_form();
    cancel_captures(menu);
    menu->pointer_pressed = false;
-   menu->controls.capture_ignore_pointer = false;
+   menu->capture_pointer.frame(false, false);
    /* When the menu closes during a drag, we end the drag where it is and keep
     * it, as if released. We drop everything else in the queue. */
    const rib::Event cut_short = menu->view.pointer_leave();
@@ -510,14 +511,9 @@ void rib_menu_frame(void *data, int width, int height)
             menu->focus.set(kept.c_str());
       }
 
-      if (menu->controls.capture_active && pointer_pressed && !menu->pointer_pressed &&
-            (menu->view.hovered.kind == RIB_RMLUI_ACTION_CONTROLS_CANCEL ||
-             menu->view.hovered.kind == RIB_RMLUI_ACTION_CONTROLS_BACK))
-         menu->controls.capture_ignore_pointer = true;
-      if (menu->controls.capture_ignore_pointer && !pointer_pressed)
-         menu->controls.capture_ignore_pointer = false;
-      if (pointer_pressed != menu->pointer_pressed)
-         menu->menu_controls.ignore_pointer(pointer_pressed);
+      menu->capture_pointer.frame(pointer_pressed,
+            capturing(menu) && pointer_pressed && !menu->pointer_pressed
+            && rib::CapturePointer::leaves(menu->view.hovered.kind));
       menu->pointer_pressed = pointer_pressed;
    }
 

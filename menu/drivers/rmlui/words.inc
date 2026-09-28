@@ -32,8 +32,8 @@ RIB_WORD(BindingRemoved, "binding-removed", "BINDING REMOVED")
 RIB_WORD(BindingSwapped, "binding-swapped", "SWAPPED WITH {control}")
 RIB_WORD(BindingMoved, "binding-moved", "TAKEN FROM {control}")
 RIB_WORD(BindingNoRoom, "binding-no-room", "NO ROOM IN {control}")
-RIB_WORD(BindingNeeded, "binding-needed", "{control} NEEDS A BINDING")
-RIB_WORD(KeyNeeded, "key-needed", "{control} NEEDS A KEY")
+RIB_WORD(BindingNeeded, "binding-needed", "{control} MUST KEEP A BINDING")
+RIB_WORD(KeyNeeded, "key-needed", "{control} MUST KEEP A KEY")
 RIB_WORD(BindingUnusable, "binding-unusable", "USE A KEY OR A PAD BUTTON")
 
 /* The save slots and what saving and loading say. */

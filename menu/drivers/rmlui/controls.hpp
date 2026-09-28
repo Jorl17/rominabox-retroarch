@@ -1,5 +1,6 @@
 #pragma once
 
+#include "capture_pointer.hpp"
 #include "declarations.h"
 #include "focus.hpp"
 #include "screens.hpp"
@@ -23,9 +24,9 @@ class Controls
 {
 public:
    Controls(Focus& focus, Screens& screens, Document& document, ControlView& control_view,
-         Lists& lists, Status& status, const Event& hovered)
+         Lists& lists, Status& status, const Event& hovered, CapturePointer& pointer)
       : focus_state(focus), screens(screens), document(document), control_view(control_view),
-        lists(lists), status(status), hovered(hovered) {}
+        lists(lists), status(status), hovered(hovered), pointer(pointer) {}
    int index_of(const char *id) const;
    bool active(int index) const;
    FocusTarget first() const;
@@ -62,7 +63,6 @@ public:
    bool capture_active = false;
    /* The control waiting for input now, or for a stick, the member we capture. */
    int capture_control = 0;
-   bool capture_ignore_pointer = false;
    /* The pad applied now. */
    std::string profile_id;
    bool device_picker_open = false;
@@ -76,6 +76,7 @@ private:
    Lists& lists;
    Status& status;
    const Event& hovered;
+   CapturePointer& pointer;
    /* Where the author's defaults and scenes are, and the player's file. */
    std::string assets, defaults_path, path;
    /* The pad the game was exported with. */

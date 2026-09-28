@@ -283,7 +283,7 @@ bool Controls::capture_member(int index)
    capture_control = index;
    /* The gesture that started the capture, or finished the previous member,
     * is not input for this member. */
-   capture_ignore_pointer = true;
+   pointer.start();
    this->status.set_controls(say(Word::CaptureCountdown, {{"control", console_name(index)},
          {"seconds", std::to_string(RIB_CONTROL_CAPTURE_SECONDS)}}).c_str());
    refresh();
@@ -544,7 +544,7 @@ void Controls::poll_capture()
    {
       float remaining = 0.0f;
       enum rib_capture_result result = rib_host_capture_poll(
-            !capture_ignore_pointer, &remaining);
+            pointer.counts(), &remaining);
       if (result == RIB_CAPTURE_CAPTURED)
       {
          /* We save each member when we capture it, and for a stick we go on

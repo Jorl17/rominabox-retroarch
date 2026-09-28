@@ -104,12 +104,20 @@ public:
    std::vector<unsigned> keys(MenuAction action) const;
    /* The binds of every pad input bound to any action. */
    std::vector<unsigned> pad_binds() const;
+   /* Ignore the inputs of `binding` that are pressed now until each is
+    * released. The player is still pressing the input that ended a capture,
+    * and it would otherwise trigger what we just bound it to. */
+   void until_released(const MenuBinding& binding);
 
 private:
    bool save() const;
    bool keeps(MenuAction action, const std::vector<MenuBinding>& list, Outcome *refusal) const;
    bool lawful(const std::vector<MenuBinding> (&lists)[kMenuActionCount]) const;
    bool counts_for(MenuAction action, const MenuBinding& binding) const;
+   /* Whether the player is still pressing any input of `binding` that we wait
+    * for. We stop waiting for the inputs released since the last call. */
+   bool waiting(const MenuBinding& binding) const;
+   mutable std::vector<unsigned> unreleased_keys, unreleased_pads;
    std::vector<MenuBinding> lists[kMenuActionCount];
    std::vector<MenuBinding> authored[kMenuActionCount];
    std::map<std::string, std::string> pad_words;

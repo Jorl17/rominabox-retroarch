@@ -318,10 +318,13 @@ bool Document::has_element(const char *id)
    return root() && id && root()->GetElementById(id);
 }
 
-void Document::set_element_text(const char *id, const char *text)
+void Document::set_element_text(const char *id, const char *text, const char *into)
 {
-   if (root() && id && *id)
-      write_text(root()->GetElementById(id), text ? text : "");
+   if (!root() || !id || !*id)
+      return;
+   Rml::Element *element = root()->GetElementById(id);
+   Rml::Element *inner   = element && into ? find_class(element, into) : nullptr;
+   write_text(inner ? inner : element, text ? text : "");
 }
 
 void Document::show_fact(const char *fact, const std::string& text)

@@ -384,11 +384,38 @@ bool MenuBindings::counts_for(MenuAction action, const MenuBinding& binding) con
    return true;
 }
 
+void MenuBindings::until_released(const MenuBinding& binding)
+{
+   if (is_key(binding))
+   {
+      if (rib_host_key_down(binding.code))
+         unreleased_keys.push_back(binding.code);
+      return;
+   }
+   for (unsigned bind : binding.binds)
+      if (rib_host_pad_down(bind))
+         unreleased_pads.push_back(bind);
+}
+
+bool MenuBindings::waiting(const MenuBinding& binding) const
+{
+   unreleased_keys.erase(std::remove_if(unreleased_keys.begin(), unreleased_keys.end(),
+         [](unsigned code) { return !rib_host_key_down(code); }), unreleased_keys.end());
+   unreleased_pads.erase(std::remove_if(unreleased_pads.begin(), unreleased_pads.end(),
+         [](unsigned bind) { return !rib_host_pad_down(bind); }), unreleased_pads.end());
+   if (is_key(binding))
+      return std::find(unreleased_keys.begin(), unreleased_keys.end(), binding.code)
+            != unreleased_keys.end();
+   return std::any_of(binding.binds.begin(), binding.binds.end(), [this](unsigned bind) {
+      return std::find(unreleased_pads.begin(), unreleased_pads.end(), bind) != unreleased_pads.end();
+   });
+}
+
 bool MenuBindings::held(MenuAction action, bool keys) const
 {
    for (const MenuBinding& binding : lists[at(action)])
    {
-      if (!counts_for(action, binding))
+      if (!counts_for(action, binding) || waiting(binding))
          continue;
       if (is_key(binding))
       {
@@ -406,7 +433,7 @@ std::vector<unsigned> MenuBindings::keys(MenuAction action) const
 {
    std::vector<unsigned> codes;
    for (const MenuBinding& binding : lists[at(action)])
-      if (is_key(binding) && counts_for(action, binding))
+      if (is_key(binding) && counts_for(action, binding) && !waiting(binding))
          codes.push_back(binding.code);
    return codes;
 }
