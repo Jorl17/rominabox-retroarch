@@ -49,6 +49,19 @@ typedef struct rib_catalog {
 
 static rib_catalog_t catalog;
 
+/* RetroAchievements has some warnings in the form of achievements, which
+ * unlock as soon as a game loads, for example "Unsupported Game Version"
+ * for a version with no achievements. Their ids start here. In rcheevos
+ * versions newer than the copy in deps/, they are not in the summaries
+ * (rc_client.c, RC_CLIENT_ACHIEVEMENT_WARNING_ID). We never list, count or
+ * show them as unlocked, because they are not the player's achievements. */
+#define CATALOG_WARNING_ID 101000001u
+
+static bool catalog_is_warning(const rc_client_achievement_t *achievement)
+{
+   return achievement->id >= CATALOG_WARNING_ID;
+}
+
 static void catalog_lock(void)
 {
 #ifdef HAVE_THREADS
@@ -248,7 +261,9 @@ static void catalog_refresh_rows(rc_client_t *client,
       return;
 
    for (bucket = 0; bucket < list->num_buckets; ++bucket)
-      count += list->buckets[bucket].num_achievements;
+      for (item = 0; item < list->buckets[bucket].num_achievements; ++item)
+         if (!catalog_is_warning(list->buckets[bucket].achievements[item]))
+            count++;
    rows = count ? (rib_achievement_row_t*)calloc(count, sizeof(*rows)) : NULL;
    retry_at = count ? (int64_t*)calloc(count, sizeof(*retry_at)) : NULL;
    if (count && (!rows || !retry_at))
@@ -265,8 +280,12 @@ static void catalog_refresh_rows(rc_client_t *client,
       for (item = 0; item < group->num_achievements; ++item)
       {
          const rc_client_achievement_t *achievement = group->achievements[item];
-         int64_t *row_retry = &retry_at[index];
-         rib_achievement_row_t *row = &rows[index++];
+         int64_t *row_retry;
+         rib_achievement_row_t *row;
+         if (catalog_is_warning(achievement))
+            continue;
+         row_retry = &retry_at[index];
+         row = &rows[index++];
          row->id = achievement->id;
          row->points = achievement->points;
          row->state = catalog_row_state(achievement);
@@ -408,7 +427,7 @@ void rib_catalog_pump(rc_client_t *client, rib_achievements_snapshot_t *snapshot
 void rib_catalog_triggered(const rc_client_achievement_t *achievement)
 {
    rib_unlock_node_t *node;
-   if (!achievement)
+   if (!achievement || catalog_is_warning(achievement))
       return;
    node = (rib_unlock_node_t*)calloc(1, sizeof(*node));
    if (!node)
