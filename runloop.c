@@ -5818,8 +5818,15 @@ static enum runloop_state_enum runloop_check_state(
     * its keys go through the held-key rule below. */
    if (string_is_equal(settings->arrays.menu_driver, "rmlui"))
    {
-      if (rib_rmlui_menu_pad_held())
+      /* MENU on a pad counts once, when it is released, as for a key. If it
+       * counted while down, the input flush after opening the menu would make
+       * a button that is down look pressed again every few frames, and the
+       * menu would open and close for as long as the player kept it down. */
+      static bool pad_menu_was_held = false;
+      const bool pad_menu_held      = rib_rmlui_menu_pad_held();
+      if (pad_menu_was_held && !pad_menu_held)
          BIT256_SET(current_bits, RARCH_MENU_TOGGLE);
+      pad_menu_was_held             = pad_menu_held;
    }
    else
 #endif
