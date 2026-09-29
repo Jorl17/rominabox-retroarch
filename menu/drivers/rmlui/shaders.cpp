@@ -58,11 +58,11 @@ bool Shaders::choose(const char *id)
 
    if (!data.empty())
    {
+      /* We store the id. In the launcher we find the preset wherever it is in
+       * this copy of the game. A path would name the folder where the player
+       * unpacked the game, which we replace in a new export. */
       snprintf(choice_path, sizeof(choice_path), "%s/%s", data.c_str(), files::ShaderChoice);
-      if (absolute[0])
-         snprintf(body, sizeof(body), "%s\n", absolute);
-      else
-         strlcpy(body, "\n", sizeof(body));
+      snprintf(body, sizeof(body), "%s\n", id);
       if (!filestream_write_file(choice_path, body, (int64_t)strlen(body)))
          RARCH_ERR("[RIB] the shader is active, but %s could not be written. "
                "The next launch will use the bundled starting shader.\n",
