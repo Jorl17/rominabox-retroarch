@@ -53,6 +53,10 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
       const rib_environment_value given = rib_owned(rib_environment(RIB_ENV_MENU_SCRIPT));
       started = true;
       running = scripted = given != nullptr;
+      {
+         const rib_environment_value at_menu = rib_owned(rib_environment(RIB_ENV_START_AT_MENU));
+         awaits_menu = at_menu && string_is_equal(at_menu.get(), "1");
+      }
       if (given)
       {
          steps = given.get();
@@ -61,6 +65,12 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
    }
    if (!scripted)
       return;
+   if (awaits_menu)
+   {
+      if (!rib_host_menu_open())
+         return;
+      awaits_menu = false;
+   }
    const char *script = steps.c_str();
 
    if (wait_until)

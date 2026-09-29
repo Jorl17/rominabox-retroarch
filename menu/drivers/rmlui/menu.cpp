@@ -495,19 +495,17 @@ void rib_menu_frame(void *data, int width, int height)
 
       if (!menu_alive)
       {
-         /* The game is running, and the player controls it with the pad, so
-          * below this we handle no pointer, no queued action and no capture.
-          * We use frames of this driver only to draw over the game.
+         /* The game is running and the player is playing it with the
+          * controller. Nothing below applies now: no pointer, no queued
+          * actions and no capture. We have a frame in this driver only to
+          * draw over the game.
           *
           * We run the script first, because from it we learn whether we still
-          * need frames after the overlays have ended, and only once we ask.
-          * We apply the script to the game, so we pause it while the game
-          * waits for the splash. For a game that starts at its menu, we open
-          * the menu then. */
-         if (!rib_rmlui_game_held())
-            menu->script.run(menu, {menu->screens.current().c_str(), menu->slots.transfer_pending(),
-                  capturing(menu), menu->controls.profile_id.c_str(),
-                  menu->controls.binds_list()});
+          * want frames after the overlays are done, and we can learn that only
+          * after asking it. */
+         menu->script.run(menu, {menu->screens.current().c_str(), menu->slots.transfer_pending(),
+               capturing(menu), menu->controls.profile_id.c_str(),
+               menu->controls.binds_list()});
          menu->overlays.update(menu->script.wants_frames());
          menu->view.render(width, height);
          return;

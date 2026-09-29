@@ -47,6 +47,9 @@ private:
    bool scripted = false;
    size_t at = 0;
    bool started = false;
+   /* For a game that starts at its menu, we open the menu once the game has
+    * started. We wait for that, because opening the menu drops the queue. */
+   bool awaits_menu = false;
    bool running = false;
    int settle = 8;
    int waiting = 0;
