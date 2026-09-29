@@ -88,6 +88,10 @@ void rib_host_toggle_fullscreen(void);
  * game runs, as RetroArch does. In a window we always show it. */
 void rib_host_show_pointer(bool menu_open);
 void rib_host_quit(void);
+/* Write RIB_FORGET_MARKER in the data folder of the game and quit. In the
+ * launcher we forget the game once the player process has ended. When we
+ * cannot write to the folder, we write no marker and the game keeps running. */
+void rib_host_forget(void);
 /* Read or change a RetroArch setting that a player setting controls, while
  * the game runs. A switch is 1 or 0. Returns false if there are no settings. */
 bool rib_host_setting(enum rib_setting_key key, float *value);

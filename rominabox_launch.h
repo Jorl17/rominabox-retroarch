@@ -44,6 +44,12 @@
  * "block,request,reply" in decimal. Unset when the game is not in a sandbox. */
 #define RIB_ENV_PAD_RELAY "ROMINABOX_PAD_RELAY"
 
+/* The file we leave in the game's data folder when the player asks to forget
+ * the game: UNINSTALL on Windows, RESET on a Mac. Once the player process has
+ * ended, we remove in the launcher everything stored for the game on the
+ * computer, this file included, but not the program the person opened. */
+#define RIB_FORGET_MARKER "forget-this-game"
+
 /* The application id of a Windows game is this and its identity. On the
  * taskbar the game's windows are grouped by it, and in the launcher we name
  * the game's sandbox with it. */

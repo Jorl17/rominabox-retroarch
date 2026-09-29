@@ -56,7 +56,9 @@ void View::wire_document()
       {document_contract::Save, RIB_RMLUI_ACTION_SAVE, false},
       {document_contract::Load, RIB_RMLUI_ACTION_LOAD, false},
       {document_contract::Quit, RIB_RMLUI_ACTION_QUIT, false},
+      {document_contract::ForgetConfirm, RIB_RMLUI_ACTION_FORGET, false},
       {document_contract::ControlsBack, RIB_RMLUI_ACTION_CONTROLS_BACK, true},
+      {document_contract::ForgetBack, RIB_RMLUI_ACTION_CONTROLS_BACK, true},
       {document_contract::ControlsReset, RIB_RMLUI_ACTION_CONTROLS_RESET, false},
       {document_contract::ControlsCancel, RIB_RMLUI_ACTION_CONTROLS_CANCEL, false}
    };

@@ -25,7 +25,10 @@
 #include "../../menu_driver.h"
 #include "../../menu_cbs.h"
 #include <file/file_path.h>
+#include <streams/file_stream.h>
 #include <string/stdstring.h>
+#include "../../../rominabox_environment.h"
+#include "../../../rominabox_launch.h"
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -207,6 +210,27 @@ void rib_host_show_pointer(bool menu_open)
       video_st->poke->show_mouse(video_st->data, menu_open);
 }
 void rib_host_quit(void) { command_event(CMD_EVENT_QUIT, NULL); }
+
+void rib_host_forget(void)
+{
+   char *data = rib_data_directory();
+   char marker[PATH_MAX_LENGTH];
+   RFILE *file = NULL;
+   if (data)
+   {
+      fill_pathname_join_special(marker, data, RIB_FORGET_MARKER, sizeof(marker));
+      file = filestream_open(marker, RETRO_VFS_FILE_ACCESS_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+   }
+   free(data);
+   if (!file)
+   {
+      RARCH_ERR("[RIB] could not mark the game to be forgotten; it plays on.\n");
+      return;
+   }
+   filestream_close(file);
+   RARCH_LOG("[RIB] the game will be forgotten once it has closed.\n");
+   command_event(CMD_EVENT_QUIT, NULL);
+}
 
 void rib_host_apply_device(const char *id, unsigned device)
 {

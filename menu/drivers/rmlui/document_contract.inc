@@ -54,6 +54,8 @@ RIB_ROLE(Discs, "discs")
 RIB_ROLE(Accounts, "accounts")
 /* MENU CONTROLS: what opens the menu, and confirms and goes back in it. */
 RIB_ROLE(MenuControls, "menu-controls")
+/* UNINSTALL on Windows, RESET on a Mac: asks, then forgets the game. */
+RIB_ROLE(Forget, "forget")
 
 /* Every document. */
 RIB_ELEMENT(Body, "body", Shared, Required)
@@ -186,6 +188,12 @@ RIB_ELEMENT(AchievementsSkipStartup, "achievements-skip-startup", Achievements, 
 RIB_ELEMENT(TextKeyboard, "text-keyboard", Achievements, Optional)
 RIB_ELEMENT(TextKeyboardGrid, "text-keyboard-grid", Achievements, Optional)
 RIB_CLASS(TextKey, "text-key", Achievements, Optional)
+
+/* The forget screen's button that forgets the game and closes it: its data
+ * gone, and on Windows its unpacked files, once it has closed. */
+RIB_ELEMENT(ForgetConfirm, "forget-confirm", Forget, Required)
+/* Its button that keeps the game and goes back. */
+RIB_ELEMENT(ForgetBack, "forget-back", Forget, Required)
 
 /* Generated list screens (shaders, achievements, the disc list). */
 RIB_CLASS(List, "list", Menu, Optional)
