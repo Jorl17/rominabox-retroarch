@@ -17,6 +17,9 @@ bool rib_rmlui_typing(void);
 /* Call this on every ordinary exit before teardown. False keeps the session open. */
 bool rib_rmlui_allow_quit(void);
 bool rib_rmlui_overlays_drawing(void);
+/* Whether the game waits for the design's splash. Until it is over, we run
+ * no core frame in the run loop. */
+bool rib_rmlui_game_held(void);
 bool rib_rmlui_consume_menu_toggle(void *userdata);
 /* The menu actions, as the player binds them on MENU CONTROLS
  * (menu/drivers/rmlui/menu_controls.inc). We read them in the RetroArch input

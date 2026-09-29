@@ -32,6 +32,9 @@ public:
    void clear_notification();
    bool notification_active() const { return notification_until != 0; }
    bool drawing() const { return running || notification_active(); }
+   /* Whether the game must wait, because an overlay that delays it is still
+    * on screen, or we have not yet read from the design which ones do. */
+   bool holding_game() const;
    void stop() { running = false; clear_notification(); }
 private:
    Document& document;
@@ -49,6 +52,7 @@ private:
    Notification notification;
    int64_t notification_until = 0;
    bool running = false;
+   bool loaded = false;
    int64_t started_at = 0;
 };
 }

@@ -9,6 +9,19 @@ void Overlays::load(const DesignDeclarations& design)
    overlays.clear();
    for (const OverlayDeclaration& declaration : design.overlays)
       overlays.push_back(Overlay{declaration});
+   loaded = true;
+}
+
+bool Overlays::holding_game() const
+{
+   if (!running)
+      return false;
+   if (!loaded)
+      return true;
+   for (const Overlay& overlay : overlays)
+      if (overlay.declaration.holds_game && !overlay.finished)
+         return true;
+   return false;
 }
 
 void Overlays::begin()

@@ -84,6 +84,22 @@ void rib_rmlui_begin_overlays(void)
    }
 }
 
+/* The time at which we made the game wait for the splash. */
+static int64_t game_held_since;
+
+bool rib_rmlui_game_held(void)
+{
+   /* Whatever fails in the menu, we do not make the game wait any longer. */
+   static const int64_t longest_us = 3000000;
+   const bool held = pending_overlay_start
+         || (active_menu && active_menu->overlays.holding_game());
+   if (!held)
+      return false;
+   if (!game_held_since)
+      game_held_since = rib_host_time_us();
+   return rib_host_time_us() - game_held_since < longest_us;
+}
+
 bool rib_rmlui_overlays_drawing(void)
 {
    return pending_overlay_start ||

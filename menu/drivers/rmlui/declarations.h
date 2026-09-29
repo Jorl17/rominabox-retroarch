@@ -48,6 +48,8 @@ struct OverlayDeclaration
 {
    std::string id, follows, needs;
    int after_ms = 0, hold_ms = 0, leave_ms = 0;
+   /* The game starts only once this overlay has gone (the splash). */
+   bool holds_game = false;
 };
 
 /* How a player setting is shown, as settings.inc declares the kinds. */

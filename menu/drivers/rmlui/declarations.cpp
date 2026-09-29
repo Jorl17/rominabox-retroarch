@@ -240,6 +240,7 @@ void overlays(config_file_t *config, const char *assets, rib::DesignDeclarations
       overlay.leave_ms = number(config, rib::keys::OverlayLeave(id), 0);
       overlay.follows = value(config, rib::keys::OverlayFollows(id));
       overlay.needs = value(config, rib::keys::OverlayNeeds(id));
+      overlay.holds_game = value(config, rib::keys::OverlayHoldsGame(id)) == "1";
       if (!overlay.needs.empty()
             && !path_is_valid((std::string(assets) + "/" + overlay.needs).c_str()))
       {

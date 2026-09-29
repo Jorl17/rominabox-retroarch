@@ -6222,12 +6222,27 @@ static enum runloop_state_enum runloop_check_state(
    {
       static bool old_pressed = false;
       static bool startup_overlay_checked = false;
+      static bool startup_overlays_begun = false;
       bool opened_start_menu  = false;
       bool pressed            = BIT256_GET(current_bits, RARCH_MENU_TOGGLE)
          && memcmp(settings->arrays.menu_driver, "null", 5) != 0;
       bool core_type_is_dummy = runloop_st->current_core_type == CORE_TYPE_DUMMY;
       bool core_is_running    = runloop_st->flags & RUNLOOP_FLAG_CORE_RUNNING;
 
+#ifdef HAVE_RMLUI
+      /* The game is loaded, so start what the design draws over it now,
+       * before the first frame of the game, so the splash, during which the
+       * game waits, is the first thing shown. The overlays are in the
+       * declaration of the design and in the export, so there is no overlay
+       * name here. */
+      if (!startup_overlays_begun && !core_type_is_dummy
+            && (core_is_running || rarch_is_initialized))
+      {
+         startup_overlays_begun = true;
+         if (string_is_equal(settings->arrays.menu_driver, "rmlui"))
+            rib_rmlui_begin_overlays();
+      }
+#endif
       if (!startup_overlay_checked && !core_type_is_dummy && core_is_running)
       {
          const char *start_at_menu = getenv(RIB_ENV_START_AT_MENU);
@@ -6238,13 +6253,6 @@ static enum runloop_state_enum runloop_check_state(
          keep_menu_open = keep_menu_open && !rib_startup_keep_menu;
 #endif
          startup_overlay_checked = true;
-#ifdef HAVE_RMLUI
-         /* The game has begun, so start what the design draws over it. The
-          * overlays are in the declaration of the design and in the export,
-          * so there is no overlay name here. */
-         if (string_is_equal(settings->arrays.menu_driver, "rmlui"))
-            rib_rmlui_begin_overlays();
-#endif
          if (keep_menu_open &&
              memcmp(settings->arrays.menu_driver, "null", 5) != 0 &&
              !(menu_st->flags & MENU_ST_FLAG_ALIVE))
@@ -7926,6 +7934,15 @@ int runloop_iterate(void)
          if (rib_achievements_startup_gate_active())
          {
             rcheevos_idle();
+            video_driver_cached_frame();
+            goto end;
+         }
+#endif
+#ifdef HAVE_RMLUI
+         /* The splash first. The game runs, and makes its first sound,
+          * only after the splash overlay has gone. */
+         if (rib_rmlui_game_held())
+         {
             video_driver_cached_frame();
             goto end;
          }
