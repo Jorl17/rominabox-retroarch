@@ -382,6 +382,16 @@ check_val()
 	fi
 }
 
+# Put "$1.new" in place of "$1" only when they differ, so a file that is
+# unchanged after configure keeps its time, and make has nothing to rebuild.
+replace_if_changed()
+{	if [ -f "$1" ] && [ "$(cat "$1.new")" = "$(cat "$1")" ]; then
+		rm -f "$1.new"
+	else
+		mv -f "$1.new" "$1"
+	fi
+}
+
 create_config_header()
 {   outfile="$1"; shift
 
@@ -425,7 +435,8 @@ create_config_header()
 		done
 
 		printf %s\\n '#endif'
-	} > "$outfile"
+	} > "$outfile.new"
+	replace_if_changed "$outfile"
 }
 
 create_config_make()
@@ -498,7 +509,8 @@ create_config_make()
 			printf %s\\n "${VAR%%=*} = ${VAR#*=}"
 		done
 
-	} > "$outfile"
+	} > "$outfile.new"
+	replace_if_changed "$outfile"
 }
 
 . qb/config.libs.sh

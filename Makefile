@@ -15,6 +15,10 @@ include config.mk
 # (It'd be better to put this comment in that file, but .gitignore doesn't work on files that exist in the repo.)
 -include Makefile.local
 
+# What every object is built from besides its sources: configure's outputs,
+# and Makefile.local where a build writes one.
+BUILD_CONFIG := config.h config.mk $(wildcard Makefile.local)
+
 ifeq ($(HAVE_ANGLE), 1)
 TARGET = retroarch_angle
 else
@@ -251,17 +255,17 @@ default.metallib: $(METAL_AIR_FILES)
 	$(Q)xcrun -sdk macosx metallib $(METAL_AIR_FILES) -o $@
 endif
 
-$(OBJDIR)/%.o: %.c config.h config.mk
+$(OBJDIR)/%.o: %.c $(BUILD_CONFIG)
 	@mkdir -p $(dir $@)
 	@$(if $(Q), $(shell echo echo CC $<),)
 	$(Q)$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) $(MD) -c -o $@ $<
 
-$(OBJDIR)/%.o: %.cpp config.h config.mk
+$(OBJDIR)/%.o: %.cpp $(BUILD_CONFIG)
 	@mkdir -p $(dir $@)
 	@$(if $(Q), $(shell echo echo CXX $<),)
 	$(Q)$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(DEFINES) -MMD -c -o $@ $<
 
-$(OBJDIR)/%.o: %.mm config.h config.mk
+$(OBJDIR)/%.o: %.mm $(BUILD_CONFIG)
 	@mkdir -p $(dir $@)
 	$(Q)$(CXX) $(CPPFLAGS) $(OBJCFLAGS) $(CXXFLAGS) $(DEFINES) -MMD -c -o $@ $<
 
@@ -283,7 +287,7 @@ $(OBJDIR)/audio/drivers/coreaudio3.o: OBJCFLAGS += -fobjc-arc
 $(OBJDIR)/input/drivers/cocoa_input.o: OBJCFLAGS += -fobjc-arc
 $(OBJDIR)/location/drivers/corelocation.o: OBJCFLAGS += -fobjc-arc
 
-$(OBJDIR)/%.o: %.S config.h config.mk $(HEADERS)
+$(OBJDIR)/%.o: %.S $(BUILD_CONFIG) $(HEADERS)
 	@mkdir -p $(dir $@)
 	@$(if $(Q), $(shell echo echo AS $<),)
 	$(Q)$(CC) $(CFLAGS) $(ASFLAGS) $(DEFINES) -c -o $@ $<
