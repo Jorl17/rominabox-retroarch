@@ -35,7 +35,7 @@ public:
    Document document;
    EventQueue intents;
    Event hovered;
-   Focus focus;
+   Focus focus{document};
    Lists lists{document, intents};
    Parts parts{document, intents};
    Status status{document};

@@ -45,7 +45,7 @@ void View::set_overlay_mode(bool only_overlays)
 }
 void View::wire_document()
 {
-   focus.attach(document.root());
+   focus.attach();
    /* `opens_screen` means we handle the click through the screen declaration
     * in the design, not through this table. Hover still comes from here,
     * because during capture we read which button is under the pointer. There

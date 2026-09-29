@@ -1,4 +1,5 @@
 #pragma once
+#include "document.hpp"
 #include "document_contract.hpp"
 
 #include "events.h"
@@ -33,10 +34,15 @@ struct FocusTarget
 class Focus
 {
 public:
+   /* We read the document from `owner` each time and never store it. With a
+    * new video driver, for example after a switch to fullscreen and back, the
+    * document is freed, and a stored pointer would remain after it. Without a
+    * document nothing is focused. */
+   explicit Focus(const Document& owner) : owner(owner) {}
+
    /* A newly loaded document. We keep nothing from the previous one. */
-   void attach(Rml::ElementDocument *loaded)
+   void attach()
    {
-      document = loaded;
       painted = nullptr;
       region = nullptr;
       outside.clear();
@@ -47,9 +53,9 @@ public:
     * itself, as it is after the document is shown. */
    Rml::Element *current() const
    {
-      Rml::Context *context = document ? document->GetContext() : nullptr;
+      Rml::Context *context = document() ? document()->GetContext() : nullptr;
       Rml::Element *focused = context ? context->GetFocusElement() : nullptr;
-      if (!focused || focused == document || focused->GetOwnerDocument() != document)
+      if (!focused || focused == document() || focused->GetOwnerDocument() != document())
          return nullptr;
       return focused;
    }
@@ -70,7 +76,7 @@ public:
    Rml::Element *stop_at(Rml::Element *element) const
    {
       refresh();
-      for (; element && element != document; element = element->GetParentNode())
+      for (; element && element != document(); element = element->GetParentNode())
          if (can_focus(element))
             return element;
       return nullptr;
@@ -87,7 +93,7 @@ public:
    }
    bool set(const char *id)
    {
-      return document && id && *id && set(document->GetElementById(id));
+      return document() && id && *id && set(document()->GetElementById(id));
    }
 
    /* Every stop in `panel` that can take focus now, in document order. */
@@ -151,7 +157,7 @@ public:
             element->SetClass(document_contract::NavOutside, false);
       outside.clear();
       region = inside ? inside->GetObserverPtr() : Rml::ObserverPtr<Rml::Element>();
-      for (Rml::Element *at = inside; at && at != document; at = at->GetParentNode())
+      for (Rml::Element *at = inside; at && at != document(); at = at->GetParentNode())
          if (Rml::Element *parent = at->GetParentNode())
             for (int index = 0; index < parent->GetNumChildren(); ++index)
                if (Rml::Element *sibling = parent->GetChild(index); sibling != at)
@@ -170,9 +176,9 @@ public:
    Rml::Element *recall(const std::string& screen)
    {
       const auto found = memory.find(screen);
-      if (found == memory.end() || !document)
+      if (found == memory.end() || !document())
          return nullptr;
-      Rml::Element *element = document->GetElementById(found->second);
+      Rml::Element *element = document()->GetElementById(found->second);
       memory.erase(found);
       return stop(element) ? element : nullptr;
    }
@@ -180,7 +186,7 @@ public:
    Rml::Element *remembered(const std::string& screen) const
    {
       const auto found = memory.find(screen);
-      return found == memory.end() || !document ? nullptr : document->GetElementById(found->second);
+      return found == memory.end() || !document() ? nullptr : document()->GetElementById(found->second);
    }
    void forget(const std::string& screen) { memory.erase(screen); }
    void forget() { memory.clear(); }
@@ -190,21 +196,21 @@ private:
     * removed with its screen nothing is focused, and we remove the name too. */
    void name(Rml::Element *focused)
    {
-      if (!document)
+      if (!document())
          return;
       const Rml::String id = focused ? focused->GetId() : Rml::String();
-      if (id == document->GetAttribute<Rml::String>(document_contract::FocusAttribute, ""))
+      if (id == document()->GetAttribute<Rml::String>(document_contract::FocusAttribute, ""))
          return;
       if (id.empty())
-         document->RemoveAttribute(document_contract::FocusAttribute);
+         document()->RemoveAttribute(document_contract::FocusAttribute);
       else
-         document->SetAttribute(document_contract::FocusAttribute, id);
+         document()->SetAttribute(document_contract::FocusAttribute, id);
    }
    /* Bring the styles up to date, because we may not have applied them yet
     * for a panel shown or a class set a moment ago. */
    void refresh() const
    {
-      if (Rml::Context *context = document ? document->GetContext() : nullptr)
+      if (Rml::Context *context = document() ? document()->GetContext() : nullptr)
          context->Update();
    }
    static bool stoppable(Rml::Element *element)
@@ -222,10 +228,11 @@ private:
    }
    bool can_focus(Rml::Element *element) const
    {
-      return element && document && element->GetOwnerDocument() == document
+      return element && document() && element->GetOwnerDocument() == document()
             && stoppable(element) && can_reach(element);
    }
-   Rml::ElementDocument *document = nullptr;
+   const Document& owner;
+   Rml::ElementDocument *document() const { return owner.root(); }
    Rml::ObserverPtr<Rml::Element> painted, region;
    std::vector<Rml::ObserverPtr<Rml::Element>> outside;
    std::map<std::string, std::string> memory;
