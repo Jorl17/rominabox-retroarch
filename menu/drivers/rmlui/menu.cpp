@@ -282,6 +282,10 @@ static void reset_interaction(Menu *menu, bool opening)
       return;
    }
    read_game(menu);
+   /* While the menu is open, the document is the whole menu and not only what
+    * we last drew over the game, so we enter its screen where it is visible. */
+   menu->overlay_mode = false;
+   menu->view.set_overlay_mode(false);
    menu->navigation.open();
    settle_focus(menu);
 }
