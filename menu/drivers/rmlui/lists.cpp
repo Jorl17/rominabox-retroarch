@@ -101,14 +101,6 @@ void Lists::wire_lists(Rml::Element *scope)
       button->AddEventListener(Rml::EventId::Click, new ListListener(events, 1));
 }
 
-void Lists::set_toggle(const char *id, const char *state, bool on)
-{
-   if (!document.root() || !id || !*id) return;
-   if (auto *toggle = document.root()->GetElementById(id))
-      toggle->SetClass(document_contract::On, on);
-   document.set_element_text((std::string(id) + document_contract::StateSuffix).c_str(), state);
-}
-
 Rml::Element *Lists::visible_list() const
 {
    if (!document.root()) return nullptr;

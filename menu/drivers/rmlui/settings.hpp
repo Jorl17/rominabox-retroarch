@@ -8,7 +8,6 @@
 
 namespace rib {
 class Document;
-class Lists;
 class Parts;
 
 /* The settings that the player changes in the Options of the game, as we
@@ -20,8 +19,8 @@ class Parts;
 class PlayerSettings
 {
 public:
-   PlayerSettings(Document& document, Parts& parts, Lists& lists)
-      : document(document), parts(parts), lists(lists) {}
+   PlayerSettings(Document& document, Parts& parts)
+      : document(document), parts(parts) {}
    void load(const DesignDeclarations& design, const char *data_directory);
    /* Call once the document is loaded. We set the step of each level, and move
     * a level between two positions onto one. */
@@ -40,7 +39,6 @@ private:
    void set(const SettingDeclaration& setting, float value, bool persist);
    Document& document;
    Parts& parts;
-   Lists& lists;
    std::vector<SettingDeclaration> entries;
    std::string data;
 };

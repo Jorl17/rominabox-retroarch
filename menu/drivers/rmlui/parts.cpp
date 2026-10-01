@@ -106,34 +106,19 @@ float Parts::fraction_at(Rml::Element *slider, int x) const
    return clamp_fraction((static_cast<float>(x) - left) / width);
 }
 
-void Parts::paint_slider(Rml::Element *slider, float fraction, const char *readout)
+void Parts::draw(Rml::Element *slider, float fraction, const char *readout)
 {
    if (!slider) return;
    fraction = clamp_fraction(fraction);
    slider_fraction[slider->GetId()] = fraction;
-   if (document.get_context()) document.get_context()->Update();
-   auto *track = find_class(slider, document_contract::SliderTrack);
-   auto *fill = find_class(slider, document_contract::SliderFill);
-   auto *thumb = find_class(slider, document_contract::SliderThumb);
-   const float width = track ? track->GetBox().GetSize(Rml::BoxArea::Content).x : 0.0f;
-   const float thumb_width = thumb ? thumb->GetBox().GetSize(Rml::BoxArea::Border).x : 0.0f;
-   /* We measure in pixels, which change with the window and with the layout
-    * of the track, so we run this whenever those may have changed and write
-    * only what differs from the last write. */
-   Painted& painted = slider_painted[slider->GetId()];
-   if (width > 0.0f)
-   {
-      const float filled = width * fraction;
-      const float left = std::max(0.0f, width - thumb_width) * fraction;
-      if (fill && filled != painted.fill)
-         fill->SetProperty("width", std::to_string(filled) + "px");
-      if (thumb && left != painted.left)
-         thumb->SetProperty("left", std::to_string(left) + "px");
-      painted.fill = filled;
-      painted.left = left;
-   }
+   draw_slider(slider, fraction, slider_painted[slider->GetId()]);
    if (readout)
       write_text(find_class(slider, document_contract::SliderReadout), readout);
+}
+
+void Parts::paint_slider(Rml::Element *slider, float fraction)
+{
+   draw(slider, fraction, "");
 }
 
 void Parts::remember_slider(const std::string& id, float fraction)
@@ -146,7 +131,7 @@ void Parts::set_slider(const char *id, float fraction, const char *readout)
    if (!document.root() || !id) return;
    if (auto *slider = document.root()->GetElementById(id))
       if (slider->IsClassSet(document_contract::Slider))
-         paint_slider(slider, fraction, readout);
+         draw(slider, fraction, readout);
 }
 
 void Parts::set_slider_step(const char *id, float step)
@@ -170,7 +155,7 @@ bool Parts::commit_slider(const char *id, float fraction)
    if (!document.root() || !id) return false;
    auto *slider = document.root()->GetElementById(id);
    if (!slider || !slider->IsClassSet(document_contract::Slider)) return false;
-   paint_slider(slider, fraction, nullptr);
+   draw(slider, fraction, nullptr);
    remember_slider(slider->GetId(), fraction);
    return true;
 }
@@ -204,7 +189,7 @@ void Parts::drag_to(int x)
 {
    if (!drag_element) return;
    drag_fraction = fraction_at(drag_element, x);
-   paint_slider(drag_element, drag_fraction, nullptr);
+   draw(drag_element, drag_fraction, nullptr);
 }
 
 Event Parts::end_drag()

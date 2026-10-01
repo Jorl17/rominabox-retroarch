@@ -1,6 +1,7 @@
 #pragma once
 
 #include "events.h"
+#include "setting_display.hpp"
 #include <RmlUi/Core.h>
 #include <map>
 #include <string>
@@ -9,10 +10,14 @@ namespace rib {
 class Document;
 
 /* The slider and toggle parts of the design, their listeners, and a pointer
- * drag. The elements belong to Document, and on shutdown we clear the drag. */
-class Parts
+ * drag. The elements belong to Document, and on shutdown we clear the drag.
+ * We draw the slider of a setting here, so we keep its position for the keys
+ * and the pointer that move it. */
+class Parts : public SliderPainter
 {
 public:
+   /* Put the slider of a setting at `fraction` and clear its readout. */
+   void paint_slider(Rml::Element *slider, float fraction) override;
    Parts(Document& document, EventQueue& events) : document(document), events(events) {}
 
    /* The toggle part, and any other element we mark `switch` in composition,
@@ -37,16 +42,15 @@ public:
 private:
    static float clamp_fraction(float fraction);
    float fraction_at(Rml::Element *slider, int x) const;
-   void paint_slider(Rml::Element *slider, float fraction, const char *readout);
+   void draw(Rml::Element *slider, float fraction, const char *readout);
    void remember_slider(const std::string& id, float fraction);
 
    Document& document;
    EventQueue& events;
    std::map<std::string, float> slider_fraction;
    std::map<std::string, float> slider_step;
-   /* The last values we set for the fill and thumb of each slider, in pixels. */
-   struct Painted { float fill = -1.0f, left = -1.0f; };
-   std::map<std::string, Painted> slider_painted;
+   /* The last values we set for the fill and thumb of each slider. */
+   std::map<std::string, SliderPainted> slider_painted;
    Rml::Element *drag_element = nullptr;
    std::string drag_id;
    float drag_fraction = 0.0f;

@@ -32,8 +32,6 @@ public:
    // keep the current page where possible. We leave static lists unchanged.
    // We split lists into pages in paging.hpp.
    void replace_rows(const char *list_id, const std::vector<Row>& rows);
-   /* For a switch, set the fact `on` and the word for its state in `<id>-state`. */
-   void set_toggle(const char *id, const char *state, bool on);
    Rml::Element *visible_list() const;
    /* Turn `list`, or the visible list, by one page. Returns the page, or -1. */
    int turn_list_page(int delta, Rml::Element *list = nullptr) const;

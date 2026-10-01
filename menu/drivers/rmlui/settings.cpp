@@ -1,59 +1,20 @@
 #include "settings.hpp"
+#include "setting_display.hpp"
 #include "host.h"
 #include "files.h"
 #include "document.hpp"
-#include "lists.hpp"
 #include "parts.hpp"
 #include "slots.hpp"
 #include "sounds.hpp"
-#include "words.hpp"
 #include "../../../verbosity.h"
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
-#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
 namespace rib {
 namespace {
-/* The positions of a level count from 0 at its low end, and the value at each
- * is values[position]. We convert between a position and a value or a slider
- * fraction here and nowhere else. */
-int last_position(const SettingDeclaration& level)
-{
-   return (int)level.values.size() - 1;
-}
-
-/* The position with the value nearest `value`, or the higher of two ties. */
-int position_of(const SettingDeclaration& level, float value)
-{
-   int nearest = 0;
-   for (int position = 1; position <= last_position(level); ++position)
-      if (std::fabs(level.values[position] - value)
-            <= std::fabs(level.values[nearest] - value))
-         nearest = position;
-   return nearest;
-}
-
-/* The position of a slider at `fraction` of its track. */
-int position_at(const SettingDeclaration& level, float fraction)
-{
-   if (fraction < 0.0f) fraction = 0.0f;
-   if (fraction > 1.0f) fraction = 1.0f;
-   return (int)(fraction * (float)last_position(level) + 0.5f);
-}
-
-float fraction_at(const SettingDeclaration& level, int position)
-{
-   return (float)position / (float)last_position(level);
-}
-
-bool switched_on(const SettingDeclaration& setting, float value)
-{
-   return (value != 0.0f) != setting.inverted;
-}
-
 /* A value as we write it in the file of the setting, for RetroArch to read
  * back: a level to one decimal, and a switch as true or false. */
 std::string file_text(const SettingDeclaration& setting, float value)
@@ -86,7 +47,7 @@ const SettingDeclaration *PlayerSettings::owning(const char *control,
 
 float PlayerSettings::value(const SettingDeclaration& setting) const
 {
-   float current = setting.kind == SettingKind::Level ? setting.values.back() : 0.0f;
+   float current = unreported_value(setting);
    rib_host_setting(setting.key, &current);
    return current;
 }
@@ -97,13 +58,13 @@ void PlayerSettings::attach()
    {
       if (setting.kind != SettingKind::Level)
          continue;
-      parts.set_slider_step(setting.control.c_str(), fraction_at(setting, 1));
+      parts.set_slider_step(setting.control.c_str(), level_fraction_at(setting, 1));
       /* We move a level between positions, from a file or a hotkey, to the
        * nearest one and store it there. The file has one decimal, so a level
        * from it is at a position when it matches to one decimal, and we do not
        * write a level that is already at a position. */
       const float current = value(setting);
-      const float nearest = setting.values[position_of(setting, current)];
+      const float nearest = setting.values[level_position_of(setting, current)];
       if (file_text(setting, nearest) != file_text(setting, current))
          set(setting, nearest, true);
    }
@@ -113,19 +74,8 @@ void PlayerSettings::attach()
 void PlayerSettings::paint() const
 {
    for (const SettingDeclaration& setting : entries)
-   {
-      document.set_disabled(setting.control.c_str(), !rib_host_setting_used(setting.key));
-      const float current = value(setting);
-      if (setting.kind == SettingKind::Level)
-         parts.set_slider(setting.control.c_str(),
-               fraction_at(setting, position_of(setting, current)), "");
-      else
-      {
-         const bool on = switched_on(setting, current);
-         lists.set_toggle(setting.control.c_str(),
-               say(on ? Word::SwitchOn : Word::SwitchOff).c_str(), on);
-      }
-   }
+      paint_setting(document.root(), setting, value(setting),
+            rib_host_setting_used(setting.key), parts);
 }
 
 void PlayerSettings::set(const SettingDeclaration& setting, float chosen, bool persist)
@@ -152,8 +102,8 @@ bool PlayerSettings::slide(const char *control, float fraction, bool persist)
    const SettingDeclaration *level = owning(control, SettingKind::Level);
    if (!level)
       return false;
-   const int from = position_of(*level, value(*level));
-   const int to = position_at(*level, fraction);
+   const int from = level_position_of(*level, value(*level));
+   const int to = level_position_at(*level, fraction);
    if (to != from || persist)
       set(*level, level->values[to], persist);
    if (to != from)
@@ -184,7 +134,7 @@ bool PlayerSettings::toggle(const char *control)
    const SettingDeclaration *setting = owning(control, SettingKind::Switch);
    if (!setting)
       return false;
-   const bool on = !switched_on(*setting, value(*setting));
+   const bool on = !switch_on(*setting, value(*setting));
    set(*setting, on != setting->inverted ? 1.0f : 0.0f, true);
    paint();
    return true;
