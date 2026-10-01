@@ -161,6 +161,9 @@ void Achievements::paint_rows()
             item.state == RIB_ACHIEVEMENT_UNLOCKED || item.state == RIB_ACHIEVEMENT_PENDING_UPLOAD, badge});
    }
    lists.replace_rows(document_contract::AchievementsList, rows);
+   // Empty when we know the game's list is empty. The wording is in the design.
+   document.set_class(document_contract::AchievementsList, document_contract::Empty,
+         snapshot.status == RIB_ACHIEVEMENTS_ACTIVE && rows.empty());
 }
 void Achievements::paint()
 {
