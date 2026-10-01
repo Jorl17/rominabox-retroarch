@@ -3,6 +3,7 @@
 
 #include "document.hpp"
 #include "elements.hpp"
+#include "screen_display.hpp"
 #include <utility>
 
 namespace rib {
@@ -70,11 +71,7 @@ bool Screens::show_screen(const std::string& id)
       return false;
    events.clear();
    hovered = RIB_RMLUI_ACTION_NONE;
-   for (const ScreenDeclaration& screen : screens)
-      show(document.root()->GetElementById(screen.panel), &screen == wanted);
-   document.set_element_text(document_contract::Heading, wanted->heading.c_str());
-   if (!wanted->footer.empty())
-      document.set_hint(document_contract::FooterHint, wanted->footer.c_str());
+   display_screen(document.root(), screens, *wanted);
    return true;
 }
 

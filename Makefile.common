@@ -1079,7 +1079,7 @@ ifeq ($(HAVE_MENU), 1)
       OBJ += menu/drivers/rmlui/driver.o menu/drivers/rmlui/menu.o menu/drivers/rmlui/navigation.o menu/drivers/rmlui/slot_tasks.o menu/drivers/rmlui/sounds.o menu/drivers/rmlui/view.o menu/drivers/rmlui/control_view.o \
              menu/drivers/rmlui/host.o menu/drivers/rmlui/files.o menu/drivers/rmlui/file_layer.o menu/drivers/rmlui/declarations.o \
              menu/drivers/rmlui/slots.o menu/drivers/rmlui/status.o menu/drivers/rmlui/words.o \
-             menu/drivers/rmlui/screens.o menu/drivers/rmlui/lists.o menu/drivers/rmlui/paging.o menu/drivers/rmlui/live_lists.o menu/drivers/rmlui/parts.o \
+             menu/drivers/rmlui/screens.o menu/drivers/rmlui/screen_display.o menu/drivers/rmlui/lists.o menu/drivers/rmlui/paging.o menu/drivers/rmlui/live_lists.o menu/drivers/rmlui/parts.o \
              menu/drivers/rmlui/binds_popup.o menu/drivers/rmlui/document.o \
              menu/drivers/rmlui/achievements.o menu/drivers/rmlui/text_entry.o menu/drivers/rmlui/text_host.o \
              menu/drivers/rmlui/overlays.o menu/drivers/rmlui/script.o menu/drivers/rmlui/script_report.o \
