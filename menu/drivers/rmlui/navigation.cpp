@@ -7,6 +7,7 @@
 #include "document.hpp"
 #include "elements.hpp"
 #include "lists.hpp"
+#include "paging.hpp"
 #include "parts.hpp"
 #include <cstdlib>
 #include <cstring>
@@ -59,7 +60,7 @@ bool Navigation::present(const std::string& id)
    /* Split its lists again from the visible rows, because a row we showed or
     * hid since the last split, such as a switch with no effect in the game,
     * would leave a gap on a page, or an empty page. */
-   lists.resplit(panel(), focus.remembered(to));
+   paging::resplit(panel(), focus.remembered(to));
    enter();
    if (shown)
       shown();
@@ -121,7 +122,7 @@ void Navigation::back()
 
 bool Navigation::turn_page(int delta, Rml::Element *from)
 {
-   Rml::Element *list = Lists::list_of(from);
+   Rml::Element *list = paging::list_of(from);
    if (lists.turn_list_page(delta, list) < 0)
       return false;
    /* When the player turns the page with an arrow, we keep the focus on it,
@@ -224,10 +225,10 @@ Event Navigation::move(rib_key action)
    }
    /* On a list page, Left and Right move to the next stop on the same page,
     * when there is one, and turn the page at its edge. */
-   if (Rml::Element *page = sideways ? Lists::page_of(from) : nullptr)
+   if (Rml::Element *page = sideways ? paging::page_of(from) : nullptr)
    {
       const bool beside = step(document.get_context(), action)
-            && Lists::page_of(focus.current()) == page;
+            && paging::page_of(focus.current()) == page;
       if (!beside)
          focus.set(from);
       if (beside || turn_page(direction, from))

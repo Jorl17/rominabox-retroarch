@@ -2,6 +2,7 @@
 #include "lists.hpp"
 #include "document.hpp"
 #include "elements.hpp"
+#include "paging.hpp"
 #include <unordered_map>
 
 namespace rib {
@@ -13,9 +14,9 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
    if (!list || !prototype || !pager) return;
    std::vector<Rml::Element*> pages;
    collect(list, document_contract::ListPage, pages);
-   const int current = current_page(list);
+   const int current = paging::current(list);
    std::unordered_map<std::string, Rml::Element*> existing;
-   for (auto *row : paged_rows(list)) existing.emplace(row->GetId(), row);
+   for (auto *row : paging::rows(list)) existing.emplace(row->GetId(), row);
    const std::string prefix = prototype->GetId();
    std::vector<Rml::Element*> ordered;
    std::vector<const Row*> resized;
@@ -31,8 +32,8 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
                element->SetId(data.id + id.substr(prefix.size()));
             return Walk::Continue;
          });
-         if (pages.empty()) pages.push_back(add_page(list));
-         // We place it on its page in paginate, with the rows already there.
+         if (pages.empty()) pages.push_back(paging::add_page(list));
+         // We place it on its page when we split the list, with the other rows.
          row = pages.back()->AppendChild(std::move(created));
          wire_lists(row);
       } else
@@ -69,7 +70,7 @@ void Lists::replace_rows(const char *list_id, const std::vector<Row>& rows)
       if (fit) resized.push_back(&data);
    }
    for (const auto& item : existing) item.second->GetParentNode()->RemoveChild(item.second);
-   paginate(list, ordered, current);
+   paging::split(list, ordered, current);
    if (!resized.empty()) document.get_context()->Update();
    for (const auto *row : resized) fit_row_title(row->id.c_str(), row->title.c_str());
 }

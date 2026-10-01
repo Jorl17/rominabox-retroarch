@@ -1,5 +1,6 @@
 #include "document_contract.hpp"
 #include "view.hpp"
+#include "paging.hpp"
 #include "sounds.hpp"
 #include "listeners.hpp"
 namespace rib {
@@ -86,7 +87,7 @@ void View::wire_document()
          element->AddEventListener(Rml::EventId::Mouseout, new HoverListener(hovered, event));
       }
 
-   lists.paginate_all();
+   paging::split_all(document.root());
    controls.wire(*catalog);
    parts.wire_part_toggles();
    parts.wire_arrows();
