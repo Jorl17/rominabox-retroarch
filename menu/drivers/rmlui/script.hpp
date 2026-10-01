@@ -22,6 +22,8 @@ struct ScriptObservation
    const char *profile;
    /* The list of the bindings of a control, as declared in the design. */
    const char *binds_list;
+   /* Every overlay declared in the design has appeared and ended. */
+   bool overlays_settled;
 };
 
 #ifdef RIB_MENU_SCRIPT
@@ -54,6 +56,7 @@ private:
    int settle = 8;
    int waiting = 0;
    int64_t wait_until = 0;
+   bool waits_for_overlays = false;
    std::string hover;
    std::string binds_list;
 };

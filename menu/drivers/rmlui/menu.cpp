@@ -140,6 +140,14 @@ static bool capturing(const Menu *menu)
    return menu && (menu->controls.capture_active || menu->hotkeys.capturing());
 }
 
+/* The state of the menu in this frame, for the test script. */
+static rib::ScriptObservation observe(Menu *menu)
+{
+   return {menu->screens.current().c_str(), menu->slots.transfer_pending(),
+         capturing(menu), menu->controls.profile_id.c_str(),
+         menu->controls.binds_list(), menu->overlays.settled()};
+}
+
 static void cancel_captures(Menu *menu)
 {
    if (menu->controls.capture_active)
@@ -521,9 +529,7 @@ void rib_menu_frame(void *data, int width, int height)
           * We run the script first, because from it we learn whether we still
           * want frames after the overlays are done, and we can learn that only
           * after asking it. */
-         menu->script.run(menu, {menu->screens.current().c_str(), menu->slots.transfer_pending(),
-               capturing(menu), menu->controls.profile_id.c_str(),
-               menu->controls.binds_list()});
+         menu->script.run(menu, observe(menu));
          menu->overlays.update(menu->script.wants_frames());
          menu->view.render(width, height);
          return;
@@ -573,9 +579,7 @@ void rib_menu_frame(void *data, int width, int height)
     * Fill it before the click from the script, or the click goes to a button
     * that is still display:none in the document. */
    menu->discs.sync();
-   menu->script.run(menu, {menu->screens.current().c_str(), menu->slots.transfer_pending(),
-               capturing(menu), menu->controls.profile_id.c_str(),
-               menu->controls.binds_list()});
+   menu->script.run(menu, observe(menu));
    menu->script.restore_hover();
    /* Once we have put the pointer back after the script, we silently focus
     * the stop the pointer moved onto, before the click of this frame. We never

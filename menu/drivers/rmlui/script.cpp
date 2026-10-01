@@ -15,6 +15,14 @@
 #include <cstdlib>
 #include <cstring>
 
+namespace {
+namespace commands {
+#define RIB_SCRIPT_COMMAND(name, step) constexpr char name[] = step;
+#include "script_commands.inc"
+#undef RIB_SCRIPT_COMMAND
+}
+}
+
 void rib::Script::shot()
 {
    const rib_environment_value shot_path = rib_owned(rib_environment(RIB_ENV_MENU_SHOT));
@@ -86,6 +94,13 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
       return;
    }
 
+   if (waits_for_overlays)
+   {
+      if (!observation.overlays_settled)
+         return;
+      waits_for_overlays = false;
+   }
+
    if (at >= strlen(script))
    {
       /* We have made every click. Wait for the menu to settle, take the
@@ -121,6 +136,16 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
       wait_until = rib_host_time_us()
             + (int64_t)atoi(id + 8) * 1000;
       RARCH_LOG("[RIB] menu script waiting %s ms.\n", id + 8);
+      return;
+   }
+
+   /* Wait until the overlays of the design, the splash and the notice, have
+    * ended. We time them by the clock, and a launched player and a headless
+    * one take different times to get there. */
+   if (!strcmp(id, commands::WaitOverlays))
+   {
+      waits_for_overlays = true;
+      RARCH_LOG("[RIB] menu script waiting for the overlays to finish.\n");
       return;
    }
 
@@ -173,16 +198,15 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
 
    /* The command for Escape, not a click. When the menu is closed there is no
     * element to click, so this is the only way to script pause and resume. */
-   if (!strcmp(id, "toggle"))
+   if (!strcmp(id, commands::Toggle))
    {
       rib_host_resume();
       RARCH_LOG("[RIB] menu script toggled the menu.\n");
       return;
    }
 
-   /* The Alt+Enter command. We restart the video driver for fullscreen or for
-    * a window. */
-   if (!strcmp(id, "fullscreen"))
+   /* Alt+Enter's command. */
+   if (!strcmp(id, commands::Fullscreen))
    {
       rib_host_toggle_fullscreen();
       RARCH_LOG("[RIB] menu script toggled fullscreen.\n");

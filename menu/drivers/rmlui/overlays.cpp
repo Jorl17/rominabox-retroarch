@@ -24,6 +24,16 @@ bool Overlays::holding_game() const
    return false;
 }
 
+bool Overlays::settled() const
+{
+   if (!loaded)
+      return false;
+   for (const Overlay& overlay : overlays)
+      if (!overlay.finished)
+         return false;
+   return true;
+}
+
 void Overlays::begin()
 {
    // We read the declarations in the first frame we request. With an empty

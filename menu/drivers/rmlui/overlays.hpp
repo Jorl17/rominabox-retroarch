@@ -43,6 +43,8 @@ public:
    /* Whether the game must wait, because an overlay that delays it is still
     * on screen, or we have not yet read from the design which ones do. */
    bool holding_game() const;
+   /* Whether every overlay declared in the design has appeared and ended. */
+   bool settled() const;
    void stop() { running = false; clear_notification(); }
 private:
    Document& document;
