@@ -61,6 +61,13 @@ public:
    {
       return 1;
    }
+   /* As in the player renderers, we keep a layer as a texture. A box-shadow
+    * is drawn into it once and then reused. Without the layer, the shadow is
+    * drawn again in every frame, which never happens in the player. */
+   Rml::TextureHandle SaveLayerAsTexture() override
+   {
+      return 1;
+   }
    void ReleaseTexture(Rml::TextureHandle) override {}
    void EnableScissorRegion(bool) override {}
    void SetScissorRegion(Rml::Rectanglei) override {}
