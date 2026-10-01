@@ -40,11 +40,6 @@ bool switch_on(const SettingDeclaration& setting, float value)
    return (value != 0.0f) != setting.inverted;
 }
 
-float unreported_value(const SettingDeclaration& setting)
-{
-   return setting.kind == SettingKind::Level ? setting.values.back() : 0.0f;
-}
-
 void draw_slider(Rml::Element *slider, float fraction, SliderPainted& painted)
 {
    if (!slider)

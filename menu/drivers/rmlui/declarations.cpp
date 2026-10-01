@@ -207,20 +207,23 @@ void settings(config_file_t *config, rib::DesignDeclarations& design)
                "not apply; it will not be shown.\n", id.c_str(), key.c_str());
          continue;
       }
+      const std::string start = value(config, rib::keys::SettingDefault(id));
       switch (setting.kind)
       {
          case rib::SettingKind::Level:
             setting.values = levels(value(config, rib::keys::SettingValues(id)));
+            setting.default_value = std::strtof(start.c_str(), nullptr);
             break;
          case rib::SettingKind::Switch:
             setting.inverted = value(config, rib::keys::SettingInverted(id)) == "true";
+            setting.default_value = start == "true" ? 1.0f : 0.0f;
             break;
       }
-      if (setting.control.empty() || setting.file.empty()
+      if (setting.control.empty() || setting.file.empty() || start.empty()
             || (setting.kind == rib::SettingKind::Level && setting.values.size() < 2))
       {
          RARCH_ERR("[RIB] the setting '%s' is declared without its control, "
-               "file or values; it will not be shown.\n", id.c_str());
+               "file, default or values; it will not be shown.\n", id.c_str());
          continue;
       }
       design.settings.push_back(std::move(setting));

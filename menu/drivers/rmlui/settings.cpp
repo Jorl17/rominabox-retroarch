@@ -47,7 +47,7 @@ const SettingDeclaration *PlayerSettings::owning(const char *control,
 
 float PlayerSettings::value(const SettingDeclaration& setting) const
 {
-   float current = unreported_value(setting);
+   float current = setting.default_value;
    rib_host_setting(setting.key, &current);
    return current;
 }

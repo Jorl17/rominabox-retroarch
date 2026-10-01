@@ -77,6 +77,9 @@ struct SettingDeclaration
    /* A switch: whether on is the key's false. The words for it are in the
     * menu (Word::SwitchOn, Word::SwitchOff). */
    bool inverted = false;
+   /* The value of the key when the game starts, before the player changes
+    * it: the value of a level, or 1 or 0 for a switch. */
+   float default_value = 0.0f;
 };
 
 /* When the list of a control's bindings appears, and how wide it is. */

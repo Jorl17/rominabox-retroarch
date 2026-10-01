@@ -23,10 +23,6 @@ float level_fraction_at(const SettingDeclaration& level, int position);
  * when the switch shows on (`inverted`). */
 bool switch_on(const SettingDeclaration& setting, float value);
 
-/* The value of a setting when RetroArch has none: a level at its high end,
- * or false for the key of a switch. */
-float unreported_value(const SettingDeclaration& setting);
-
 /* How we draw the slider of a level at a fraction of its track. In the menu
  * we keep the position of each slider for the keys and pointer that move it,
  * and in the preview we only draw. */
