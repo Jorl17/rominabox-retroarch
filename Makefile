@@ -15,9 +15,9 @@ include config.mk
 # (It'd be better to put this comment in that file, but .gitignore doesn't work on files that exist in the repo.)
 -include Makefile.local
 
-# What every object is built from besides its sources: configure's outputs,
-# and Makefile.local where a build writes one.
-BUILD_CONFIG := config.h config.mk $(wildcard Makefile.local)
+# What every object is built from besides its sources: the rules below that
+# compile it, configure's outputs, and Makefile.local where a build writes one.
+BUILD_CONFIG := Makefile config.h config.mk $(wildcard Makefile.local)
 
 ifeq ($(HAVE_ANGLE), 1)
 TARGET = retroarch_angle
@@ -83,7 +83,9 @@ endif
 ifeq ($(shell $(CC) -v 2>&1 | grep -c "tcc"),1)
    MD = -MD
 else
-   MD = -MMD
+   # -MP: a header an object was built with that has since been removed is
+   # no reason to stop; the object is compiled again.
+   MD = -MMD -MP
 endif
 
 HEADERS = $(wildcard */*/*.h) $(wildcard */*.h) $(wildcard *.h)
@@ -217,7 +219,7 @@ $(foreach x,$(join $(addsuffix :,$(MOC_SRC)),$(MOC_HEADERS)),$(eval $x))
 
 $(MOC_OBJ):
 	@$(if $(Q), $(shell echo echo CXX $<),)
-	$(Q)$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(DEFINES) -MMD -c -o $@ $<
+	$(Q)$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(DEFINES) $(MD) -c -o $@ $<
 
 $(foreach x,$(join $(addsuffix :,$(MOC_OBJ)),$(MOC_SRC)),$(eval $x))
 
@@ -263,16 +265,16 @@ $(OBJDIR)/%.o: %.c $(BUILD_CONFIG)
 $(OBJDIR)/%.o: %.cpp $(BUILD_CONFIG)
 	@mkdir -p $(dir $@)
 	@$(if $(Q), $(shell echo echo CXX $<),)
-	$(Q)$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(DEFINES) -MMD -c -o $@ $<
+	$(Q)$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(DEFINES) $(MD) -c -o $@ $<
 
 $(OBJDIR)/%.o: %.mm $(BUILD_CONFIG)
 	@mkdir -p $(dir $@)
-	$(Q)$(CXX) $(CPPFLAGS) $(OBJCFLAGS) $(CXXFLAGS) $(DEFINES) -MMD -c -o $@ $<
+	$(Q)$(CXX) $(CPPFLAGS) $(OBJCFLAGS) $(CXXFLAGS) $(DEFINES) $(MD) -c -o $@ $<
 
-$(OBJDIR)/%.o: %.m
+$(OBJDIR)/%.o: %.m $(BUILD_CONFIG)
 	@mkdir -p $(dir $@)
 	@$(if $(Q), $(shell echo echo OBJC $<),)
-	$(Q)$(CXX) $(OBJCFLAGS) $(DEFINES) -MMD -c -o $@ $<
+	$(Q)$(CXX) $(OBJCFLAGS) $(DEFINES) $(MD) -c -o $@ $<
 
 # ARC (Automatic Reference Counting) overrides. These Objective-C
 # files use ARC-only constructs (__weak, __bridge*, no manual
@@ -292,7 +294,7 @@ $(OBJDIR)/%.o: %.S $(BUILD_CONFIG) $(HEADERS)
 	@$(if $(Q), $(shell echo echo AS $<),)
 	$(Q)$(CC) $(CFLAGS) $(ASFLAGS) $(DEFINES) -c -o $@ $<
 
-$(OBJDIR)/%.o: %.rc $(HEADERS)
+$(OBJDIR)/%.o: %.rc $(BUILD_CONFIG) $(HEADERS)
 	@mkdir -p $(dir $@)
 	@$(if $(Q), $(shell echo echo WINDRES $<),)
 	$(Q)$(WINDRES) $(DEFINES) -o $@ $<
