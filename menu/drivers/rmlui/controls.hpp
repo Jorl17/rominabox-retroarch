@@ -3,11 +3,13 @@
 #include "capture_pointer.hpp"
 #include "declarations.h"
 #include "focus.hpp"
+#include "hotkey_bindings.hpp"
 #include "screens.hpp"
 #include <retro_miscellaneous.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string>
+#include <vector>
 
 struct config_file;
 /* Export limits. They are sizes of buffers, not a list of controls. */
@@ -57,6 +59,9 @@ public:
    void configure_binds(const BindsDeclaration& binds);
    /* The list of the bindings of a control, as declared in the design. */
    const char *binds_list() const { return binds.list.c_str(); }
+   /* The input for the game now: each control of the pad in use, its key and
+    * the position we read it from. */
+   std::vector<GameInput> game_inputs() const;
    void update_binds(int x, int y, bool pointer_active);
 
    bool loaded = false;

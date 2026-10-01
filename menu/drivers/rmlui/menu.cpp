@@ -59,7 +59,7 @@ struct Menu
    rib::Controls controls{focus, screens, view.document, view.controls,
          view.lists, view.status, view.hovered, capture_pointer};
    rib::Hotkeys hotkeys{view.document, focus, screens, view.status,
-         view.intents, view.hovered, capture_pointer};
+         view.intents, view.hovered, capture_pointer, controls};
    rib::PlayHotkeys play_hotkeys{hotkeys.read(), view.slots, overlays};
    bool pointer_pressed;
    rib::Slots& slots = view.slots;

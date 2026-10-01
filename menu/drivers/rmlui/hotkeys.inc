@@ -16,7 +16,9 @@
  *    keyboard alone always reaches it; Nothing, it may be left unbound.
  *    acts: when it does what it does: InMenu, while the menu is open;
  *    InGame, while the game plays; Both. A hotkey that acts while the game
- *    plays holds no key the game itself reads, or a press would do both.
+ *    plays holds no key the game itself reads and no pad button it reads
+ *    alone, or a press would do both. A chord of several buttons, and
+ *    Home, are not checked.
  * RIB_HOTKEYS_SHARE(first, second)
  *    Two hotkeys that do the same inside the menu. An input may be bound to
  *    both, and there it acts once, as `first`. Every other pair holds an

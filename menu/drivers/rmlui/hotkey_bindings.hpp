@@ -41,6 +41,16 @@ struct HotkeyBinding
    bool operator==(const HotkeyBinding& other) const { return text() == other.text(); }
 };
 
+/* The inputs of one control of the game: the code of its key (0 for none),
+ * and the id of its pad position, with the label we show for it on CONTROLS.
+ * A hotkey for use during play may have none of these. */
+struct GameInput
+{
+   std::string label;
+   unsigned key = 0;
+   std::string position;
+};
+
 /* Read a binding in the format of hotkeys.inc through the host. Returns
  * false for text that is not a binding we can read through the host. */
 bool read_hotkey_binding(const std::string& text, HotkeyBinding& binding);
@@ -80,18 +90,26 @@ public:
       /* We refuse because `other` would have no binding left, or no key. */
       NeedsBinding,
       NeedsKey,
+      /* We refuse because `other`, a hotkey for use during play, would get an
+       * input of `control`, that is a key or a single pad button. A chord of
+       * several inputs, and Home, are never inputs of the game. */
+      GameInput,
    };
    struct Change
    {
       Outcome outcome = Outcome::Unchanged;
       /* The hotkey we took the binding from, or refused the change for. */
       Hotkey other = Hotkey::Menu;
+      /* The control of the game in a GameInput refusal, as named on CONTROLS. */
+      std::string control;
       /* Whether we saved the change in the file of the player. */
       bool saved = true;
    };
    /* Give `binding` to `hotkey` and take it from any hotkey that may not share
-    * it. `room` is how many bindings fit on the row of each hotkey. */
-   Change add(Hotkey hotkey, const HotkeyBinding& binding, const std::vector<size_t>& room);
+    * it. `room` is how many bindings fit on the row of each hotkey, and `game`
+    * contains the current inputs of the game. */
+   Change add(Hotkey hotkey, const HotkeyBinding& binding, const std::vector<size_t>& room,
+         const std::vector<GameInput>& game);
    Change remove(Hotkey hotkey, size_t index);
    /* Go back to the bindings of the author and delete the file of the player.
     * Returns false when we could not delete the file. */

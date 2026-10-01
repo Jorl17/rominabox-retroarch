@@ -10,6 +10,7 @@
 namespace Rml { class Element; }
 
 namespace rib {
+class Controls;
 class Document;
 class Focus;
 class Screens;
@@ -18,14 +19,14 @@ class Status;
 /* The HOTKEYS screen, with a row of chips for the bindings of each hotkey.
  * The player adds one with +, through the same capture as Controls, removes
  * one by choosing its chip, and restores the defaults with RESET. Here we
- * show the bindings from HotkeyBindings and the result of each change. */
+ * show the bindings from HotkeyBindings, and the game inputs from `controls`. */
 class Hotkeys
 {
 public:
    Hotkeys(Document& document, Focus& focus, Screens& screens, Status& status,
-         EventQueue& intents, Event& hovered, CapturePointer& pointer)
+         EventQueue& intents, Event& hovered, CapturePointer& pointer, const Controls& controls)
       : document(document), focus(focus), screens(screens), status(status),
-        intents(intents), hovered(hovered), pointer(pointer) {}
+        intents(intents), hovered(hovered), pointer(pointer), controls(controls) {}
    /* The bindings, read before any document, because we need them while the
     * game runs, before we have ever drawn the menu. */
    void load(const char *assets, const char *data) { bindings.load(assets, data); }
@@ -64,6 +65,7 @@ private:
    EventQueue& intents;
    Event& hovered;
    CapturePointer& pointer;
+   const Controls& controls;
    HotkeyBindings bindings;
    std::vector<Row> rows;
    struct Capture

@@ -580,6 +580,15 @@ bool rib_host_script_press(const char *name)
 }
 #endif
 
+bool rib_host_bind_key(unsigned index, unsigned *code)
+{
+   const enum retro_key key = input_config_binds[0][index].key;
+   if (!code || key == RETROK_UNKNOWN)
+      return false;
+   *code = (unsigned)key;
+   return true;
+}
+
 bool rib_host_key_down(unsigned code)
 {
 #ifdef RIB_MENU_SCRIPT

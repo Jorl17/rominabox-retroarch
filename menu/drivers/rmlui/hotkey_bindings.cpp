@@ -97,6 +97,19 @@ bool holds(const std::vector<HotkeyBinding>& list, const HotkeyBinding& binding)
 {
    return std::find(list.begin(), list.end(), binding) != list.end();
 }
+
+/* Return the input of `game` that `binding` is, if any. That is a single key
+ * or a single pad position from the game inputs. */
+const GameInput *game_input(const HotkeyBinding& binding, const std::vector<GameInput>& game)
+{
+   for (const GameInput& input : game)
+   {
+      if (is_key(binding) ? input.key && input.key == binding.code
+            : binding.pads.size() == 1 && binding.pads[0] == input.position)
+         return &input;
+   }
+   return nullptr;
+}
 }
 
 const Hotkey *all_hotkeys() { return all; }
@@ -271,7 +284,7 @@ bool HotkeyBindings::lawful(const std::vector<HotkeyBinding> (&candidate)[kHotke
 }
 
 HotkeyBindings::Change HotkeyBindings::add(Hotkey hotkey, const HotkeyBinding& binding,
-      const std::vector<size_t>& room)
+      const std::vector<size_t>& room, const std::vector<GameInput>& game)
 {
    Change change;
    change.other = hotkey;
@@ -315,6 +328,24 @@ HotkeyBindings::Change HotkeyBindings::add(Hotkey hotkey, const HotkeyBinding& b
       }
    }
    mine.push_back(binding);
+   /* We give a hotkey for use during play none of the game inputs, whether
+    * captured or received in a swap. We do not check what it had before this
+    * change. */
+   for (Hotkey each : all)
+   {
+      if (hotkey_acts(each) == Acts::InMenu)
+         continue;
+      for (const HotkeyBinding& given : next[at(each)])
+      {
+         const GameInput *input = holds(lists[at(each)], given) ? nullptr : game_input(given, game);
+         if (!input)
+            continue;
+         change.outcome = Outcome::GameInput;
+         change.other = each;
+         change.control = input->label;
+         return change;
+      }
+   }
    for (Hotkey each : all)
    {
       Outcome refusal = Outcome::Unchanged;

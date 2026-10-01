@@ -40,6 +40,10 @@ enum rib_capture_result rib_host_capture_poll(bool allow_pointer, float *remaini
  * that is not a key or pad input. */
 bool rib_host_key_code(const char *name, unsigned *code);
 bool rib_host_key_down(unsigned code);
+/* Return the code of the key in bind `index` of the first player, or false
+ * when the bind has no key. It is an input of the game, so a hotkey for use
+ * during play may not have it. */
+bool rib_host_bind_key(unsigned index, unsigned *code);
 bool rib_host_pad_input(const char *id, unsigned *bind);
 bool rib_host_pad_down(unsigned bind);
 /* Capture an input for one of those hotkeys. We use the RetroArch capture,

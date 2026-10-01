@@ -39,6 +39,22 @@ const char * Controls::console_name(int index) const
    return catalog.entries[index].id.c_str();
 }
 
+std::vector<GameInput> Controls::game_inputs() const
+{
+   std::vector<GameInput> inputs;
+   for (int index = 0; index < catalog.count; ++index)
+   {
+      if (!active(index))
+         continue;
+      GameInput input;
+      input.label = console_name(index);
+      rib_host_bind_key(catalog.entries[index].bind_index, &input.key);
+      input.position = catalog.entries[index].slot;
+      inputs.push_back(input);
+   }
+   return inputs;
+}
+
 FocusTarget Controls::first() const
 {
    for (int index = 0; index < catalog.count; ++index)

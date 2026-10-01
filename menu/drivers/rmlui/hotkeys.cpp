@@ -135,6 +135,7 @@ std::string Hotkeys::outcome(const HotkeyBindings::Change& change) const
       case Outcome::Full: return say(Word::BindingNoRoom, {{"control", other}});
       case Outcome::NeedsBinding: return say(Word::BindingNeeded, {{"control", other}});
       case Outcome::NeedsKey: return say(Word::KeyNeeded, {{"control", other}});
+      case Outcome::GameInput: return say(Word::GameInput, {{"control", change.control}});
       default: break;
    }
    if (!change.saved)
@@ -215,7 +216,8 @@ void Hotkeys::poll_capture()
                const Row *shown = row(hotkeys[index]);
                room.push_back(shown ? shown->chips.size() : 0);
             }
-            end_capture(outcome(bindings.add(capture.hotkey, binding, room)));
+            end_capture(outcome(bindings.add(capture.hotkey, binding, room,
+                  controls.game_inputs())));
          }
          break;
       }
