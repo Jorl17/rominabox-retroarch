@@ -14,7 +14,11 @@
 #ifndef GL_VERTEX_ARRAY_BINDING
 #define GL_VERTEX_ARRAY_BINDING 0x85B5
 #endif
+/* Neither header contains the vertex array calls, which are in the library
+ * for the core profile. */
 extern "C" void glBindVertexArray(GLuint array);
+extern "C" void glGenVertexArrays(GLsizei n, GLuint *arrays);
+extern "C" void glDeleteVertexArrays(GLsizei n, const GLuint *arrays);
 #endif
 #elif defined(_WIN32)
 /* opengl32.dll has only OpenGL 1.1. The rest is declared in the RetroArch
