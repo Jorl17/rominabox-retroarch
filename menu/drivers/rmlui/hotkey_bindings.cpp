@@ -477,6 +477,16 @@ std::vector<unsigned> HotkeyBindings::keys(Hotkey hotkey) const
    return codes;
 }
 
+bool HotkeyBindings::menu_key(unsigned code) const
+{
+   for (Hotkey hotkey : all)
+      if (hotkey_acts(hotkey) != Acts::InGame)
+         for (const HotkeyBinding& binding : lists[at(hotkey)])
+            if (is_key(binding) && binding.code == code)
+               return true;
+   return false;
+}
+
 std::vector<unsigned> HotkeyBindings::menu_pad_binds() const
 {
    std::vector<unsigned> binds;

@@ -36,6 +36,10 @@ bool rib_rmlui_menu_pad_held(void);
  * down, and a position bound to a hotkey for the menu is only that hotkey. We
  * count keys unless the text entry has the keyboard. */
 void rib_rmlui_menu_buttons(uint32_t *buttons, unsigned ok, unsigned cancel);
+/* Whether a hotkey for the menu is bound to the key `code`. Such a key is only
+ * that hotkey, and none of the keys that count as buttons of the menu pad in
+ * RetroArch (Space as Start, Backspace as B, in input_driver.c). */
+bool rib_rmlui_menu_hotkey_key(unsigned code);
 /* Once a frame: the hotkeys for use while the game plays (QUICK SAVE,
  * QUICK LOAD, PREVIOUS SLOT, NEXT SLOT), each once when pressed. We ignore
  * them while the menu is open or the game waits for the splash, and a key

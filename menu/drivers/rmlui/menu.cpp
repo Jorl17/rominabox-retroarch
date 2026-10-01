@@ -180,6 +180,11 @@ void rib_rmlui_menu_buttons(uint32_t *buttons, unsigned ok, unsigned cancel)
       *buttons |= 1u << cancel;
 }
 
+bool rib_rmlui_menu_hotkey_key(unsigned code)
+{
+   return active_menu && active_menu->hotkeys.read().menu_key(code);
+}
+
 void rib_rmlui_play_hotkeys(void)
 {
    if (active_menu)

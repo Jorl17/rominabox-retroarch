@@ -8084,7 +8084,13 @@ void input_driver_collect_system_input(input_driver_state_t *input_st,
 
          for (i = 0; i < ARRAY_SIZE(ids); i++)
          {
-            if (ids[i][0] && input->input_state(
+            if (ids[i][0]
+#ifdef HAVE_RMLUI
+                  /* ROM-in-a-Box: a key bound to a menu hotkey on HOTKEYS
+                   * is only that hotkey. */
+                  && !rib_rmlui_menu_hotkey_key(ids[i][0])
+#endif
+                  && input->input_state(
                      input_st->current_data,
                      joypad,
                      sec_joypad,

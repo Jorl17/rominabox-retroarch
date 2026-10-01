@@ -123,6 +123,8 @@ public:
    std::vector<unsigned> keys(Hotkey hotkey) const;
    /* The binds of every pad input bound to a hotkey for use in the menu. */
    std::vector<unsigned> menu_pad_binds() const;
+   /* Whether the key `code` is bound to a hotkey for use in the menu. */
+   bool menu_key(unsigned code) const;
    /* Ignore the inputs of `binding` that are pressed now until each is
     * released. The player is still pressing the input that ended a capture,
     * and it would otherwise trigger what we just bound it to. */
