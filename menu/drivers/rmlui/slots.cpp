@@ -2,6 +2,9 @@
 #include "document_contract.hpp"
 #include "slots.hpp"
 
+#include "declarations.h"
+#include "../../../verbosity.h"
+
 #include "document.hpp"
 #include "elements.hpp"
 #include "focus.hpp"
@@ -94,10 +97,35 @@ void Slots::paint() const
          status.main_text());
 }
 
+void Slots::load(const char *data)
+{
+   choice_path = data && *data ? std::string(data) + "/" + files::SlotChoice : std::string();
+   int kept = 1;
+   void *bytes = nullptr;
+   int64_t size = 0;
+   if (!choice_path.empty() && filestream_read_file(choice_path.c_str(), &bytes, &size))
+   {
+      const int read = std::atoi(std::string(static_cast<const char*>(bytes), (size_t)size).c_str());
+      free(bytes);
+      if (valid_slot(read))
+         kept = read;
+   }
+   selected_slot = kept;
+   paint();
+}
+
 void Slots::set_selected_slot(int slot)
 {
    if (!valid_slot(slot)) return;
+   const bool changed = slot != selected_slot;
    selected_slot = slot;
+   if (changed && !choice_path.empty())
+   {
+      const std::string body = std::to_string(slot) + "\n";
+      if (!filestream_write_file(choice_path.c_str(), body.data(), (int64_t)body.size()))
+         RARCH_ERR("[RIB] slot %d is chosen, but %s could not be written; the next "
+               "launch does not start on it.\n", slot, choice_path.c_str());
+   }
    paint();
 }
 

@@ -377,15 +377,15 @@ void *rib_menu_create(void)
    menu->navigation.on_shown([menu] { screen_shown(menu); });
    menu->navigation.on_capturing([menu] { return capturing(menu); });
    {
-      /* We read the input that opens the menu while the game runs, before we
-       * have ever drawn the menu. */
+      /* We read the input that opens the menu, and the slot for hotkey saves,
+       * while the game runs, before we have ever drawn the menu. */
       const rib_environment_value assets = rib_owned(rib_environment(RIB_ENV_RML_ASSETS));
       const rib_environment_value data = rib_owned(rib_data_directory());
       menu->hotkeys.load(assets && *assets ? assets.get() : RIB_RMLUI_DEFAULT_ASSETS,
             data.get());
+      menu->slots.reset_transfer();
+      menu->slots.load(data.get());
    }
-   menu->slots.reset_transfer();
-   menu->slots.set_selected_slot(1);
    active_menu = menu;
    if (pending_overlay_start)
    {

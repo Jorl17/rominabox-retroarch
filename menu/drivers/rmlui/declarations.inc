@@ -41,9 +41,11 @@ RIB_FILE(Menu, "menu.rml")
 RIB_FILES(Scene, "scene-", ".rml")
 /* The pads' controls and the author's bindings. */
 RIB_FILE(ControlsDefaults, "controls-defaults.cfg")
-/* The player's own bindings, and the filter the player last chose. */
+/* The player's own bindings, the filter the player last chose, and the save
+ * slot the player last chose, which the next launch starts on. */
 RIB_DATA_FILE(Controls, "controls.cfg")
 RIB_DATA_FILE(ShaderChoice, "shader-choice")
+RIB_DATA_FILE(SlotChoice, "slot-choice")
 
 /* The controls files, beside RetroArch's own input_player1_ bindings: the pad
  * in use, the pads the picker offers, each pad's name, emulated device and

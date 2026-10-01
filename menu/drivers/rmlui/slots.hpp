@@ -68,6 +68,9 @@ public:
    bool handle(const Event& event);
    void notify_task(const char *path, int slot, bool is_save, bool success);
    void paint() const;
+   /* The slot the player chose last, which we keep in the data folder `data`
+    * of the game, or the first. We keep each later choice there too. */
+   void load(const char *data);
    void set_selected_slot(int slot);
    void set_slot_state(int slot, bool occupied, const char *thumbnail_path);
    int selected() const { return selected_slot; }
@@ -126,6 +129,8 @@ private:
    Focus& focus;
    Status& status;
    int selected_slot = 1;
+   /* Where we keep the chosen slot, or empty when there is no data folder. */
+   std::string choice_path;
    SlotState slots[kSlotCount];
 };
 }
