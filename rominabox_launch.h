@@ -28,6 +28,12 @@
 #define RIB_ENV_QUIET "ROMINABOX_QUIET"
 /* A hands-on test: "1" shows the window of an automated run. */
 #define RIB_ENV_SHOW_WINDOW "ROMINABOX_SHOW_WINDOW"
+/* The per-user data folder for a test, absolute. In the launcher we use it in
+ * place of the user's per-user folder ($user_data, where the QUICK
+ * SIGN IN folder is and, on Windows, where a game unpacks), so a test
+ * leaves nothing in the user's folder. We set it only in tests, never in an
+ * ordinary launch. */
+#define RIB_ENV_TEST_USER_DATA "ROMINABOX_TEST_USER_DATA"
 /* A screenshot run: where the menu's picture goes. */
 #define RIB_ENV_MENU_SHOT "ROMINABOX_MENU_SHOT"
 /* A run driven by the menu script of a test build: the steps, comma-separated.
