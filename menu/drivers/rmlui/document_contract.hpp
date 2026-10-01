@@ -16,7 +16,7 @@ namespace document_contract {
 #define RIB_CLASS(name, value, scope, presence) inline constexpr char name[] = value;
 #define RIB_ATTRIBUTE(name, value, scope, presence) inline constexpr char name[] = value;
 #define RIB_FACT(name, value) inline constexpr char name[] = value;
-#define RIB_NOTICE(name, value) inline constexpr char Notice##name[] = value;
+#define RIB_NOTICE(name, value, hold_ms) inline constexpr char Notice##name[] = value;
 #include "document_contract.inc"
 
 /* The density-independent pixel ratio that fits the design's canvas whole in

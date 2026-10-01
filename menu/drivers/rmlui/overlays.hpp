@@ -29,7 +29,7 @@ public:
     * RIB_NOTICE), which we put on the row for the design. */
    enum class Notice
    {
-#define RIB_NOTICE(name, value) name,
+#define RIB_NOTICE(name, value, hold_ms) name,
 #include "document_contract.inc"
    };
    struct Notification { Notice notice; std::string title, detail, badge; };

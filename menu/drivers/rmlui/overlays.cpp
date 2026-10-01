@@ -99,7 +99,7 @@ namespace rib {
 void Overlays::paint_notification()
 {
    static const char *const notices[] = {
-#define RIB_NOTICE(name, value) value,
+#define RIB_NOTICE(name, value, hold_ms) value,
 #include "document_contract.inc"
    };
    if (auto *row = document.root() ? document.root()->GetElementById(document_contract::UnlockRow) : nullptr)
@@ -114,10 +114,14 @@ void Overlays::paint_notification()
 }
 void Overlays::notify(const Notification& next)
 {
-   // We show one readable notification at a time, from a queue in this feature.
-   constexpr int64_t hold_us = 4500000;
+   // We show one readable notification at a time, for the time set for its
+   // kind, from a queue in this feature.
+   static const int64_t holds_ms[] = {
+#define RIB_NOTICE(name, value, hold_ms) hold_ms,
+#include "document_contract.inc"
+   };
    notification = next;
-   notification_until = rib_host_time_us() + hold_us;
+   notification_until = rib_host_time_us() + holds_ms[static_cast<size_t>(next.notice)] * 1000;
    paint_notification();
    rib_host_overlay_frames(true);
 }

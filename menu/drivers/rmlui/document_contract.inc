@@ -33,7 +33,7 @@
 #define RIB_FACT(name, value)
 #endif
 #ifndef RIB_NOTICE
-#define RIB_NOTICE(name, value)
+#define RIB_NOTICE(name, value, hold_ms)
 #endif
 
 RIB_SLOT_COUNT(6)
@@ -80,10 +80,12 @@ RIB_ELEMENT(UnlockBadge, "unlock-badge", Menu, Optional)
 RIB_ELEMENT(UnlockRow, "unlock-row", Menu, Optional)
 /* The notice the unlock row shows, which the player writes on it as
  * data-notice, so a design can draw each its own way: an achievement
- * unlocked, or what a hotkey did to the save slots while the game plays. */
+ * unlocked, or what a hotkey did to the save slots while the game plays.
+ * RIB_NOTICE(name, "value", hold_ms): how long the row holds it. An unlock
+ * earned meanwhile waits for the row, so a slot notice holds it briefly. */
 RIB_ATTRIBUTE(NoticeAttribute, "data-notice", State, Optional)
-RIB_NOTICE(Achievement, "achievement")
-RIB_NOTICE(Slot, "slot")
+RIB_NOTICE(Achievement, "achievement", 4500)
+RIB_NOTICE(Slot, "slot", 1500)
 RIB_CLASS(MenuAction, "menu-action", Menu, Required)
 RIB_CLASS(ScreenPanel, "screen-panel", Menu, Required)
 RIB_CLASS(Toggle, "toggle", Menu, Optional)
