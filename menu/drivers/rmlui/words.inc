@@ -36,7 +36,7 @@ RIB_WORD(BindingNeeded, "binding-needed", "{control} MUST KEEP A BINDING")
 RIB_WORD(KeyNeeded, "key-needed", "{control} MUST KEEP A KEY")
 RIB_WORD(BindingUnusable, "binding-unusable", "USE A KEY OR A PAD BUTTON")
 /* A hotkey that acts while the game plays refused what the game reads:
- * {control} is the game's control, as CONTROLS names it. */
+ * {control} is the game's control, as CONTROLS shows it. */
 RIB_WORD(GameInput, "game-input", "THE GAME USES THAT FOR {control}")
 
 /* The save slots and what saving and loading say. */
