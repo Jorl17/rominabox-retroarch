@@ -39,7 +39,19 @@ public:
    Slots(Document& document, Focus& focus, Status& status)
       : document(document), focus(focus), status(status) {}
    enum class Transfer { Save, Load };
-   void reset_transfer() { transfer = {}; awaiting = {}; }
+   /* Where the player asked for a transfer: SAVE or LOAD in the menu, or a
+    * hotkey during play. */
+   enum class Asker { Menu, Hotkey };
+   /* A finished transfer: what it was, its slot, whether it worked, and
+    * where the player asked for it. */
+   struct Finished
+   {
+      Transfer kind = Transfer::Load;
+      Asker asker = Asker::Menu;
+      int slot = 0;
+      bool success = false;
+   };
+   void reset_transfer() { transfer = {}; awaiting = {}; finished = {}; }
    bool transfer_pending() const { return transfer.pending; }
    bool load_available() const;
    /* Read every slot from the host, when the menu opens and when a save or a
@@ -48,7 +60,9 @@ public:
    /* Call once a frame. Returns the slot still waiting for the new picture of
     * a save, if any. */
    void follow();
-   void request(Transfer kind);
+   void request(Transfer kind, Asker asker = Asker::Menu);
+   /* The transfer that finished since the last call, if any. */
+   bool take_finished(Finished& out);
    /* Handle SAVE, LOAD and the choice of a slot, one transfer at a time. There
     * is nothing to load from an empty slot. False for anything else. */
    bool handle(const Event& event);
@@ -61,7 +75,7 @@ public:
    bool has_thumbnail(int slot) const;
 
 private:
-   bool begin_transfer(Transfer kind);
+   bool begin_transfer(Transfer kind, Asker asker);
    void look_at(int slot);
    /* The picture on a slot, as its file and the version of that file. */
    std::string shown_picture(int slot) const;
@@ -80,9 +94,15 @@ private:
    {
       bool pending = false;
       Transfer kind = Transfer::Load;
+      Asker asker = Asker::Menu;
       int slot = 0;
       std::string path;
    } transfer;
+   struct
+   {
+      bool waiting = false;
+      Finished what;
+   } finished;
    struct SlotState
    {
       bool occupied = false;

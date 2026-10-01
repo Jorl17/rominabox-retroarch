@@ -8,12 +8,11 @@
 extern "C" {
 #endif
 
-/* The pad inputs in a binding to an action of the menu (menu_controls.inc).
- * Each is a position of the standard pad, or Home, the menu button of the
- * pad. Each is a RetroArch bind, and we read it from the pad of the first
- * player through the buttons for that bind in its RetroArch profile, never
- * through the button numbers of the pad, so we read any pad with a profile
- * the same way. */
+/* The pad inputs in a binding to a hotkey (hotkeys.inc). Each is a position
+ * of the standard pad, or Home, the menu button of the pad. Each is a
+ * RetroArch bind, and we read it from the pad of the first player through
+ * the buttons for that bind in its RetroArch profile, never through the
+ * button numbers of the pad, so we read any pad with a profile the same way. */
 
 /* The bind with the name `id`: the bind of a position (input_player1_<id>), or for
  * Home the bind for the menu button in the profile of the pad. Returns false

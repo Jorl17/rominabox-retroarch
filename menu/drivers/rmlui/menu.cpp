@@ -27,7 +27,8 @@
 #include "saved_accounts.hpp"
 #include "settings.hpp"
 #include "controls.hpp"
-#include "menu_controls.hpp"
+#include "hotkeys.hpp"
+#include "play_hotkeys.hpp"
 #include "slots.hpp"
 #include "view.hpp"
 #include "navigation.hpp"
@@ -57,8 +58,9 @@ struct Menu
    rib::CapturePointer capture_pointer;
    rib::Controls controls{focus, screens, view.document, view.controls,
          view.lists, view.status, view.hovered, capture_pointer};
-   rib::MenuControls menu_controls{view.document, focus, screens, view.status,
+   rib::Hotkeys hotkeys{view.document, focus, screens, view.status,
          view.intents, view.hovered, capture_pointer};
+   rib::PlayHotkeys play_hotkeys{hotkeys.read(), view.slots, overlays};
    bool pointer_pressed;
    rib::Slots& slots = view.slots;
    rib::Navigation navigation{focus, screens, controls, slots,
@@ -135,14 +137,14 @@ bool rib_rmlui_allow_quit(void)
 /* Whether we are capturing a binding, on either screen with a capture. */
 static bool capturing(const Menu *menu)
 {
-   return menu && (menu->controls.capture_active || menu->menu_controls.capturing());
+   return menu && (menu->controls.capture_active || menu->hotkeys.capturing());
 }
 
 static void cancel_captures(Menu *menu)
 {
    if (menu->controls.capture_active)
       menu->controls.cancel_capture();
-   menu->menu_controls.cancel_capture();
+   menu->hotkeys.cancel_capture();
 }
 
 unsigned rib_rmlui_menu_keys(unsigned *codes, unsigned capacity)
@@ -150,7 +152,7 @@ unsigned rib_rmlui_menu_keys(unsigned *codes, unsigned capacity)
    if (!active_menu || !codes || rib_rmlui_typing())
       return 0;
    unsigned count = 0;
-   for (unsigned code : active_menu->menu_controls.read().keys(rib::MenuAction::Menu))
+   for (unsigned code : active_menu->hotkeys.read().keys(rib::Hotkey::Menu))
       if (count < capacity)
          codes[count++] = code;
    return count;
@@ -158,24 +160,31 @@ unsigned rib_rmlui_menu_keys(unsigned *codes, unsigned capacity)
 
 bool rib_rmlui_menu_pad_held(void)
 {
-   return active_menu && active_menu->menu_controls.read().held(rib::MenuAction::Menu, false);
+   return active_menu && active_menu->hotkeys.read().held(rib::Hotkey::Menu, false);
 }
 
 void rib_rmlui_menu_buttons(uint32_t *buttons, unsigned ok, unsigned cancel)
 {
    if (!active_menu || !buttons || ok >= 32 || cancel >= 32)
       return;
-   const rib::MenuBindings& bindings = active_menu->menu_controls.read();
+   const rib::HotkeyBindings& bindings = active_menu->hotkeys.read();
    const bool keys = !rib_rmlui_typing();
    uint32_t read_here = (1u << ok) | (1u << cancel);
-   for (unsigned bind : bindings.pad_binds())
+   for (unsigned bind : bindings.menu_pad_binds())
       if (bind < 16)
          read_here |= 1u << bind;
    *buttons &= ~read_here;
-   if (bindings.held(rib::MenuAction::Confirm, keys))
+   if (bindings.held(rib::Hotkey::Confirm, keys))
       *buttons |= 1u << ok;
-   if (bindings.held(rib::MenuAction::Back, keys))
+   if (bindings.held(rib::Hotkey::Back, keys))
       *buttons |= 1u << cancel;
+}
+
+void rib_rmlui_play_hotkeys(void)
+{
+   if (active_menu)
+      active_menu->play_hotkeys.frame(!rib_host_menu_open()
+            && !active_menu->overlays.holding_game());
 }
 
 static rib::ListOwner *showing_list(Menu *menu)
@@ -193,7 +202,7 @@ static void screen_shown(Menu *menu)
 {
    const rib::ScreenRole role = menu->screens.current_role();
    menu->controls.screen_shown(role == rib::ScreenRole::Controls);
-   menu->menu_controls.screen_shown(role == rib::ScreenRole::MenuControls);
+   menu->hotkeys.screen_shown(role == rib::ScreenRole::Hotkeys);
    menu->achievements.screen_shown(role == rib::ScreenRole::Achievements);
    /* We measure the slider from the box of the track. While the panel is
     * hidden its width is zero, so painting leaves the thumb at its position in
@@ -309,7 +318,7 @@ bool rib_menu_consume_toggle(void *userdata)
  * screens and leave the menu. */
 static void perform_action(Menu *menu, const rib::Event& event)
 {
-   if (!menu || menu->achievements.handle(event) || menu->menu_controls.handle(event)
+   if (!menu || menu->achievements.handle(event) || menu->hotkeys.handle(event)
          || menu->controls.handle(event)
          || menu->slots.handle(event) || menu->settings.handle(event))
       return;
@@ -372,7 +381,7 @@ void *rib_menu_create(void)
        * have ever drawn the menu. */
       const rib_environment_value assets = rib_owned(rib_environment(RIB_ENV_RML_ASSETS));
       const rib_environment_value data = rib_owned(rib_data_directory());
-      menu->menu_controls.load(assets && *assets ? assets.get() : RIB_RMLUI_DEFAULT_ASSETS,
+      menu->hotkeys.load(assets && *assets ? assets.get() : RIB_RMLUI_DEFAULT_ASSETS,
             data.get());
    }
    menu->slots.reset_transfer();
@@ -446,7 +455,7 @@ static bool initialize(Menu *menu, const char *assets, int width, int height)
    apply_design(menu, design, data);
    menu->achievements.bind();
    menu->accounts.bind();
-   menu->menu_controls.bind();
+   menu->hotkeys.bind();
    menu->shaders.load(assets, data);
    menu->slots.paint();
    read_game(menu);
@@ -578,7 +587,7 @@ void rib_menu_frame(void *data, int width, int height)
    }
 
    menu->controls.poll_capture();
-   menu->menu_controls.poll_capture();
+   menu->hotkeys.poll_capture();
    menu->slots.follow();
    menu->controls.update_binds(pointer.x, pointer.y,
          !menu->script.wants_frames());

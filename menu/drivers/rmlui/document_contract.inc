@@ -32,6 +32,9 @@
 #ifndef RIB_FACT
 #define RIB_FACT(name, value)
 #endif
+#ifndef RIB_NOTICE
+#define RIB_NOTICE(name, value)
+#endif
 
 RIB_SLOT_COUNT(6)
 
@@ -52,8 +55,9 @@ RIB_ROLE(Achievements, "achievements")
 RIB_ROLE(Discs, "discs")
 /* QUICK SIGN IN's list of the accounts other games saved. */
 RIB_ROLE(Accounts, "accounts")
-/* MENU CONTROLS: what opens the menu, and confirms and goes back in it. */
-RIB_ROLE(MenuControls, "menu-controls")
+/* HOTKEYS: what opens the menu, confirms and goes back in it, and saves,
+ * loads and changes the slot while the game plays. */
+RIB_ROLE(Hotkeys, "hotkeys")
 /* UNINSTALL on Windows, RESET on a Mac: asks, then forgets the game. */
 RIB_ROLE(Forget, "forget")
 
@@ -74,6 +78,12 @@ RIB_ELEMENT(UnlockTitle, "unlock-title", Menu, Optional)
 RIB_ELEMENT(UnlockDetail, "unlock-detail", Menu, Optional)
 RIB_ELEMENT(UnlockBadge, "unlock-badge", Menu, Optional)
 RIB_ELEMENT(UnlockRow, "unlock-row", Menu, Optional)
+/* The notice the unlock row shows, which the player writes on it as
+ * data-notice, so a design can draw each its own way: an achievement
+ * unlocked, or what a hotkey did to the save slots while the game plays. */
+RIB_ATTRIBUTE(NoticeAttribute, "data-notice", State, Optional)
+RIB_NOTICE(Achievement, "achievement")
+RIB_NOTICE(Slot, "slot")
 RIB_CLASS(MenuAction, "menu-action", Menu, Required)
 RIB_CLASS(ScreenPanel, "screen-panel", Menu, Required)
 RIB_CLASS(Toggle, "toggle", Menu, Optional)
@@ -118,26 +128,26 @@ RIB_CLASS(ControlCallout, "control-callout", Controls, Optional)
 RIB_CLASS(ControlPickerLabel, "control-picker-label", Controls, Optional)
 RIB_CLASS(ControlPickerCurrent, "control-picker-current", Controls, Optional)
 
-/* MENU CONTROLS: one row for each action menu_controls.inc declares, its
- * ids the row prefix and the action's id. Each row has its + (the add
- * suffix), which captures a new binding, and chips numbered from 1, each
- * showing one binding, which choosing removes; as many chips as the design
- * draws are as many bindings as the row holds. The row's label (the label
- * suffix) names the action wherever the menu says what happened to it.
+/* HOTKEYS: one row for each hotkey hotkeys.inc declares, its ids the row
+ * prefix and the hotkey's id. Each row has its + (the add suffix), which
+ * captures a new binding, and chips numbered from 1, each showing one
+ * binding, which choosing removes; as many chips as the design draws are as
+ * many bindings as the row holds. The row's label (the label suffix) names
+ * the hotkey wherever the menu says what happened to it.
  * A chip holding a key is marked `key`, one holding pad inputs `pad`; an
  * unused chip is hidden, and a full row's + is disabled. */
-RIB_ELEMENT(MenuControlsPanel, "menu-controls-panel", MenuControls, Required)
-RIB_ELEMENT(MenuControlsBack, "menu-controls-back", MenuControls, Required)
-RIB_ELEMENT(MenuControlsReset, "menu-controls-reset", MenuControls, Required)
-RIB_ELEMENT(MenuControlsCancel, "menu-controls-cancel", MenuControls, Required)
-RIB_ELEMENT(MenuControlsStatus, "menu-controls-status", MenuControls, Required)
-RIB_CLASS(MenuControlChip, "menu-control-chip", MenuControls, Required)
-RIB_CLASS(MenuControlAdd, "menu-control-add", MenuControls, Required)
+RIB_ELEMENT(HotkeysPanel, "hotkeys-panel", Hotkeys, Required)
+RIB_ELEMENT(HotkeysBack, "hotkeys-back", Hotkeys, Required)
+RIB_ELEMENT(HotkeysReset, "hotkeys-reset", Hotkeys, Required)
+RIB_ELEMENT(HotkeysCancel, "hotkeys-cancel", Hotkeys, Required)
+RIB_ELEMENT(HotkeysStatus, "hotkeys-status", Hotkeys, Required)
+RIB_CLASS(HotkeyChip, "hotkey-chip", Hotkeys, Required)
+RIB_CLASS(HotkeyAdd, "hotkey-add", Hotkeys, Required)
 /* Where a chip's words go, when the design draws more in the chip (a
  * mark that choosing it removes it); otherwise the chip itself. */
-RIB_CLASS(MenuControlWords, "menu-control-words", MenuControls, Optional)
-RIB_CLASS(ChipKey, "key", MenuControls, Optional)
-RIB_CLASS(ChipPad, "pad", MenuControls, Optional)
+RIB_CLASS(HotkeyWords, "hotkey-words", Hotkeys, Optional)
+RIB_CLASS(ChipKey, "key", Hotkeys, Optional)
+RIB_CLASS(ChipPad, "pad", Hotkeys, Optional)
 
 /* The options screen, the volume control in it, and its entries. */
 RIB_CLASS(OptionsBack, "options-back", Options, Required)
@@ -230,9 +240,9 @@ RIB_ELEMENT(ControlGroupBindingPrefix, "control-group-binding-", Generated, Opti
 RIB_ELEMENT(ControlDirectionPrefix, "control-direction-", Generated, Optional)
 RIB_ELEMENT(AchievementRowPrefix, "achievement-", Generated, Optional)
 RIB_ELEMENT(AccountRowPrefix, "account-", Generated, Optional)
-/* A MENU CONTROLS row, by the action's id: <prefix><action>, and its +,
- * label and chips, <prefix><action><suffix> and <prefix><action>-<n>. */
-RIB_ELEMENT(MenuControlPrefix, "menu-control-", Generated, Optional)
+/* A HOTKEYS row, by the hotkey's id: <prefix><hotkey>, and its +, label
+ * and chips, <prefix><hotkey><suffix> and <prefix><hotkey>-<n>. */
+RIB_ELEMENT(HotkeyPrefix, "hotkey-", Generated, Optional)
 RIB_ELEMENT(AddSuffix, "-add", Generated, Optional)
 RIB_ELEMENT(LabelSuffix, "-label", Generated, Optional)
 /* Ids the exporter builds from a screen's or a row's own id. */
@@ -299,3 +309,4 @@ RIB_ATTRIBUTE(GameShapedAttribute, "data-game-shaped", Menu, Optional)
 #undef RIB_CLASS
 #undef RIB_ATTRIBUTE
 #undef RIB_FACT
+#undef RIB_NOTICE

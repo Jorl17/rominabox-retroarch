@@ -6,10 +6,10 @@
 #include <string/stdstring.h>
 #include <stdlib.h>
 
-/* Home, as declared in menu_controls.inc: its id, and the RetroArch bind for
- * the menu button in the profile of a pad. */
-#define RIB_MENU_PAD_HOME(id, bind, word) static const char home_id[] = id, home_bind[] = bind;
-#include "menu_controls.inc"
+/* Home, as declared in hotkeys.inc: its id, and the RetroArch bind for the
+ * menu button in the profile of a pad. */
+#define RIB_HOTKEY_PAD_HOME(id, bind, word) static const char home_id[] = id, home_bind[] = bind;
+#include "hotkeys.inc"
 
 /* A position of the standard pad is one of the sixteen RetroPad binds, which
  * come first in the RetroArch bind table. */

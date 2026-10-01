@@ -64,7 +64,8 @@ const char *rib::Script::report(const char *screen, bool menu_open,
          std::string(document_contract::FooterHint), std::string(document_contract::Status),
          std::string(document_contract::ControlsStatus), std::string(document_contract::ControlsDeviceCurrent),
          page_count(ScreenRole::Shaders), page_count(ScreenRole::Achievements),
-         std::string(document_contract::AchievementsState), binds_list})
+         std::string(document_contract::AchievementsState),
+         std::string(document_contract::UnlockTitle), binds_list})
    {
       Rml::Element *element = view.document.root() && !id.empty()
             ? view.document.root()->GetElementById(id) : nullptr;

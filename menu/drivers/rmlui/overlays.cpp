@@ -98,6 +98,12 @@ void Overlays::update(bool script_pending)
 namespace rib {
 void Overlays::paint_notification()
 {
+   static const char *const notices[] = {
+#define RIB_NOTICE(name, value) value,
+#include "document_contract.inc"
+   };
+   if (auto *row = document.root() ? document.root()->GetElementById(document_contract::UnlockRow) : nullptr)
+      row->SetAttribute(document_contract::NoticeAttribute, notices[static_cast<size_t>(notification.notice)]);
    document.set_element_text(document_contract::UnlockTitle, notification.title.c_str());
    document.set_element_text(document_contract::UnlockDetail, notification.detail.c_str());
    if (auto *badge = document.root() ? document.root()->GetElementById(document_contract::UnlockBadge) : nullptr) {
@@ -117,7 +123,7 @@ void Overlays::notify(const Notification& next)
 }
 void Overlays::show_badge(const std::string& badge)
 {
-   if (!notification_active()) return;
+   if (!notification_active() || notification.notice != Notice::Achievement) return;
    notification.badge = badge;
    paint_notification();
 }

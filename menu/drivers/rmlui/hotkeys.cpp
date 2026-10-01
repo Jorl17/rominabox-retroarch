@@ -1,4 +1,4 @@
-#include "menu_controls.hpp"
+#include "hotkeys.hpp"
 
 #include "controls.hpp"
 #include "document.hpp"
@@ -15,9 +15,9 @@
 
 namespace rib {
 namespace {
-std::string row_id(MenuAction action)
+std::string row_id(Hotkey hotkey)
 {
-   return std::string(document_contract::MenuControlPrefix) + menu_action_id(action);
+   return std::string(document_contract::HotkeyPrefix) + hotkey_id(hotkey);
 }
 
 void listen(Rml::Element *element, EventQueue& intents, Event& hovered, const Event& action)
@@ -30,75 +30,76 @@ void listen(Rml::Element *element, EventQueue& intents, Event& hovered, const Ev
 }
 }
 
-void MenuControls::bind()
+void Hotkeys::bind()
 {
    rows.clear();
    Rml::Element *root = document.root();
    if (!root)
       return;
-   const MenuAction *actions = menu_actions();
-   for (size_t index = 0; index < kMenuActionCount; ++index)
+   const Hotkey *hotkeys = all_hotkeys();
+   for (size_t index = 0; index < kHotkeyCount; ++index)
    {
       Row row;
-      row.action = actions[index];
-      const std::string base = row_id(row.action);
+      row.hotkey = hotkeys[index];
+      const std::string base = row_id(row.hotkey);
       row.add = base + document_contract::AddSuffix;
       row.label = base + document_contract::LabelSuffix;
       Rml::Element *add = root->GetElementById(row.add);
-      /* When the game has no MENU CONTROLS screen, there are no rows. */
+      /* When the game has no HOTKEYS screen, there are no rows. */
       if (!add)
          continue;
       listen(add, intents, hovered,
-            Event::menu_control(RIB_RMLUI_ACTION_MENU_CONTROL_ADD, menu_action_id(row.action)));
+            Event::hotkey(RIB_RMLUI_ACTION_HOTKEY_ADD, hotkey_id(row.hotkey)));
       for (int chip = 1;; ++chip)
       {
          const std::string id = base + "-" + std::to_string(chip);
          Rml::Element *element = root->GetElementById(id);
          if (!element)
             break;
-         listen(element, intents, hovered, Event::menu_control(
-               RIB_RMLUI_ACTION_MENU_CONTROL_REMOVE, menu_action_id(row.action), chip));
+         listen(element, intents, hovered, Event::hotkey(
+               RIB_RMLUI_ACTION_HOTKEY_REMOVE, hotkey_id(row.hotkey), chip));
          row.chips.push_back(id);
       }
       rows.push_back(row);
    }
    if (rows.empty())
       return;
-   listen(root->GetElementById(document_contract::MenuControlsReset), intents, hovered,
-         Event(RIB_RMLUI_ACTION_MENU_CONTROLS_RESET));
-   listen(root->GetElementById(document_contract::MenuControlsCancel), intents, hovered,
-         Event(RIB_RMLUI_ACTION_MENU_CONTROLS_CANCEL));
-   if (Rml::Element *back = root->GetElementById(document_contract::MenuControlsBack))
+   listen(root->GetElementById(document_contract::HotkeysReset), intents, hovered,
+         Event(RIB_RMLUI_ACTION_HOTKEYS_RESET));
+   listen(root->GetElementById(document_contract::HotkeysCancel), intents, hovered,
+         Event(RIB_RMLUI_ACTION_HOTKEYS_CANCEL));
+   if (Rml::Element *back = root->GetElementById(document_contract::HotkeysBack))
       back->AddEventListener(Rml::EventId::Click, new ReturnListener(intents));
    refresh();
 }
 
-const MenuControls::Row *MenuControls::row(MenuAction action) const
+const Hotkeys::Row *Hotkeys::row(Hotkey hotkey) const
 {
    for (const Row& each : rows)
-      if (each.action == action)
+      if (each.hotkey == hotkey)
          return &each;
    return nullptr;
 }
 
-/* The name of the action on its row, which is the word from the design. */
-std::string MenuControls::name(MenuAction action) const
+/* The name of the hotkey on its row, which is the word from the design. When
+ * the design has no label, the id in capitals with spaces between words. */
+std::string Hotkeys::name(Hotkey hotkey) const
 {
-   const Row *shown = row(action);
+   const Row *shown = row(hotkey);
    Rml::Element *label = shown && document.root()
          ? document.root()->GetElementById(shown->label) : nullptr;
    std::string text = label ? label->GetInnerRML() : std::string();
    if (text.empty())
-      for (const char *at = menu_action_id(action); *at; ++at)
-         text += (char)std::toupper((unsigned char)*at);
+      for (const char *at = hotkey_id(hotkey); *at; ++at)
+         text += *at == '-' ? ' ' : (char)std::toupper((unsigned char)*at);
    return text;
 }
 
-void MenuControls::refresh()
+void Hotkeys::refresh()
 {
    for (const Row& shown : rows)
    {
-      const std::vector<MenuBinding>& list = bindings.of(shown.action);
+      const std::vector<HotkeyBinding>& list = bindings.of(shown.hotkey);
       for (size_t chip = 0; chip < shown.chips.size(); ++chip)
       {
          const char *id = shown.chips[chip].c_str();
@@ -107,26 +108,26 @@ void MenuControls::refresh()
          if (!used)
             continue;
          document.set_element_text(id, bindings.words(list[chip]).c_str(),
-               document_contract::MenuControlWords);
+               document_contract::HotkeyWords);
          document.set_class(id, document_contract::ChipKey,
-               list[chip].kind == MenuBinding::Kind::Key);
+               list[chip].kind == HotkeyBinding::Kind::Key);
          document.set_class(id, document_contract::ChipPad,
-               list[chip].kind == MenuBinding::Kind::Pad);
+               list[chip].kind == HotkeyBinding::Kind::Pad);
       }
       document.set_disabled(shown.add.c_str(), list.size() >= shown.chips.size());
       document.set_class(shown.add.c_str(), document_contract::Capturing,
-            capture.active && capture.action == shown.action);
+            capture.active && capture.hotkey == shown.hotkey);
    }
    if (rows.empty())
       return;
-   document.set_class(document_contract::MenuControlsCancel, document_contract::Capturing,
+   document.set_class(document_contract::HotkeysCancel, document_contract::Capturing,
          capture.active);
-   document.set_shown(document_contract::MenuControlsCancel, capture.active);
+   document.set_shown(document_contract::HotkeysCancel, capture.active);
 }
 
-std::string MenuControls::outcome(const MenuBindings::Change& change) const
+std::string Hotkeys::outcome(const HotkeyBindings::Change& change) const
 {
-   using Outcome = MenuBindings::Outcome;
+   using Outcome = HotkeyBindings::Outcome;
    const std::string other = name(change.other);
    switch (change.outcome)
    {
@@ -147,37 +148,37 @@ std::string MenuControls::outcome(const MenuBindings::Change& change) const
    }
 }
 
-void MenuControls::start_capture(MenuAction action)
+void Hotkeys::start_capture(Hotkey hotkey)
 {
-   const Row *shown = row(action);
+   const Row *shown = row(hotkey);
    if (!shown)
       return;
    if (!rib_host_capture_input_start(RIB_CONTROL_CAPTURE_SECONDS))
    {
-      status.set_menu_controls(say(Word::CaptureFailed).c_str());
+      status.set_hotkeys(say(Word::CaptureFailed).c_str());
       return;
    }
    capture.active = true;
-   capture.action = action;
+   capture.hotkey = hotkey;
    pointer.start();
    focus.set(shown->add.c_str());
-   status.set_menu_controls(say(Word::CaptureCountdown, {{"control", name(action)},
+   status.set_hotkeys(say(Word::CaptureCountdown, {{"control", name(hotkey)},
          {"seconds", std::to_string(RIB_CONTROL_CAPTURE_SECONDS)}}).c_str());
    screens.set_footer_hint(say(Word::CancelHint).c_str());
    refresh();
 }
 
-void MenuControls::end_capture(const std::string& words)
+void Hotkeys::end_capture(const std::string& words)
 {
    capture.active = false;
-   status.set_menu_controls(words.c_str());
+   status.set_hotkeys(words.c_str());
    screens.restore_footer();
    refresh();
-   if (const Row *shown = row(capture.action))
+   if (const Row *shown = row(capture.hotkey))
       focus.set(shown->add.c_str());
 }
 
-void MenuControls::cancel_capture()
+void Hotkeys::cancel_capture()
 {
    if (!capture.active)
       return;
@@ -185,7 +186,7 @@ void MenuControls::cancel_capture()
    end_capture(say(Word::BindingUnchanged));
 }
 
-void MenuControls::poll_capture()
+void Hotkeys::poll_capture()
 {
    if (!capture.active)
       return;
@@ -196,9 +197,9 @@ void MenuControls::poll_capture()
       {
          char text[128];
          rib_host_captured_input(text, sizeof(text));
-         MenuBinding binding;
-         const bool read = *text && read_menu_binding(text, binding);
-         /* It may now be bound to an action, so we ignore it until released. */
+         HotkeyBinding binding;
+         const bool read = *text && read_hotkey_binding(text, binding);
+         /* It may now be bound to a hotkey, so we ignore it until released. */
          if (read)
             bindings.until_released(binding);
          if (!read)
@@ -208,13 +209,13 @@ void MenuControls::poll_capture()
          else
          {
             std::vector<size_t> room;
-            const MenuAction *actions = menu_actions();
-            for (size_t index = 0; index < kMenuActionCount; ++index)
+            const Hotkey *hotkeys = all_hotkeys();
+            for (size_t index = 0; index < kHotkeyCount; ++index)
             {
-               const Row *shown = row(actions[index]);
+               const Row *shown = row(hotkeys[index]);
                room.push_back(shown ? shown->chips.size() : 0);
             }
-            end_capture(outcome(bindings.add(capture.action, binding, room)));
+            end_capture(outcome(bindings.add(capture.hotkey, binding, room)));
          }
          break;
       }
@@ -222,43 +223,43 @@ void MenuControls::poll_capture()
          end_capture(say(Word::CaptureTimeout));
          break;
       default:
-         status.set_menu_controls(say(Word::CaptureCountdown, {{"control", name(capture.action)},
+         status.set_hotkeys(say(Word::CaptureCountdown, {{"control", name(capture.hotkey)},
                {"seconds", std::to_string((unsigned)(remaining + 0.999f))}}).c_str());
          break;
    }
 }
 
-void MenuControls::remove(MenuAction action, int chip)
+void Hotkeys::remove(Hotkey hotkey, int chip)
 {
-   const Row *shown = row(action);
+   const Row *shown = row(hotkey);
    if (!shown || chip < 1)
       return;
-   status.set_menu_controls(outcome(bindings.remove(action, (size_t)(chip - 1))).c_str());
+   status.set_hotkeys(outcome(bindings.remove(hotkey, (size_t)(chip - 1))).c_str());
    refresh();
    /* We keep the focus where it was, or move it to the next binding, to the
     * last one left, or to + when none is left. */
-   const size_t left = bindings.of(action).size();
+   const size_t left = bindings.of(hotkey).size();
    if (left == 0)
       focus.set(shown->add.c_str());
    else if ((size_t)chip > left)
       focus.set(shown->chips[left - 1].c_str());
 }
 
-void MenuControls::reset()
+void Hotkeys::reset()
 {
    cancel_capture();
    const bool removed = bindings.reset();
-   status.set_menu_controls(say(removed ? Word::DefaultsRestored : Word::DefaultsSaveFailed).c_str());
+   status.set_hotkeys(say(removed ? Word::DefaultsRestored : Word::DefaultsSaveFailed).c_str());
    refresh();
 }
 
-bool MenuControls::handle(const Event& event)
+bool Hotkeys::handle(const Event& event)
 {
    if (rows.empty())
       return false;
    switch (event.kind)
    {
-      case RIB_RMLUI_ACTION_MENU_CONTROLS_CANCEL:
+      case RIB_RMLUI_ACTION_HOTKEYS_CANCEL:
          play_action_sound(event.kind);
          cancel_capture();
          return true;
@@ -269,29 +270,29 @@ bool MenuControls::handle(const Event& event)
       default:
          break;
    }
-   MenuAction action = MenuAction::Menu;
-   const bool mine = event.kind == RIB_RMLUI_ACTION_MENU_CONTROL_ADD
-         || event.kind == RIB_RMLUI_ACTION_MENU_CONTROL_REMOVE
-         || event.kind == RIB_RMLUI_ACTION_MENU_CONTROLS_RESET;
+   Hotkey hotkey = Hotkey::Menu;
+   const bool mine = event.kind == RIB_RMLUI_ACTION_HOTKEY_ADD
+         || event.kind == RIB_RMLUI_ACTION_HOTKEY_REMOVE
+         || event.kind == RIB_RMLUI_ACTION_HOTKEYS_RESET;
    /* While we capture a binding, the player cannot press anything else. */
    if (capture.active)
       return true;
    if (!mine)
       return false;
    play_action_sound(event.kind);
-   if (event.kind == RIB_RMLUI_ACTION_MENU_CONTROLS_RESET)
+   if (event.kind == RIB_RMLUI_ACTION_HOTKEYS_RESET)
       reset();
-   else if (menu_action_named(event.id, action))
+   else if (hotkey_named(event.id, hotkey))
    {
-      if (event.kind == RIB_RMLUI_ACTION_MENU_CONTROL_ADD)
-         start_capture(action);
+      if (event.kind == RIB_RMLUI_ACTION_HOTKEY_ADD)
+         start_capture(hotkey);
       else
-         remove(action, event.slot);
+         remove(hotkey, event.slot);
    }
    return true;
 }
 
-void MenuControls::screen_shown(bool showing)
+void Hotkeys::screen_shown(bool showing)
 {
    if (!showing)
    {
@@ -299,7 +300,7 @@ void MenuControls::screen_shown(bool showing)
       return;
    }
    /* We open the screen with the text from the design, not the last message. */
-   status.set_menu_controls("");
+   status.set_hotkeys("");
    refresh();
 }
 }

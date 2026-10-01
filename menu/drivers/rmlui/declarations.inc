@@ -90,13 +90,13 @@ RIB_KEY(Fonts, "fonts")
 /* A word of words.inc in the design's wording, by the word's id. */
 RIB_KEYS(Word, "word_")
 
-/* MENU CONTROLS: the author's bindings for the menu's own actions
- * (menu_controls.inc), with the words the menu shows for each pad input, and
- * the player's own bindings, which win for every action once the player has
- * changed any. A list is bindings separated by spaces. */
-RIB_FILE(MenuControlsDefaults, "menu-controls-defaults.cfg")
-RIB_DATA_FILE(MenuControls, "menu-controls.cfg")
-RIB_KEYS(MenuControl, "menu_control_")
+/* HOTKEYS: the author's bindings for the hotkeys (hotkeys.inc), with the
+ * words the menu shows for each pad input, and the player's own bindings,
+ * which win for every hotkey once the player has changed any. A list is
+ * bindings separated by spaces. */
+RIB_FILE(HotkeysDefaults, "hotkeys-defaults.cfg")
+RIB_DATA_FILE(Hotkeys, "hotkeys.cfg")
+RIB_KEYS(HotkeyList, "hotkey_")
 RIB_KEYS(PadWord, "pad_word_")
 
 /* shaders.cfg: the filters a game bundles, in order, and each one's preset. */

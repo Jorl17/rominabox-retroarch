@@ -34,20 +34,20 @@ enum rib_capture_result { RIB_CAPTURE_PENDING, RIB_CAPTURE_CAPTURED, RIB_CAPTURE
 bool rib_host_capture_start(unsigned index, unsigned seconds);
 void rib_host_capture_cancel(void);
 enum rib_capture_result rib_host_capture_poll(bool allow_pointer, float *remaining);
-/* The actions of the menu (menu_controls.inc), read from the keyboard and
- * the pad of the first player. Pass a key by its name in the RetroArch
- * config, and a pad input by its id, as in pad_inputs.h. Both return false
- * for a name or id that is not a key or pad input. */
+/* The hotkeys (hotkeys.inc), read from the keyboard and the pad of the
+ * first player. Pass a key by its name in the RetroArch config, and a pad
+ * input by its id, as in pad_inputs.h. Both return false for a name or id
+ * that is not a key or pad input. */
 bool rib_host_key_code(const char *name, unsigned *code);
 bool rib_host_key_down(unsigned code);
 bool rib_host_pad_input(const char *id, unsigned *bind);
 bool rib_host_pad_down(unsigned bind);
-/* Capture an input for one of those actions. We use the RetroArch capture,
+/* Capture an input for one of those hotkeys. We use the RetroArch capture,
  * as on the Controls screen, but write into none of the RetroArch binds.
  * Poll and cancel it as any other capture. After a poll that returns
- * captured, `binding` contains the input in the menu_controls.inc format,
- * or is empty for an input that is neither a key nor a pad input, such as a
- * mouse button, a stick, or a button with no bind in the pad profile. */
+ * captured, `binding` contains the input in the hotkeys.inc format, or is
+ * empty for an input that is neither a key nor a pad input, such as a mouse
+ * button, a stick, or a button with no bind in the pad profile. */
 bool rib_host_capture_input_start(unsigned seconds);
 void rib_host_captured_input(char *binding, size_t length);
 typedef struct rib_pointer { int x, y; bool pressed; } rib_pointer;
@@ -62,6 +62,10 @@ uintptr_t rib_host_native_window(void);
 bool rib_host_prepare_script_shot(void);
 void rib_host_end_after_script_shot(const char *path);
 void rib_host_script_finished(void);
+/* Keep the key named `name` in the RetroArch config pressed for the next two
+ * frames, as read by rib_host_key_down, as when a person presses a key and
+ * lets it go. Returns false for a name that is not a key. */
+bool rib_host_script_press(const char *name);
 bool rib_host_menu_open(void);
 void rib_host_overlay_frames(bool on);
 bool rib_host_has_settings(void);

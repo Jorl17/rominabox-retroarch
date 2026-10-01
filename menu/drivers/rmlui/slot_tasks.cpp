@@ -43,21 +43,22 @@ void Slots::follow()
       awaiting = {};
 }
 
-bool Slots::begin_transfer(Transfer kind)
+bool Slots::begin_transfer(Transfer kind, Asker asker)
 {
    if (transfer.pending) return false;
    char path[PATH_MAX_LENGTH];
    transfer.path = rib_host_state_path(selected_slot, path, sizeof(path)) ? path : "";
    transfer.kind = kind;
+   transfer.asker = asker;
    transfer.slot = selected_slot;
    transfer.pending = true;
    return true;
 }
 
-void Slots::request(Transfer kind)
+void Slots::request(Transfer kind, Asker asker)
 {
    if (kind == Transfer::Load && !load_available()) return;
-   if (!begin_transfer(kind)) return;
+   if (!begin_transfer(kind, asker)) return;
    rib_host_select_state_slot(selected_slot);
    const bool save = kind == Transfer::Save;
    status.set_main(say(save ? Word::SavingSlot : Word::LoadingSlot,
@@ -74,6 +75,7 @@ void Slots::notify_task(const char *path, int slot, bool is_save, bool success)
          transfer.kind == Transfer::Save, transfer.path.c_str(), transfer.slot,
          path, slot, is_save)) return;
    transfer.pending = false;
+   finished = {true, {transfer.kind, transfer.asker, transfer.slot, success}};
    /* Read the slots after the task. The picture of a save comes after the
     * state, so we follow that slot until its new picture arrives, in place of
     * the picture of the previous save, if any. */
@@ -86,6 +88,14 @@ void Slots::notify_task(const char *path, int slot, bool is_save, bool success)
             {{"slot", std::to_string(transfer.slot)}}).c_str());
    else
       status.set_main(say(is_save ? Word::SaveFailed : Word::LoadFailed).c_str());
+}
+
+bool Slots::take_finished(Finished& out)
+{
+   if (!finished.waiting) return false;
+   out = finished.what;
+   finished = {};
+   return true;
 }
 
 bool Slots::handle(const Event& event)

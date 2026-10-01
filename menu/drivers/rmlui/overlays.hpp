@@ -25,9 +25,17 @@ public:
    void load(const DesignDeclarations& design);
    void begin();
    void update(bool script_pending);
-   struct Notification { std::string title, detail, badge; };
+   /* The text in the notice row, and which notice it is (document_contract.inc
+    * RIB_NOTICE), which we put on the row for the design. */
+   enum class Notice
+   {
+#define RIB_NOTICE(name, value) name,
+#include "document_contract.inc"
+   };
+   struct Notification { Notice notice; std::string title, detail, badge; };
    void notify(const Notification& notification);
-   /* The badge of the notification on screen, once its picture exists. */
+   /* The badge of the achievement notification on screen, once its picture
+    * exists. */
    void show_badge(const std::string& badge);
    void clear_notification();
    bool notification_active() const { return notification_until != 0; }

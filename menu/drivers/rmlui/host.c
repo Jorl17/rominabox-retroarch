@@ -563,12 +563,36 @@ bool rib_host_key_code(const char *name, unsigned *code)
    return true;
 }
 
-bool rib_host_key_down(unsigned code) { return input_driver_keyboard_pressed(code) != 0; }
+#ifdef RIB_MENU_SCRIPT
+/* The key we keep down for the test script, and the frame on which we
+ * release it. */
+static unsigned rib_script_key;
+static uint64_t rib_script_key_until;
+
+bool rib_host_script_press(const char *name)
+{
+   unsigned code;
+   if (!rib_host_key_code(name, &code))
+      return false;
+   rib_script_key       = code;
+   rib_script_key_until = video_state_get_ptr()->frame_count + 2;
+   return true;
+}
+#endif
+
+bool rib_host_key_down(unsigned code)
+{
+#ifdef RIB_MENU_SCRIPT
+   if (code == rib_script_key && video_state_get_ptr()->frame_count < rib_script_key_until)
+      return true;
+#endif
+   return input_driver_keyboard_pressed(code) != 0;
+}
 bool rib_host_pad_input(const char *id, unsigned *bind) { return rib_pad_input_bind(id, bind); }
 bool rib_host_pad_down(unsigned bind) { return rib_pad_input_down(bind); }
 
-/* Where we write a capture for one of the menu actions. It is none of the
- * RetroArch binds, so no input of the game changes while it runs. */
+/* Where we write a capture for a hotkey. It is none of
+ * the RetroArch binds, so no input of the game changes while it runs. */
 static struct retro_keybind rib_captured_input;
 
 bool rib_host_capture_input_start(unsigned seconds)
@@ -578,8 +602,8 @@ bool rib_host_capture_input_start(unsigned seconds)
 
 void rib_host_captured_input(char *binding, size_t length)
 {
-#define RIB_MENU_BINDING(name, prefix) static const char name##_prefix[] = prefix;
-#include "menu_controls.inc"
+#define RIB_HOTKEY_BINDING(name, prefix) static const char name##_prefix[] = prefix;
+#include "hotkeys.inc"
    const struct retro_keybind *input = &rib_captured_input;
    char key[64];
    unsigned bind;

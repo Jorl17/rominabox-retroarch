@@ -25,7 +25,7 @@ public:
    static bool leaves(int kind)
    {
       return kind == RIB_RMLUI_ACTION_CONTROLS_CANCEL || kind == RIB_RMLUI_ACTION_CONTROLS_BACK
-            || kind == RIB_RMLUI_ACTION_MENU_CONTROLS_CANCEL;
+            || kind == RIB_RMLUI_ACTION_HOTKEYS_CANCEL;
    }
 
 private:

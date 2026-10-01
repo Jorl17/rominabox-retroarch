@@ -144,6 +144,20 @@ void rib::Script::run(void *menu, const ScriptObservation& observation)
       return;
    }
 
+   /* Press and release a key, as we read keys in the menu. We read the hotkeys
+    * for use during play from these keys. */
+   if (!strncmp(id, "press:", 6))
+   {
+      if (rib_host_script_press(id + 6))
+         RARCH_LOG("[RIB] menu script pressed %s.\n", id + 6);
+      else
+      {
+         RARCH_ERR("[RIB] menu script names no key '%s'; stopping.\n", id + 6);
+         rib_host_quit();
+      }
+      return;
+   }
+
    if (!strncmp(id, "report:", 7))
    {
       binds_list = observation.binds_list ? observation.binds_list : "";

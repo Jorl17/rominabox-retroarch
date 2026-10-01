@@ -41,15 +41,15 @@ void Status::set_controls(const char *text)
    show(controls, document_contract::ControlsStatus, text);
 }
 
-void Status::set_menu_controls(const char *text)
+void Status::set_hotkeys(const char *text)
 {
-   show(menu_controls, document_contract::MenuControlsStatus, text);
+   show(hotkeys, document_contract::HotkeysStatus, text);
 }
 
 void Status::expire()
 {
    expire(main, document_contract::Status);
    expire(controls, document_contract::ControlsStatus);
-   expire(menu_controls, document_contract::MenuControlsStatus);
+   expire(hotkeys, document_contract::HotkeysStatus);
 }
 }

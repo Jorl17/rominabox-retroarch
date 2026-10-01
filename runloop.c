@@ -5813,9 +5813,10 @@ static enum runloop_state_enum runloop_check_state(
    BIT256_CLEAR(current_bits, RARCH_MENU_TOGGLE);
 #ifdef HAVE_RMLUI
    /* ROM-in-a-Box: the menu opens with what the player binds to MENU on
-    * MENU CONTROLS, which we read in the menu, and we ignore the menu toggle
-    * and gamepad combo of RetroArch. Its pad bindings are down or not, and
-    * its keys go through the held-key rule below. */
+    * HOTKEYS, which we read in the menu, and we ignore the menu toggle and
+    * gamepad combo of RetroArch. Its pad bindings are down or not, and its
+    * keys go through the held-key rule below. We read the hotkeys for use
+    * while the game plays in the menu code, here, once a frame. */
    if (string_is_equal(settings->arrays.menu_driver, "rmlui"))
    {
       /* MENU on a pad counts once, when it is released, as for a key. If it
@@ -5827,6 +5828,7 @@ static enum runloop_state_enum runloop_check_state(
       if (pad_menu_was_held && !pad_menu_held)
          BIT256_SET(current_bits, RARCH_MENU_TOGGLE);
       pad_menu_was_held             = pad_menu_held;
+      rib_rmlui_play_hotkeys();
    }
    else
 #endif
@@ -6334,8 +6336,8 @@ static enum runloop_state_enum runloop_check_state(
 
 #ifdef HAVE_RMLUI
       /* ROM-in-a-Box: inside the menu, RetroPad A and B are what the player
-       * binds to CONFIRM and BACK on MENU CONTROLS, not the RetroArch mapping,
-       * and a position bound to one of the menu actions is only that action.
+       * binds to CONFIRM and BACK on HOTKEYS, not the RetroArch mapping,
+       * and a position bound to a hotkey for the menu is only that hotkey.
        * Not while we capture a binding, when we read nothing here. */
       if (string_is_equal(settings->arrays.menu_driver, "rmlui")
             && !menu_driver_binding_state)

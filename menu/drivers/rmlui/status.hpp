@@ -19,7 +19,7 @@ public:
    explicit Status(Document& document) : document(document) {}
    void set_main(const char *text);
    void set_controls(const char *text);
-   void set_menu_controls(const char *text);
+   void set_hotkeys(const char *text);
    void expire();
    const std::string& main_text() const { return main.text; }
 
@@ -28,6 +28,6 @@ private:
    void show(Message& message, const char *id, const char *text);
    void expire(Message& message, const char *id);
    Document& document;
-   Message main, controls, menu_controls;
+   Message main, controls, hotkeys;
 };
 }

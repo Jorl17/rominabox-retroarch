@@ -2,7 +2,7 @@
 
 #include "capture_pointer.hpp"
 #include "events.h"
-#include "menu_bindings.hpp"
+#include "hotkey_bindings.hpp"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -15,22 +15,21 @@ class Focus;
 class Screens;
 class Status;
 
-/* The MENU CONTROLS screen, with a row of chips for the bindings of each
- * action of the menu. The player adds one with +, through the same capture
- * as Controls, removes one by choosing its chip, and restores the defaults
- * with RESET. Here we show the bindings from MenuBindings and the result of
- * each change. */
-class MenuControls
+/* The HOTKEYS screen, with a row of chips for the bindings of each hotkey.
+ * The player adds one with +, through the same capture as Controls, removes
+ * one by choosing its chip, and restores the defaults with RESET. Here we
+ * show the bindings from HotkeyBindings and the result of each change. */
+class Hotkeys
 {
 public:
-   MenuControls(Document& document, Focus& focus, Screens& screens, Status& status,
+   Hotkeys(Document& document, Focus& focus, Screens& screens, Status& status,
          EventQueue& intents, Event& hovered, CapturePointer& pointer)
       : document(document), focus(focus), screens(screens), status(status),
         intents(intents), hovered(hovered), pointer(pointer) {}
    /* The bindings, read before any document, because we need them while the
     * game runs, before we have ever drawn the menu. */
    void load(const char *assets, const char *data) { bindings.load(assets, data); }
-   const MenuBindings& read() const { return bindings; }
+   const HotkeyBindings& read() const { return bindings; }
    /* Once per document, find its rows and the number of chips in each, and
     * add a listener to each chip and to +. */
    void bind();
@@ -46,18 +45,18 @@ public:
 private:
    struct Row
    {
-      MenuAction action = MenuAction::Menu;
+      Hotkey hotkey = Hotkey::Menu;
       std::string add, label;
       std::vector<std::string> chips;
    };
-   const Row *row(MenuAction action) const;
-   std::string name(MenuAction action) const;
-   void start_capture(MenuAction action);
+   const Row *row(Hotkey hotkey) const;
+   std::string name(Hotkey hotkey) const;
+   void start_capture(Hotkey hotkey);
    void end_capture(const std::string& words);
-   void remove(MenuAction action, int chip);
+   void remove(Hotkey hotkey, int chip);
    void reset();
    /* The words that describe the result of a change. */
-   std::string outcome(const MenuBindings::Change& change) const;
+   std::string outcome(const HotkeyBindings::Change& change) const;
    Document& document;
    Focus& focus;
    Screens& screens;
@@ -65,12 +64,12 @@ private:
    EventQueue& intents;
    Event& hovered;
    CapturePointer& pointer;
-   MenuBindings bindings;
+   HotkeyBindings bindings;
    std::vector<Row> rows;
    struct Capture
    {
       bool active = false;
-      MenuAction action = MenuAction::Menu;
+      Hotkey hotkey = Hotkey::Menu;
    } capture;
 };
 }

@@ -24,12 +24,12 @@ enum rib_rmlui_action
    RIB_RMLUI_ACTION_ACCOUNT,
    /* A button on a list screen, passed to the list for that screen. */
    RIB_RMLUI_ACTION_LIST_ACTION,
-   /* MENU CONTROLS: capture a binding for the action `id`; remove its
+   /* HOTKEYS: capture a binding for the hotkey `id`; remove its
     * binding in chip `slot`; put back the game's own; end a capture. */
-   RIB_RMLUI_ACTION_MENU_CONTROL_ADD,
-   RIB_RMLUI_ACTION_MENU_CONTROL_REMOVE,
-   RIB_RMLUI_ACTION_MENU_CONTROLS_RESET,
-   RIB_RMLUI_ACTION_MENU_CONTROLS_CANCEL,
+   RIB_RMLUI_ACTION_HOTKEY_ADD,
+   RIB_RMLUI_ACTION_HOTKEY_REMOVE,
+   RIB_RMLUI_ACTION_HOTKEYS_RESET,
+   RIB_RMLUI_ACTION_HOTKEYS_CANCEL,
    /* UNINSTALL or RESET, confirmed: we forget the game and close it. */
    RIB_RMLUI_ACTION_FORGET
 };
@@ -62,7 +62,7 @@ struct Event
       event.account = action;
       return event;
    }
-   static Event menu_control(rib_rmlui_action kind, std::string action, int chip = 0)
+   static Event hotkey(rib_rmlui_action kind, std::string action, int chip = 0)
    {
       Event event(kind, std::move(action));
       event.slot = chip;

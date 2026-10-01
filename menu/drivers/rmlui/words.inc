@@ -26,8 +26,8 @@ RIB_WORD(DefaultsSaveFailed, "defaults-save-failed", "DEFAULTS RESTORED; SAVE FA
 RIB_WORD(DefaultsLoadFailed, "defaults-load-failed", "DEFAULTS COULD NOT BE LOADED")
 RIB_WORD(Unbound, "unbound", "---")
 
-/* MENU CONTROLS' statuses, beside the pad screen's capture words, which it
- * shares. {control} is an action as its row names it. */
+/* HOTKEYS' statuses, beside the pad screen's capture words, which it
+ * shares. {control} is a hotkey as its row names it. */
 RIB_WORD(BindingRemoved, "binding-removed", "BINDING REMOVED")
 RIB_WORD(BindingSwapped, "binding-swapped", "SWAPPED WITH {control}")
 RIB_WORD(BindingMoved, "binding-moved", "TAKEN FROM {control}")
@@ -46,6 +46,12 @@ RIB_WORD(SavedSlot, "saved-slot", "SLOT {slot} SAVED")
 RIB_WORD(LoadedSlot, "loaded-slot", "SLOT {slot} LOADED")
 RIB_WORD(SaveFailed, "save-failed", "SAVE FAILED")
 RIB_WORD(LoadFailed, "load-failed", "LOAD FAILED")
+/* What a hotkey did while the game plays, in the notice row; a save or load
+ * that failed says SAVE FAILED or LOAD FAILED there. */
+RIB_WORD(QuickSaved, "quick-saved", "SAVED TO SLOT {slot}")
+RIB_WORD(QuickLoaded, "quick-loaded", "LOADED SLOT {slot}")
+RIB_WORD(QuickSlotEmpty, "quick-slot-empty", "SLOT {slot} IS EMPTY")
+RIB_WORD(QuickSlot, "quick-slot", "SLOT {slot}")
 
 /* Lists: a pager's count, the disc list, QUICK SIGN IN's accounts. */
 RIB_WORD(PageCount, "page-count", "{page}/{pages}")

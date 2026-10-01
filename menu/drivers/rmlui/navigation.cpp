@@ -254,8 +254,8 @@ Event Navigation::key(rib_key action)
    {
       if (action == RIB_KEY_CANCEL || action == RIB_KEY_RESUME ||
           action == RIB_KEY_TOGGLE)
-         return screens.showing(ScreenRole::MenuControls)
-               ? RIB_RMLUI_ACTION_MENU_CONTROLS_CANCEL : RIB_RMLUI_ACTION_CONTROLS_CANCEL;
+         return screens.showing(ScreenRole::Hotkeys)
+               ? RIB_RMLUI_ACTION_HOTKEYS_CANCEL : RIB_RMLUI_ACTION_CONTROLS_CANCEL;
       return {};
    }
 

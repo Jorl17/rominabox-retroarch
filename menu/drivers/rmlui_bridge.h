@@ -21,9 +21,10 @@ bool rib_rmlui_overlays_drawing(void);
  * no core frame in the run loop. */
 bool rib_rmlui_game_held(void);
 bool rib_rmlui_consume_menu_toggle(void *userdata);
-/* The menu actions, as the player binds them on MENU CONTROLS
- * (menu/drivers/rmlui/menu_controls.inc). We read them in the RetroArch input
- * code in place of its menu toggle, gamepad combo and RetroPad A and B.
+/* The hotkeys, as the player binds them on HOTKEYS
+ * (menu/drivers/rmlui/hotkeys.inc). We read them in the RetroArch input code
+ * in place of its menu toggle, gamepad combo, RetroPad A and B, and its
+ * save state and state slot hotkeys.
  *
  * The keys of MENU, by code, up to `capacity`, for the rule of the menu
  * toggle keys (input/held_key_policy.h), and none while the text entry of the
@@ -32,9 +33,14 @@ unsigned rib_rmlui_menu_keys(unsigned *codes, unsigned capacity);
 bool rib_rmlui_menu_pad_held(void);
 /* The RetroPad buttons of the menu, the first word of the RetroArch input
  * bits, as we read them in the menu: `ok` is CONFIRM down and `cancel` is BACK
- * down, and a position bound to one of the actions is only that action. We
+ * down, and a position bound to a hotkey for the menu is only that hotkey. We
  * count keys unless the text entry has the keyboard. */
 void rib_rmlui_menu_buttons(uint32_t *buttons, unsigned ok, unsigned cancel);
+/* Once a frame: the hotkeys for use while the game plays (QUICK SAVE,
+ * QUICK LOAD, PREVIOUS SLOT, NEXT SLOT), each once when pressed. We ignore
+ * them while the menu is open or the game waits for the splash, and a key
+ * that is down then counts only after it is released and pressed again. */
+void rib_rmlui_play_hotkeys(void);
 void rib_rmlui_notify_state_task(const char *path, int slot, bool is_save, bool success);
 static inline bool rib_rmlui_ok_includes_pointer_select(bool is_rmlui)
 {

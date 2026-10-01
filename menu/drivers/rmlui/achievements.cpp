@@ -232,7 +232,7 @@ void Achievements::update()
          // For a popup queued behind another, the badge may already be on disk.
          const std::string badge = unlocked.badge_path[0] ? std::string(unlocked.badge_path)
                : ready_badge(snapshot, unlocked.id);
-         overlays.notify({unlocked.title, say(Word::UnlockPoints, {{"points", std::to_string(unlocked.points)}}), badge});
+         overlays.notify({Overlays::Notice::Achievement, unlocked.title, say(Word::UnlockPoints, {{"points", std::to_string(unlocked.points)}}), badge});
          // Earned just now, so we are still downloading the colour badge.
          if (badge.empty()) popup_waiting = unlocked.id;
       }
