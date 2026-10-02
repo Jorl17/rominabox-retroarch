@@ -160,7 +160,7 @@ static bool font_init_first(
             }
          }
 #endif
-#ifdef HAVE_SDL2
+#if defined(HAVE_SDL2) && !(defined(HAVE_COCOA) || defined(HAVE_COCOA_METAL))
 #if SDL_VERSION_ATLEAST(2, 0, 18)
       case FONT_DRIVER_RENDER_SDL2:
          {
