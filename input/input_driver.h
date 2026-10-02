@@ -1117,6 +1117,8 @@ bool input_key_pressed(int key, bool keyboard_pressed);
 bool input_set_rumble_state(unsigned port,
       enum retro_rumble_effect effect, uint16_t strength);
 
+void input_driver_stop_rumble(void);
+
 bool input_set_rumble_gain(unsigned gain);
 
 float input_get_sensor_state(unsigned port, unsigned id);

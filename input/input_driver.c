@@ -5527,6 +5527,22 @@ bool input_set_rumble_state(unsigned port,
 }
 
 /**
+ * Stops every pad's rumble: both motors of each port's pad.
+ **/
+void input_driver_stop_rumble(void)
+{
+   settings_t *settings = config_get_ptr();
+   unsigned i;
+
+   for (i = 0; i < MAX_USERS; i++)
+   {
+      unsigned joy_idx = settings->uints.input_joypad_index[i];
+      input_driver_set_rumble(i, joy_idx, RETRO_RUMBLE_STRONG, 0);
+      input_driver_set_rumble(i, joy_idx, RETRO_RUMBLE_WEAK, 0);
+   }
+}
+
+/**
  * Sets the rumble gain. Used by MENU_ENUM_LABEL_INPUT_RUMBLE_GAIN.
  *
  * @param gain  Rumble gain, 0-100 [%]
