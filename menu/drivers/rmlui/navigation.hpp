@@ -11,7 +11,6 @@ namespace rib {
 class Focus;
 class Screens;
 class Controls;
-class Slots;
 class Document;
 class Lists;
 class Parts;
@@ -63,9 +62,9 @@ inline bool navigate(Rml::Context *context, rib_key key)
 class Navigation
 {
 public:
-   Navigation(Focus& focus, Screens& screens, Controls& controls, Slots& slots,
+   Navigation(Focus& focus, Screens& screens, Controls& controls,
          Document& document, Lists& lists, Parts& parts)
-      : focus(focus), screens(screens), controls(controls), slots(slots),
+      : focus(focus), screens(screens), controls(controls),
         document(document), lists(lists), parts(parts) {}
    /* What we do in the menu after we show any screen. */
    void on_shown(std::function<void()> shown) { this->shown = std::move(shown); }
@@ -102,7 +101,6 @@ private:
    Focus& focus;
    Screens& screens;
    Controls& controls;
-   Slots& slots;
    Document& document;
    Lists& lists;
    Parts& parts;

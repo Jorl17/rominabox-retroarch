@@ -63,7 +63,7 @@ struct Menu
    rib::PlayHotkeys play_hotkeys{hotkeys.read(), view.slots, overlays};
    bool pointer_pressed;
    rib::Slots& slots = view.slots;
-   rib::Navigation navigation{focus, screens, controls, slots,
+   rib::Navigation navigation{focus, screens, controls,
          view.document, view.lists, view.parts};
 };
 
