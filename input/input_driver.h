@@ -654,6 +654,19 @@ typedef struct
    int32_t joypad_state_cache[MAX_USERS];
    bool    joypad_state_cache_valid[MAX_USERS];
 
+   /* Rumble when several ports are mapped to one user (input_remap_ports).
+    * We send the user's rumble to the pad among them that last had a
+    * button pressed (see input_rumble_port()).
+    * rumble_held:     per port, the buttons held on its pad at the last
+    *                  poll, so that we can tell a new press from a held one.
+    * rumble_strength: per user, the last strong and weak strengths of its
+    *                  rumble, which we give to a pad that gets the rumble
+    *                  later.
+    * rumble_port:     per user, the port with the last button press. */
+   uint16_t rumble_held[MAX_USERS];
+   uint16_t rumble_strength[MAX_USERS][2];
+   uint8_t  rumble_port[MAX_USERS];
+
    retro_bits_512_t keyboard_mapping_bits;    /* bool alignment */
    input_game_focus_state_t game_focus_state; /* bool alignment */
 

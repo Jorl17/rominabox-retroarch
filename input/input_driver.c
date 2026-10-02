@@ -5400,19 +5400,34 @@ static void input_sensor_update_rest_capture(settings_t *settings)
 }
 
 /**
- * Sets the rumble state. Used by RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE.
+ * Return the port whose pad gets the rumble of a user. Of the ports
+ * mapped to the user (input_remap_port_map), it is the one whose pad last
+ * had a button pressed, or else the first of them. With one port per
+ * user, as by default, it is that port.
  *
- * @param port      User number.
- * @param effect    Rumble effect.
- * @param strength  Strength of rumble effect.
+ * @param port  User number.
  *
- * @return true if the rumble state has been successfully set
+ * @return the port, or MAX_USERS when no port is mapped to the user
  **/
-bool input_set_rumble_state(unsigned port,
-      enum retro_rumble_effect effect, uint16_t strength)
+static unsigned input_rumble_port(input_driver_state_t *input_st,
+      settings_t *settings, unsigned port)
 {
-   settings_t *settings     = config_get_ptr();
-   unsigned joy_idx         = settings->uints.input_joypad_index[port];
+   const unsigned *ports = settings->uints.input_remap_port_map[port];
+   unsigned i;
+
+   for (i = 0; i < MAX_USERS && ports[i] < MAX_USERS; i++)
+      if (ports[i] == input_st->rumble_port[port])
+         return ports[i];
+   return ports[0];
+}
+
+/**
+ * Rumbles the pad joy_idx for user port, with software gain control
+ * when the joypad driver has no gain setting of its own.
+ **/
+static bool input_rumble_pad(settings_t *settings, unsigned port,
+      unsigned joy_idx, enum retro_rumble_effect effect, uint16_t strength)
+{
    uint16_t scaled_strength = strength;
 
    /* If gain setting is not supported, do software gain control */
@@ -5427,6 +5442,88 @@ bool input_set_rumble_state(unsigned port,
 
    return input_driver_set_rumble(
       port, joy_idx, effect, scaled_strength);
+}
+
+/**
+ * Move a user's rumble to the pad of the given port when a button on that
+ * pad has just been pressed and other ports are mapped to the same user.
+ * We stop the pad that had the rumble, and give the new pad the strengths
+ * the rumble last had. A button held since the last poll, a stick or the
+ * keyboard does not move the rumble. A user mapped to one port keeps the
+ * pad of that port.
+ *
+ * @param joypad_info  The joypad of the port, as read in input_driver_poll().
+ * @param port         Port number.
+ **/
+static void input_rumble_follow_press(input_driver_state_t *input_st,
+      settings_t *settings,
+      const input_device_driver_t *joypad,
+      const input_device_driver_t *sec_joypad,
+      rarch_joypad_info_t *joypad_info,
+      unsigned port)
+{
+   unsigned user    = settings->uints.input_remap_ports[port];
+   uint16_t held    = 0;
+   uint16_t pressed;
+   unsigned from;
+   unsigned effect;
+
+   if (     user >= MAX_USERS
+         || settings->uints.input_remap_port_map[user][1] >= MAX_USERS
+         || !input_st->libretro_input_binds[port])
+      return;
+
+   if (joypad)
+      held |= (uint16_t)joypad->state(joypad_info,
+            *input_st->libretro_input_binds[port], port);
+   if (sec_joypad)
+      held |= (uint16_t)sec_joypad->state(joypad_info,
+            *input_st->libretro_input_binds[port], port);
+   pressed                     = held & ~input_st->rumble_held[port];
+   input_st->rumble_held[port] = held;
+
+   if (!pressed || (from = input_rumble_port(input_st, settings, user)) == port)
+      return;
+
+   input_st->rumble_port[user] = port;
+   if (from < MAX_USERS)
+      for (effect = RETRO_RUMBLE_STRONG; effect <= RETRO_RUMBLE_WEAK; effect++)
+         input_driver_set_rumble(user, settings->uints.input_joypad_index[from],
+               (enum retro_rumble_effect)effect, 0);
+   for (effect = RETRO_RUMBLE_STRONG; effect <= RETRO_RUMBLE_WEAK; effect++)
+      input_rumble_pad(settings, user, joypad_info->joy_idx,
+            (enum retro_rumble_effect)effect,
+            input_st->rumble_strength[user][effect]);
+}
+
+/**
+ * Sets the rumble state. Used by RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE.
+ *
+ * We send the rumble to the pad of the port mapped to the user. When
+ * several are, we send it to the pad that last had a button pressed.
+ *
+ * @param port      User number.
+ * @param effect    Rumble effect.
+ * @param strength  Strength of rumble effect.
+ *
+ * @return true if the rumble state has been successfully set
+ **/
+bool input_set_rumble_state(unsigned port,
+      enum retro_rumble_effect effect, uint16_t strength)
+{
+   input_driver_state_t *input_st = &input_driver_st;
+   settings_t *settings           = config_get_ptr();
+   unsigned rumble_port;
+
+   if (port >= MAX_USERS)
+      return false;
+   if (effect == RETRO_RUMBLE_STRONG || effect == RETRO_RUMBLE_WEAK)
+      input_st->rumble_strength[port][effect] = strength;
+   if ((rumble_port = input_rumble_port(input_st, settings, port)) >= MAX_USERS)
+      return false;
+
+   return input_rumble_pad(settings, port,
+      settings->uints.input_joypad_index[rumble_port], effect, strength);
 }
 
 /**
@@ -7207,6 +7304,9 @@ void input_driver_poll(void)
          joypad_info[i].axis_threshold        = input_axis_threshold;
          joypad_info[i].joy_idx               = settings->uints.input_joypad_index[i];
          joypad_info[i].auto_binds            = input_autoconf_binds[joypad_info[i].joy_idx];
+
+         input_rumble_follow_press(input_st, settings, joypad, sec_joypad,
+               &joypad_info[i], (unsigned)i);
 
 #ifdef HAVE_RMLUI
          if (joypad && verbosity_is_enabled())
