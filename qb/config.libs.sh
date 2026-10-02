@@ -33,7 +33,9 @@ CLIB=-lc
 PTHREADLIB=-lpthread
 SOCKETLIB=-lc
 SOCKETHEADER=
-INCLUDES='usr/include usr/local/include'
+# The folders, without their leading /, where we look for the headers of a
+# library when pkg-config has no answer. A build may set different ones.
+INCLUDES="${INCLUDES:-usr/include usr/local/include}"
 SORT='sort'
 EXTRA_GL_LIBS=''
 VC_PREFIX=''
