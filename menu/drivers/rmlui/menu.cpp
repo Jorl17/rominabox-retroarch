@@ -110,14 +110,18 @@ bool rib_rmlui_overlays_drawing(void)
 
 bool rib_rmlui_text_event(bool down, unsigned key, uint32_t character, uint16_t modifiers)
 {
-   return active_menu && active_menu->initialized && rib_host_menu_open() &&
+   return rib_rmlui_reads_keyboard() &&
          active_menu->achievements.physical(down, key, character, modifiers);
 }
 
 bool rib_rmlui_typing(void)
 {
-   return active_menu && active_menu->initialized && rib_host_menu_open() &&
-         active_menu->achievements.typing();
+   return rib_rmlui_reads_keyboard() && active_menu->achievements.typing();
+}
+
+bool rib_rmlui_reads_keyboard(void)
+{
+   return active_menu && active_menu->initialized && rib_host_menu_open();
 }
 
 bool rib_rmlui_begin_native_text(void)

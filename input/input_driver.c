@@ -6615,6 +6615,13 @@ static void input_keys_pressed(
    /* Cache once - flag does not change during a single poll */
    {
       bool kb_blocked = !!(input_st->flags & INP_FLAG_KB_MAPPING_BLOCKED);
+      bool game_keys_blocked = kb_blocked;
+#ifdef HAVE_RMLUI
+      /* ROM-in-a-Box: in the menu, a key bound in the game controls is not
+       * a button of the menu pad. */
+      if (is_menu && rib_rmlui_reads_keyboard())
+         game_keys_blocked = true;
+#endif
 
    if (     (port == hotkey_port)
          && (binds_norm->valid || binds_auto->valid)
@@ -6659,7 +6666,7 @@ static void input_keys_pressed(
             sec_joypad,
             joypad_info,
             binds,
-            kb_blocked,
+            game_keys_blocked,
             port, RETRO_DEVICE_JOYPAD, 0,
             RETRO_DEVICE_ID_JOYPAD_MASK);
 
@@ -8038,6 +8045,9 @@ void input_driver_collect_system_input(input_driver_state_t *input_st,
       {
          struct menu_state *menu_st  = menu_state_get_ptr();
          bool swap_ok_cancel_buttons = settings->bools.input_menu_swap_ok_cancel_buttons;
+#ifdef HAVE_RMLUI
+         bool arrows_only            = rib_rmlui_reads_keyboard();
+#endif
          unsigned i;
          unsigned ids[][2] =
          {
@@ -8089,6 +8099,13 @@ void input_driver_collect_system_input(input_driver_state_t *input_st,
                   /* ROM-in-a-Box: a key bound to a menu hotkey on HOTKEYS
                    * is only that hotkey. */
                   && !rib_rmlui_menu_hotkey_key(ids[i][0])
+                  /* In the menu we read only the HOTKEYS keys and the arrows
+                   * from the keyboard, and of these only the arrows are buttons
+                   * of the menu pad. */
+                  && !(arrows_only
+                     && ids[i][1] < RARCH_FIRST_CUSTOM_BIND
+                     && ids[i][0] != RETROK_UP   && ids[i][0] != RETROK_DOWN
+                     && ids[i][0] != RETROK_LEFT && ids[i][0] != RETROK_RIGHT)
 #endif
                   && input->input_state(
                      input_st->current_data,
