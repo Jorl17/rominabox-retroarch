@@ -2,15 +2,12 @@
 #include "focus.hpp"
 #include "screens.hpp"
 #include "controls.hpp"
-#include "slots.hpp"
 #include "sounds.hpp"
 #include "document.hpp"
 #include "elements.hpp"
 #include "lists.hpp"
 #include "paging.hpp"
 #include "parts.hpp"
-#include <cstdlib>
-#include <cstring>
 
 namespace rib {
 Rml::Element *Navigation::element(const std::string& id) const
@@ -236,15 +233,7 @@ Event Navigation::move(rib_key action)
       focus.paint();
       return {};
    }
-   if (navigate(document.get_context(), action))
-   {
-      Rml::Element *to = focus.current();
-      /* With SAVE and LOAD we use the slot the player reached with a key.
-       * Moving the pointer over a slot does not select it. */
-      if (to && to->IsClassSet(document_contract::SlotClass)
-            && to->GetId().rfind(document_contract::Slot, 0) == 0)
-         slots.set_selected_slot(std::atoi(to->GetId().c_str() + std::strlen(document_contract::Slot)));
-   }
+   navigate(document.get_context(), action);
    focus.paint();
    return {};
 }
