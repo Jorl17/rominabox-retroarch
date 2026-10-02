@@ -5527,13 +5527,16 @@ bool input_set_rumble_state(unsigned port,
 }
 
 /**
- * Stops every pad's rumble: both motors of each port's pad.
+ * Stops every pad's rumble: both motors of each port's pad. We also clear
+ * the last strengths of each user's rumble, so we do not give them to a pad
+ * that gets a user's rumble afterwards.
  **/
 void input_driver_stop_rumble(void)
 {
    settings_t *settings = config_get_ptr();
    unsigned i;
 
+   memset(input_driver_st.rumble_strength, 0, sizeof(input_driver_st.rumble_strength));
    for (i = 0; i < MAX_USERS; i++)
    {
       unsigned joy_idx = settings->uints.input_joypad_index[i];
