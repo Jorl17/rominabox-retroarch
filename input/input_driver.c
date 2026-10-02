@@ -6981,6 +6981,42 @@ static void input_keys_pressed(
    } /* kb_blocked scope */
 }
 
+#ifdef HAVE_RMLUI
+/* ROM-in-a-Box: with --verbose, we log the pad of each player as we read it
+ * for the game, one line whenever its buttons or a stick direction change,
+ * with the held buttons by their RetroArch names and the direction of each
+ * stick. In tests that drive a pad we read these lines to see each input. */
+static void rib_log_pad(unsigned port, int32_t buttons, const int16_t sticks[4])
+{
+   static int32_t last_buttons[MAX_USERS];
+   static int8_t last_directions[MAX_USERS][4];
+   char line[256];
+   size_t used;
+   unsigned k;
+   bool changed = buttons != last_buttons[port];
+   for (k = 0; k < 4; k++)
+   {
+      /* Half way, so that we read a stick at rest or drifting as centred. */
+      int8_t direction = sticks[k] > 0x4000 ? 1 : sticks[k] < -0x4000 ? -1 : 0;
+      changed |= direction != last_directions[port][k];
+      last_directions[port][k] = direction;
+   }
+   if (!changed)
+      return;
+   last_buttons[port] = buttons;
+   used = (size_t)snprintf(line, sizeof(line), "[RIB] Player %u:", port + 1);
+   for (k = 0; k < RARCH_FIRST_CUSTOM_BIND && used < sizeof(line); k++)
+      if (buttons & (1 << k))
+         used += (size_t)snprintf(line + used, sizeof(line) - used, " %s",
+               input_config_bind_map_get_base(k));
+   if (used < sizeof(line))
+      snprintf(line + used, sizeof(line) - used,
+            " | left stick %d,%d | right stick %d,%d",
+            sticks[0], sticks[1], sticks[2], sticks[3]);
+   RARCH_LOG("%s\n", line);
+}
+#endif
+
 void input_driver_poll(void)
 {
    size_t i, j;
@@ -7171,6 +7207,25 @@ void input_driver_poll(void)
          joypad_info[i].axis_threshold        = input_axis_threshold;
          joypad_info[i].joy_idx               = settings->uints.input_joypad_index[i];
          joypad_info[i].auto_binds            = input_autoconf_binds[joypad_info[i].joy_idx];
+
+#ifdef HAVE_RMLUI
+         if (joypad && verbosity_is_enabled())
+         {
+            int16_t sticks[4];
+            unsigned stick;
+            for (stick = 0; stick < 4; stick++)
+               sticks[stick] = input_joypad_analog_axis(ANALOG_DPAD_NONE,
+                     input_analog_deadzone, input_analog_sensitivity,
+                     joypad, &joypad_info[i],
+                     stick < 2 ? RETRO_DEVICE_INDEX_ANALOG_LEFT : RETRO_DEVICE_INDEX_ANALOG_RIGHT,
+                     stick % 2 ? RETRO_DEVICE_ID_ANALOG_Y : RETRO_DEVICE_ID_ANALOG_X,
+                     (*input_st->libretro_input_binds[i]));
+            rib_log_pad((unsigned)i, input_state_wrap(input_st->current_driver,
+                     input_st->current_data, joypad, sec_joypad, &joypad_info[i],
+                     (*input_st->libretro_input_binds), kb_blocked, (unsigned)i,
+                     RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_MASK), sticks);
+         }
+#endif
 
          /* --- Turbo button state --- */
          input_st->turbo_btns.frame_enable[i] =
