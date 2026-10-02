@@ -14,10 +14,12 @@ bool rib_rmlui_text_event(bool down, unsigned key, uint32_t character, uint16_t 
 /* The text entry of the menu has the keyboard focus. We type every key sent to
  * it, and no key that is down also counts as a button of the menu pad. */
 bool rib_rmlui_typing(void);
-/* The ROM-in-a-Box menu is open. Its keyboard is the HOTKEYS keys and the
- * arrows. No key bound in the game controls counts as a button of the menu pad,
- * and of the RetroArch keys for that pad only the arrows do (input_driver.c). */
-bool rib_rmlui_reads_keyboard(void);
+/* The ROM-in-a-Box menu is open, and we read the input for it (input_driver.c).
+ * Its keyboard is the HOTKEYS keys and the arrows. No key bound in the game
+ * controls counts as a button of the menu pad, and of the RetroArch keys for
+ * that pad only the arrows do. The buttons and sticks of a controller are the
+ * ones in its profile, whatever the player changed in the game controls. */
+bool rib_rmlui_reads_input(void);
 /* Call this on every ordinary exit before teardown. False keeps the session open. */
 bool rib_rmlui_allow_quit(void);
 bool rib_rmlui_overlays_drawing(void);

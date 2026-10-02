@@ -6686,6 +6686,34 @@ static bool input_keys_pressed_other_sources(
    } \
 
 
+#ifdef HAVE_RMLUI
+/* ROM-in-a-Box: the binds through which we read the buttons and sticks of a
+ * controller in the menu. They are empty, so each button and stick is the one
+ * in the controller profile (auto_binds in the joypad info), whatever the
+ * player changed in the game controls on CONTROLS. */
+static const retro_keybind_set *rib_menu_pad_binds(void)
+{
+   static retro_keybind_set unbound[MAX_USERS];
+   static bool made;
+   unsigned port;
+   unsigned bind;
+   if (!made)
+   {
+      for (port = 0; port < MAX_USERS; port++)
+         for (bind = 0; bind < RARCH_BIND_LIST_END; bind++)
+         {
+            unbound[port][bind].valid   = true;
+            unbound[port][bind].key     = RETROK_UNKNOWN;
+            unbound[port][bind].joykey  = NO_BTN;
+            unbound[port][bind].joyaxis = AXIS_NONE;
+            unbound[port][bind].mbutton = NO_BTN;
+         }
+      made = true;
+   }
+   return unbound;
+}
+#endif
+
 /**
  * input_keys_pressed:
  *
@@ -6732,11 +6760,16 @@ static void input_keys_pressed(
    {
       bool kb_blocked = !!(input_st->flags & INP_FLAG_KB_MAPPING_BLOCKED);
       bool game_keys_blocked = kb_blocked;
+      const retro_keybind_set *pad_binds = binds;
 #ifdef HAVE_RMLUI
       /* ROM-in-a-Box: in the menu, a key bound in the game controls is not
-       * a button of the menu pad. */
-      if (is_menu && rib_rmlui_reads_keyboard())
+       * a button of the menu pad, and the buttons of a controller are the
+       * ones in its profile. */
+      if (is_menu && rib_rmlui_reads_input())
+      {
          game_keys_blocked = true;
+         pad_binds = rib_menu_pad_binds();
+      }
 #endif
 
    if (     (port == hotkey_port)
@@ -6781,7 +6814,7 @@ static void input_keys_pressed(
             input_st->primary_joypad,
             sec_joypad,
             joypad_info,
-            binds,
+            pad_binds,
             game_keys_blocked,
             port, RETRO_DEVICE_JOYPAD, 0,
             RETRO_DEVICE_ID_JOYPAD_MASK);
@@ -8088,6 +8121,13 @@ void input_driver_collect_system_input(input_driver_state_t *input_st,
       {
          uint8_t s;
          uint8_t a;
+         /* The sticks with which the player moves in the menu, which in the
+          * ROM-in-a-Box menu are the ones in the controller profile. */
+         const struct retro_keybind *stick_binds = *input_st->libretro_input_binds[port];
+#ifdef HAVE_RMLUI
+         if (rib_rmlui_reads_input())
+            stick_binds = rib_menu_pad_binds()[port];
+#endif
 
          /* Read input from analog sticks according to settings. */
          for (s = RETRO_DEVICE_INDEX_ANALOG_LEFT; s <= RETRO_DEVICE_INDEX_ANALOG_RIGHT; s++)
@@ -8106,7 +8146,7 @@ void input_driver_collect_system_input(input_driver_state_t *input_st,
                      &joypad_info,
                      s,
                      a,
-                     (*input_st->libretro_input_binds[port]));
+                     stick_binds);
 
                if (ret)
                {
@@ -8220,7 +8260,7 @@ void input_driver_collect_system_input(input_driver_state_t *input_st,
          struct menu_state *menu_st  = menu_state_get_ptr();
          bool swap_ok_cancel_buttons = settings->bools.input_menu_swap_ok_cancel_buttons;
 #ifdef HAVE_RMLUI
-         bool arrows_only            = rib_rmlui_reads_keyboard();
+         bool arrows_only            = rib_rmlui_reads_input();
 #endif
          unsigned i;
          unsigned ids[][2] =
