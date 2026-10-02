@@ -1,9 +1,9 @@
-/* Pressing Alt+Enter toggles fullscreen.
+/* Pressing Alt+Enter toggles fullscreen on Windows and Linux.
  *
  * We write input_toggle_fullscreen as nul in an exported game, because f
- * is a gameplay key and a config bind cannot be the Alt+Enter chord. The
- * Win32 accelerator table, the only other Alt+Enter in this tree, is not
- * in a macOS build. The key comes here as Return with RETROKMOD_ALT.
+ * is a gameplay key and a config bind cannot be the chord. The key comes
+ * here as Return with RETROKMOD_ALT. On a Mac the window goes fullscreen
+ * differently, and there we pass Return with Alt on as plain Return.
  *
  * Enter alone is still Start. Holding the chord toggles only once.
  */
@@ -16,11 +16,18 @@
 #define ALT_ENTER_KP_RETURN 271u
 #define ALT_ENTER_ALT 0x04u
 
+#if defined(__APPLE__)
+#define ALT_ENTER_TOGGLES 0
+#else
+#define ALT_ENTER_TOGGLES 1
+#endif
+
 /* The Return of the chord, down or up. In the menu text entry we use it for
  * the fullscreen toggle, and do not press the focused button with it. */
 static inline int alt_enter_is_chord(unsigned code, unsigned modifiers)
 {
-   return (code == ALT_ENTER_RETURN || code == ALT_ENTER_KP_RETURN)
+   return ALT_ENTER_TOGGLES
+         && (code == ALT_ENTER_RETURN || code == ALT_ENTER_KP_RETURN)
          && (modifiers & ALT_ENTER_ALT);
 }
 

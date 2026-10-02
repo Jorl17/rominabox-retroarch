@@ -6777,8 +6777,7 @@ static enum runloop_state_enum runloop_check_state(
    /* Check fullscreen hotkey */
    HOTKEY_CHECK(RARCH_FULLSCREEN_TOGGLE_KEY, CMD_EVENT_FULLSCREEN_TOGGLE, true, NULL);
    /* Alt+Enter is not a config bind. f is a gameplay key, so we export
-    * input_toggle_fullscreen as nul, and the Win32 accelerator for this
-    * chord is not in the macOS build. */
+    * input_toggle_fullscreen as nul. */
    if (alt_enter_fullscreen_due())
       command_event(CMD_EVENT_FULLSCREEN_TOGGLE, NULL);
 
