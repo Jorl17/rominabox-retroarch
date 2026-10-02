@@ -81,24 +81,36 @@ static bool held_by(const input_device_driver_t *joypad, unsigned pad,
          && ((float)abs(joypad->axis(pad, bound->joyaxis)) / 0x8000) > threshold;
 }
 
+/* Read every port used as player 1. That is each port below input_max_users
+ * that is mapped to player 1 in the remap (input_remap_port_pN), through the
+ * joypad index of that port in RetroArch. */
 bool rib_pad_input_down(unsigned bind)
 {
    input_driver_state_t *input_st = input_state_get_ptr();
    settings_t *settings           = config_get_ptr();
-   const unsigned pad             = first_pad();
-   const struct retro_keybind *bound;
-   float threshold;
+   const unsigned *ports;
+   unsigned index;
 
-   if (!input_st || pad >= MAX_USERS || bind >= RARCH_BIND_LIST_END
+   if (!input_st || !settings || bind >= RARCH_BIND_LIST_END
          || !rib_pad_input_id(bind))
       return false;
-   bound     = &input_autoconf_binds[pad][bind];
-   threshold = settings ? settings->floats.input_axis_threshold : 0.5f;
-   return held_by(input_st->primary_joypad, pad, bound, threshold)
+   ports = settings->uints.input_remap_port_map[0];
+   for (index = 0; index < MAX_USERS && ports[index] < MAX_USERS; ++index)
+   {
+      const unsigned pad = settings->uints.input_joypad_index[ports[index]];
+      const float threshold = settings->floats.input_axis_threshold;
+      const struct retro_keybind *bound;
+      if (ports[index] >= settings->uints.input_max_users || pad >= MAX_USERS)
+         continue;
+      bound = &input_autoconf_binds[pad][bind];
+      if (held_by(input_st->primary_joypad, pad, bound, threshold)
 #ifdef HAVE_MFI
-         || held_by(input_st->secondary_joypad, pad, bound, threshold)
+            || held_by(input_st->secondary_joypad, pad, bound, threshold)
 #endif
-         ;
+         )
+         return true;
+   }
+   return false;
 }
 
 bool rib_pad_input_of(uint16_t joykey, uint32_t joyaxis, unsigned *bind)

@@ -34,10 +34,10 @@ enum rib_capture_result { RIB_CAPTURE_PENDING, RIB_CAPTURE_CAPTURED, RIB_CAPTURE
 bool rib_host_capture_start(unsigned index, unsigned seconds);
 void rib_host_capture_cancel(void);
 enum rib_capture_result rib_host_capture_poll(bool allow_pointer, float *remaining);
-/* The hotkeys (hotkeys.inc), read from the keyboard and the pad of the
- * first player. Pass a key by its name in the RetroArch config, and a pad
- * input by its id, as in pad_inputs.h. Both return false for a name or id
- * that is not a key or pad input. */
+/* The hotkeys (hotkeys.inc), read from the keyboard of the first player and
+ * from every pad assigned to player 1. Pass a key by its name in the
+ * RetroArch config, and a pad input by its id, as in pad_inputs.h. Both
+ * return false for a name or id that is not a key or pad input. */
 bool rib_host_key_code(const char *name, unsigned *code);
 bool rib_host_key_down(unsigned code);
 /* Return the code of the key in bind `index` of the first player, or false
