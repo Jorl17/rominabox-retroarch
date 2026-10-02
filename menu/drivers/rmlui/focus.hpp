@@ -86,7 +86,11 @@ public:
    {
       if (!stop(element))
          return false;
-      if (element != current() && !element->Focus(true))
+      /* Focus it again even when the context focus is already on it. In RmlUi
+       * navigation starts from the chain of focused children in the document.
+       * Hiding the menu breaks that chain while the context focus stays, and
+       * Focus() rebuilds the chain without any blur or focus event. */
+      if (!element->Focus(true))
          return false;
       paint();
       return true;
