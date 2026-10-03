@@ -1695,14 +1695,18 @@ DEPENDENCIES
 #include "../libretro-common/streams/chd_stream.c"
 #endif
 
-#ifdef HAVE_7ZIP
+/* We use LZMA2 for both the 7z backend and the LZMA sections of xdelta3. */
+#if defined(HAVE_7ZIP) || (defined(HAVE_PATCH) && defined(HAVE_XDELTA))
 #ifndef GRIFFIN_HAVE_R7Z_LZMA
 #include "../libretro-common/formats/7z/r7z_lzma.c"
 #define GRIFFIN_HAVE_R7Z_LZMA 1
 #endif
-#include "../libretro-common/formats/7z/r7z_archive.c"
 #include "../libretro-common/formats/7z/r7z_lzma_stream.c"
 #include "../libretro-common/formats/7z/r7z_lzma2.c"
+#endif
+
+#ifdef HAVE_7ZIP
+#include "../libretro-common/formats/7z/r7z_archive.c"
 #include "../libretro-common/formats/7z/r7z_bcj2.c"
 #include "../libretro-common/formats/7z/r7z_filters.c"
 #endif

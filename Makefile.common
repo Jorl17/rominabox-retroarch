@@ -270,6 +270,15 @@ ifeq ($(HAVE_PATCH), 1)
    ifeq ($(HAVE_XDELTA), 1)
       DEFINES += -DHAVE_XDELTA
       OBJ     += $(LIBRETRO_COMM_DIR)/encodings/encoding_vcdiff.o
+      # xdelta3's LZMA sections decode through the LZMA2 decoder the 7z
+      # backend builds, and r7z_lzma.o comes with CHD when 7z is off.
+      ifneq ($(HAVE_7ZIP), 1)
+         OBJ += $(LIBRETRO_COMM_DIR)/formats/7z/r7z_lzma_stream.o \
+                $(LIBRETRO_COMM_DIR)/formats/7z/r7z_lzma2.o
+         ifneq ($(HAVE_CHD), 1)
+            OBJ += $(LIBRETRO_COMM_DIR)/formats/7z/r7z_lzma.o
+         endif
+      endif
    endif
 endif
 

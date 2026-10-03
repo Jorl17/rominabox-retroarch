@@ -24,6 +24,8 @@
 #include <string.h>
 
 #include <encodings/encoding_vcdiff.h>
+#include <encodings/crc32.h>
+#include <7z/r7z_lzma2.h>
 
 /* --------------------------------------------------------------------
  * VCDIFF (RFC 3284), decode side only.
@@ -46,6 +48,22 @@
 /* Win_Indicator bits (s4.2). */
 #define VCD_SOURCE     0x01
 #define VCD_TARGET     0x02
+
+/* Delta_Indicator bits (s4.3), for the sections compressed with a
+ * secondary compressor. */
+#define VCD_DATACOMP   0x01
+#define VCD_INSTCOMP   0x02
+#define VCD_ADDRCOMP   0x04
+
+/* The two xdelta3 extensions, both written by default by the xdelta
+ * command. One is an Adler-32 of each target window, flagged in the
+ * Win_Indicator and stored after the section lengths. The other is LZMA as
+ * the secondary compressor, with its id after the Hdr_Indicator.  Each
+ * section compressed with it is the decoded length of the section followed
+ * by a complete .xz stream of one LZMA2 filter.  We refuse the other xdelta3
+ * compressors (DJW, FGK). */
+#define VCD_ADLER32         0x04
+#define VCD_SECONDARY_LZMA  2
 
 /* The address cache (s5.1): four "near" slots and three pages of 256
  * "same" slots. */
@@ -152,6 +170,21 @@ struct vcdiff_stream
    uint32_t       near_cache[VCD_NEAR];
    uint32_t       same[VCD_SAME * 256];
    unsigned       next_slot;
+
+   /* The xdelta3 LZMA, when the header has its id.  In xdelta3 there is one
+    * LZMA stream for each kind of section (data, instructions, addresses)
+    * through the whole patch, flushed at the end of every window, and a
+    * window may refer back to the output of earlier windows.  So we keep
+    * the decoder of each kind, and all its output, from window to window.
+    * sec[kind] contains the sections of that kind from every window, sized
+    * once from the lengths in the patch. */
+   uint8_t        lzma;
+   uint8_t        sec_begun[3];
+   uint8_t       *sec[3];
+   size_t         sec_total[3];
+   size_t         sec_pos[3];
+   uint16_t      *sec_probs[3];
+   rlzma2_dec_t   sec_dec[3];
 };
 
 /* kept for the internal functions, which predate the streaming form */
@@ -349,6 +382,218 @@ static bool vcd_copy(struct vcd_dec *d, const uint8_t *seg, size_t seg_len,
    return true;
 }
 
+/* --------------------------------------------------------------------
+ * xdelta3's extensions
+ * -------------------------------------------------------------------- */
+
+/* Adler-32 (RFC 1950), stored by xdelta3 for each target window. */
+static uint32_t vcd_adler32(const uint8_t *buf, size_t len)
+{
+   uint32_t a = 1, b = 0;
+
+   while (len)
+   {
+      size_t n = len < 5552 ? len : 5552;   /* the most before b can overflow */
+      len     -= n;
+      while (n--)
+      {
+         a += *buf++;
+         b += a;
+      }
+      a %= 65521;
+      b %= 65521;
+   }
+   return (b << 16) | a;
+}
+
+static uint32_t vcd_be32(const uint8_t *p)
+{
+   return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16)
+        | ((uint32_t)p[2] <<  8) |  (uint32_t)p[3];
+}
+
+static uint32_t vcd_le32(const uint8_t *p)
+{
+   return  (uint32_t)p[0]        | ((uint32_t)p[1] <<  8)
+        | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+/* The .xz format's integer: little-endian base-128, at most nine bytes,
+ * in its shortest form. */
+static bool vcd_xz_varint(const uint8_t **p, const uint8_t *end,
+      uint64_t *out)
+{
+   uint64_t v = 0;
+   unsigned i;
+
+   for (i = 0; i < 9; i++)
+   {
+      uint8_t b;
+      if (*p >= end)
+         return false;
+      b  = *(*p)++;
+      v |= (uint64_t)(b & 0x7F) << (7 * i);
+      if (!(b & 0x80))
+      {
+         if (b == 0 && i != 0)
+            return false;
+         *out = v;
+         return true;
+      }
+   }
+   return false;
+}
+
+/* The start of the LZMA stream of a kind, in its first compressed
+ * section.  It is an .xz stream header and one block header for an LZMA2
+ * filter, both with their CRC-32s.  There is nothing more of the .xz
+ * format in the patch, so no end marker, index or footer. */
+static bool vcd_lzma_begin(struct vcd_dec *d, unsigned kind,
+      const uint8_t **pp, const uint8_t *end)
+{
+   static const uint8_t magic[6] = { 0xFD, '7', 'z', 'X', 'Z', 0x00 };
+   const uint8_t *p = *pp, *header_end, *q;
+   size_t         header_size;
+   uint64_t       packed = 0, unpacked = 0, filter = 0, props = 0;
+   uint8_t        flags, prop;
+
+   /* the stream header: magic, flags, their CRC-32 */
+   if ((size_t)(end - p) < 12 || memcmp(p, magic, sizeof(magic)) != 0)
+      return false;
+   if (p[6] != 0 || (p[7] & 0xF0))
+      return false;
+   if (encoding_crc32(0, p + 6, 2) != vcd_le32(p + 8))
+      return false;
+   p += 12;
+
+   /* the block header: its size, flags, the sizes it may state, one
+    * LZMA2 filter with its dictionary byte, padding, CRC-32 */
+   if (p >= end)
+      return false;
+   header_size = ((size_t)*p + 1) * 4;
+   if ((size_t)(end - p) < header_size)
+      return false;
+   header_end = p + header_size - 4;
+   if (encoding_crc32(0, p, header_size - 4) != vcd_le32(header_end))
+      return false;
+   flags = p[1];
+   q     = p + 2;
+   if (flags & 0x3F)                   /* one filter, no reserved bit */
+      return false;
+   if ((flags & 0x40) && !vcd_xz_varint(&q, header_end, &packed))
+      return false;
+   if ((flags & 0x80) && !vcd_xz_varint(&q, header_end, &unpacked))
+      return false;
+   if (     !vcd_xz_varint(&q, header_end, &filter) || filter != 0x21
+         || !vcd_xz_varint(&q, header_end, &props)  || props  != 1
+         || q >= header_end)
+      return false;
+   prop = *q++;
+   while (q < header_end)
+      if (*q++ != 0)
+         return false;
+
+   if (     !d->sec_probs[kind]
+         && !(d->sec_probs[kind] = (uint16_t*)malloc(
+               RLZMA2_NUM_PROBS * sizeof(uint16_t))))
+      return false;
+   if (rlzma2_dec_init(&d->sec_dec[kind], prop, d->sec_probs[kind],
+            d->sec[kind], d->sec_total[kind]) != RLZMA_OK)
+      return false;
+   d->sec_begun[kind] = 1;
+   *pp = header_end + 4;
+   return true;
+}
+
+/* Section @kind of the window, compressed with the xdelta3 LZMA.  It is
+ * the decoded length, then the LZMA stream of the kind up to that length.
+ * We stop there and treat anything left over as damage, as in the xdelta3
+ * decoder.  On success the section is the decoded copy. */
+static bool vcd_section(struct vcd_dec *d, unsigned kind,
+      const uint8_t **start, const uint8_t **end)
+{
+   const uint8_t *q = *start;
+   uint32_t       size = 0;
+   size_t         from = d->sec_pos[kind], taken;
+   int            status;
+
+   if (!vcd_varint(&q, *end, &size) || size == 0)
+      return false;
+   if ((size_t)size > d->sec_total[kind] - from)
+      return false;
+   if (!d->sec_begun[kind] && !vcd_lzma_begin(d, kind, &q, *end))
+      return false;
+   taken = (size_t)(*end - q);
+   if (rlzma2_dec_decode(&d->sec_dec[kind], from + size, q, &taken, 0,
+            &status) != RLZMA_OK)
+      return false;
+   if (     d->sec_dec[kind].lzma.dic_pos != from + size
+         || taken != (size_t)(*end - q))
+      return false;
+   (void)status;
+   d->sec_pos[kind] = from + size;
+   *start = d->sec[kind] + from;
+   *end   = d->sec[kind] + from + size;
+   return true;
+}
+
+/* The total size of each kind of section in the LZMA streams of the patch,
+ * from the lengths in the windows, so that we decode each kind into one
+ * allocation and can refer back across it.  False when we cannot walk a
+ * window, which we would refuse in the decode anyway. */
+static bool vcd_section_totals(const uint8_t *p, const uint8_t *pend,
+      size_t totals[3])
+{
+   totals[0] = totals[1] = totals[2] = 0;
+
+   while (p < pend)
+   {
+      uint32_t seg_len = 0, seg_pos = 0, enc_len = 0, tgt_len = 0;
+      uint32_t lens[3] = { 0, 0, 0 };
+      unsigned kind;
+      uint8_t  win_ind, delta_ind;
+
+      win_ind = *p++;
+      if (win_ind & (VCD_SOURCE | VCD_TARGET))
+      {
+         if (     !vcd_varint(&p, pend, &seg_len)
+               || !vcd_varint(&p, pend, &seg_pos))
+            return false;
+      }
+      if (     !vcd_varint(&p, pend, &enc_len)
+            || !vcd_varint(&p, pend, &tgt_len))
+         return false;
+      if (p >= pend)
+         return false;
+      delta_ind = *p++;
+      for (kind = 0; kind < 3; kind++)
+         if (!vcd_varint(&p, pend, &lens[kind]))
+            return false;
+      if (win_ind & VCD_ADLER32)
+      {
+         if ((size_t)(pend - p) < 4)
+            return false;
+         p += 4;
+      }
+      for (kind = 0; kind < 3; kind++)
+      {
+         const uint8_t *q = p;
+         uint32_t       size = 0;
+         if ((size_t)(pend - p) < (size_t)lens[kind])
+            return false;
+         p += lens[kind];
+         if (!(delta_ind & (1u << kind)))
+            continue;
+         if (!vcd_varint(&q, p, &size))
+            return false;
+         if (totals[kind] > ((size_t)-1) - size)
+            return false;
+         totals[kind] += size;
+      }
+   }
+   return true;
+}
+
 /* Sum the windows' target lengths without decoding them, so the output
  * is one allocation of the right size.
  *
@@ -391,6 +636,12 @@ static size_t vcd_total_target(const uint8_t *p, const uint8_t *pend,
             || !vcd_varint(&p, pend, &inst_len)
             || !vcd_varint(&p, pend, &addr_len))
          return 0;
+      if (win_ind & VCD_ADLER32)
+      {
+         if ((size_t)(pend - p) < 4)
+            return 0;
+         p += 4;
+      }
       if (      (size_t)(pend - p) < (size_t)data_len
             || (size_t)(pend - p) - data_len < (size_t)inst_len
             || (size_t)(pend - p) - data_len - inst_len < (size_t)addr_len)
@@ -423,7 +674,9 @@ static enum vcd_win vcd_window(struct vcd_dec *d, const uint8_t **pp,
    uint32_t seg_len = 0, seg_pos = 0;
    uint32_t enc_len = 0, tgt_len = 0;
    uint32_t data_len = 0, inst_len = 0, addr_len = 0;
+   uint32_t checksum = 0;
    size_t   win_start = d->out_len;
+   const uint8_t *wend;
    uint8_t  win_ind, delta_ind;
 
    if (p >= pend)
@@ -465,16 +718,24 @@ static enum vcd_win vcd_window(struct vcd_dec *d, const uint8_t **pp,
       return VCD_WIN_ERROR;
    delta_ind = *p++;
 
-   /* Any of the three sections being compressed means a secondary
-    * compressor, which this decoder does not implement and must not
-    * pretend to. */
-   if (delta_ind != 0)
+   /* We decode a compressed section with the secondary compressor in the
+    * header, and we support only the xdelta3 LZMA. */
+   if (     (delta_ind & ~(VCD_DATACOMP | VCD_INSTCOMP | VCD_ADDRCOMP))
+         || (delta_ind && !d->lzma))
       return VCD_WIN_ERROR;
 
    if (     !vcd_varint(&p, pend, &data_len)
          || !vcd_varint(&p, pend, &inst_len)
          || !vcd_varint(&p, pend, &addr_len))
       return VCD_WIN_ERROR;
+
+   if (win_ind & VCD_ADLER32)
+   {
+      if ((size_t)(pend - p) < 4)
+         return VCD_WIN_ERROR;
+      checksum = vcd_be32(p);
+      p       += 4;
+   }
 
    /* the three sections follow, back to back */
    if (      (size_t)(pend - p) < (size_t)data_len
@@ -485,6 +746,12 @@ static enum vcd_win vcd_window(struct vcd_dec *d, const uint8_t **pp,
    dp = p;             dend = dp + data_len;
    ip = dend;          iend = ip + inst_len;
    ap = iend;          aend = ap + addr_len;
+   wend = aend;
+
+   if (     ((delta_ind & VCD_DATACOMP) && !vcd_section(d, 0, &dp, &dend))
+         || ((delta_ind & VCD_INSTCOMP) && !vcd_section(d, 1, &ip, &iend))
+         || ((delta_ind & VCD_ADDRCOMP) && !vcd_section(d, 2, &ap, &aend)))
+      return VCD_WIN_ERROR;
 
    /* On a 32-bit host a large enough window could carry the end past
     * SIZE_MAX; every bound below is expressed against that sum, so it
@@ -555,8 +822,11 @@ static enum vcd_win vcd_window(struct vcd_dec *d, const uint8_t **pp,
 
    if (d->out_len != win_start + tgt_len)
       return VCD_WIN_ERROR;
+   if (     (win_ind & VCD_ADLER32)
+         && vcd_adler32(d->out + win_start, tgt_len) != checksum)
+      return VCD_WIN_ERROR;
 
-   *pp = aend;
+   *pp = wend;
    return VCD_WIN_OK;
 }
 
@@ -609,10 +879,17 @@ vcdiff_stream_t *vcdiff_stream_open(const uint8_t *patch, size_t patch_len,
    p   = patch + 4;
    hdr = *p++;
 
-   /* A secondary compressor or a replacement code table would change
-    * how everything below is read.  Refuse rather than misread. */
-   if (hdr & (VCD_DECOMPRESS | VCD_CODETABLE))
+   /* With a replacement code table, or a secondary compressor other than
+    * the xdelta3 LZMA, we would read everything below differently. Refuse
+    * the patch instead of reading it wrong. */
+   if (hdr & VCD_CODETABLE)
       return NULL;
+   if (hdr & VCD_DECOMPRESS)
+   {
+      if (p >= patch + patch_len || *p != VCD_SECONDARY_LZMA)
+         return NULL;
+      p++;
+   }
 
    if (hdr & VCD_APPHEADER)
    {
@@ -628,6 +905,24 @@ vcdiff_stream_t *vcdiff_stream_open(const uint8_t *patch, size_t patch_len,
 
    s->patch     = patch;
    s->patch_len = patch_len;
+   s->lzma      = (hdr & VCD_DECOMPRESS) ? 1 : 0;
+
+   if (s->lzma)
+   {
+      unsigned kind;
+      if (!vcd_section_totals(p, patch + patch_len, s->sec_total))
+      {
+         free(s);
+         return NULL;
+      }
+      for (kind = 0; kind < 3; kind++)
+         if (     s->sec_total[kind]
+               && !(s->sec[kind] = (uint8_t*)malloc(s->sec_total[kind])))
+         {
+            vcdiff_stream_free(s);
+            return NULL;
+         }
+   }
    s->p_off     = (size_t)(p - patch);
    s->src_len   = src_len;
 
@@ -707,6 +1002,12 @@ void vcdiff_stream_free(vcdiff_stream_t *s)
       return;
    free(s->out);
    free(s->own_src);
+   free(s->sec[0]);
+   free(s->sec[1]);
+   free(s->sec[2]);
+   free(s->sec_probs[0]);
+   free(s->sec_probs[1]);
+   free(s->sec_probs[2]);
    free(s);
 }
 
