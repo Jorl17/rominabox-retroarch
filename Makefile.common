@@ -2037,10 +2037,20 @@ ifneq ($(HAVE_BUILTINSPIRV_CROSS), 0)
    OBJ += $(DEPS_DIR)/SPIRV-Cross/spirv_cross_parsed_ir.o
    OBJ += $(DEPS_DIR)/SPIRV-Cross/spirv_cross_c.o
    # The C API translation unit compiles its backend wrappers only
-   # when these are defined truthy.
+   # when these are defined truthy. A wrapper keeps its whole backend
+   # linked, so HLSL and MSL are on only for a build with a driver that
+   # compiles to them; slang_process.c asks for no other backend.
    DEFINES += -DSPIRV_CROSS_C_API_GLSL=1
-   DEFINES += -DSPIRV_CROSS_C_API_HLSL=1
-   DEFINES += -DSPIRV_CROSS_C_API_MSL=1
+   ifeq ($(HAVE_HLSL), 1)
+      DEFINES += -DSPIRV_CROSS_C_API_HLSL=1
+   else
+      DEFINES += -DSPIRV_CROSS_C_API_HLSL=0
+   endif
+   ifeq ($(HAVE_METAL), 1)
+      DEFINES += -DSPIRV_CROSS_C_API_MSL=1
+   else
+      DEFINES += -DSPIRV_CROSS_C_API_MSL=0
+   endif
    DEFINES += -DSPIRV_CROSS_C_API_CPP=0
    DEFINES += -DSPIRV_CROSS_C_API_REFLECT=0
 else
