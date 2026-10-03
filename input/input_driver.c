@@ -6571,6 +6571,8 @@ static void input_rumble_follow_press(input_driver_state_t *input_st,
 bool input_set_rumble_state(unsigned port,
       enum retro_rumble_effect effect, uint16_t strength)
 {
+   settings_t *settings = config_get_ptr();
+
    /* Both come from the core. */
    if (     port >= MAX_USERS
          || (     effect != RETRO_RUMBLE_STRONG
@@ -6578,7 +6580,10 @@ bool input_set_rumble_state(unsigned port,
       return false;
 
    input_driver_st.rumble_strength[port][effect] = strength;
-   return input_rumble_post(config_get_ptr(), port, effect, strength);
+   /* A user mapped to no port has no pad to rumble. */
+   if (input_rumble_port(&input_driver_st, settings, port) >= MAX_USERS)
+      return false;
+   return input_rumble_post(settings, port, effect, strength);
 }
 
 /**
