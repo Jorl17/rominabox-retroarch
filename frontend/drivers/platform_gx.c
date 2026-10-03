@@ -58,7 +58,7 @@
 #include "../../menu/menu_entries.h"
 
 #if defined(HW_RVL)
-#include "../../memory/wii/mem2_manager.h"
+#include <memory/mem2_manager.h>
 #endif
 #endif
 
@@ -119,7 +119,6 @@ static struct
    const char *name;
 } gx_devices[GX_DEVICE_END];
 
-static slock_t *gx_device_mutex          = NULL;
 static slock_t *gx_device_cond_mutex     = NULL;
 static scond_t *gx_device_cond           = NULL;
 static sthread_t *gx_device_thread       = NULL;
@@ -133,8 +132,6 @@ static void gx_devthread(void *a)
 
    while (!gx_stop_dev_thread)
    {
-      slock_lock(gx_device_mutex);
-
       for (i = 0; i < GX_DEVICE_END; i++)
       {
          if (gx_devices[i].mounted)
@@ -153,7 +150,6 @@ static void gx_devthread(void *a)
             gx_devices[i].mounted = fatMountSimple(gx_devices[i].name, gx_devices[i].interface);
       }
 
-      slock_unlock(gx_device_mutex);
       scond_wait_timeout(gx_device_cond, gx_device_cond_mutex, 1000000);
    }
 
@@ -176,7 +172,19 @@ static void frontend_gx_get_env(int *argc, char *argv[],
 #endif
 
 #ifdef HW_DOL
-   chdir("carda:/retroarch");
+   /* If the loader provided a usable argv[0] (e.g. Swiss),
+    * fatInitDefault() has already chdir()'d to the directory
+    * RetroArch was launched from, and the defaults derived from
+    * getcwd() below must be rooted there. Only fall back to a
+    * fixed location when no launch path is available, preferring
+    * the Serial Port 2 SD adapter mount ("sd": SD2SP2 and
+    * similar devices) over an SD Gecko in slot A, mirroring
+    * libfat's own device priority. */
+   if (*argc < 1 || !argv || !argv[0] || !strstr(argv[0], ":/"))
+   {
+      if (chdir("sd:/retroarch") != 0)
+         chdir("carda:/retroarch");
+   }
 #endif
 
    getcwd(g_defaults.dirs[DEFAULT_DIR_CORE],
@@ -219,7 +227,7 @@ static void frontend_gx_get_env(int *argc, char *argv[],
          if (     string_starts_with_size(argv[0], "usb1", STRLEN_CONST("usb1"))
                || string_starts_with_size(argv[0], "usb2", STRLEN_CONST("usb2")))
          {
-            size_t _len = strlcpy(g_defaults.dirs[DEFAULT_DIR_CORE], "usb",
+            size_t _len = strlcpy_lit(g_defaults.dirs[DEFAULT_DIR_CORE], "usb",
                   sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
             strlcpy(g_defaults.dirs[DEFAULT_DIR_CORE]       + _len,
                   argv[0] + 4,
@@ -386,7 +394,6 @@ static void frontend_gx_init(void *data)
 
    gx_device_cond_mutex = slock_new();
    gx_device_cond       = scond_new();
-   gx_device_mutex      = slock_new();
    gx_device_thread     = sthread_create(gx_devthread, NULL);
 #endif
 }
@@ -402,11 +409,9 @@ static void frontend_gx_deinit(void *data)
 
    /* Release the sync primitives allocated in frontend_gx_init.
     * Without this, a frontend re-init (e.g. CMD_EVENT_QUIT followed
-    * by relaunch) leaks one mutex+cond+mutex triple every cycle. */
-   slock_free(gx_device_mutex);
+    * by relaunch) leaks a mutex and a cond every cycle. */
    slock_free(gx_device_cond_mutex);
    scond_free(gx_device_cond);
-   gx_device_mutex      = NULL;
    gx_device_cond_mutex = NULL;
    gx_device_cond       = NULL;
    gx_device_thread     = NULL;
@@ -478,8 +483,24 @@ static void frontend_gx_process_args(int *argc, char *argv[])
 #ifndef IS_SALAMANDER
    /* A big hack: sometimes Salamander doesn't save the new core
     * it loads on first boot, so we make sure
-    * active core path is set here. */
+    * active core path is set here.
+    *
+    * On GameCube there is no salamander and no exec: the core
+    * linked into the DOL the loader started is the only core
+    * this process can ever run, so argv[0] is authoritative.
+    * retroarch-salamander.cfg is still read at startup and names
+    * whichever core DOL ran last, so when the user launches a
+    * different core DOL from Swiss, RARCH_PATH_CORE points at the
+    * wrong core. Every content load then thinks a core switch is
+    * needed, goes down the fork path, which HW_DOL cannot do, and
+    * the frontend quietly exits (the console reboots). The next
+    * boot of the same DOL works because that quit rewrote the
+    * salamander config. Always overwrite the stale value here. */
+#ifdef HW_DOL
+   if (*argc >= 1 && argv && argv[0])
+#else
    if (path_is_empty(RARCH_PATH_CORE) && *argc >= 1)
+#endif
    {
       char *last_slash = strrchr(argv[0], '/');
       if (last_slash)
@@ -538,6 +559,16 @@ static int frontend_gx_parse_drive_list(void *data, bool load_content)
          msg_hash_to_str(MSG_EXTERNAL_APPLICATION_DIR),
          enum_idx,
          FILE_TYPE_DIRECTORY, 0, 0, NULL);
+#elif defined(EXTERNAL_LIBOGC)
+   /* Modern libfat mounts a Serial Port 2 SD adapter
+    * (SD2SP2 and similar devices) as "sd" on GameCube.
+    * The internal (vendored) libogc has no SP2 driver,
+    * hence the EXTERNAL_LIBOGC guard. */
+   menu_entries_append(list,
+         "sd:/",
+         msg_hash_to_str(MSG_EXTERNAL_APPLICATION_DIR),
+         enum_idx,
+         FILE_TYPE_DIRECTORY, 0, 0, NULL);
 #endif
    menu_entries_append(list,
          "carda:/",
@@ -561,28 +592,6 @@ static void frontend_gx_shutdown(bool unused)
 #endif
 }
 
-static uint64_t frontend_gx_get_total_mem(void)
-{
-#if defined(HW_RVL) && !defined(IS_SALAMANDER)
-   return SYSMEM1_SIZE + gx_mem2_total();
-#else
-   return SYSMEM1_SIZE;
-#endif
-}
-
-static uint64_t frontend_gx_get_free_mem(void)
-{
-   /* SYS_GetArena1Size() reports remaining MEM1 directly;
-    * the previous expression was SYSMEM1_SIZE - (SYSMEM1_SIZE - that),
-    * which the compiler folds anyway but reads as if it meant
-    * something. */
-   uint64_t total = SYS_GetArena1Size();
-#if defined(HW_RVL) && !defined(IS_SALAMANDER)
-   total += (gx_mem2_total() - gx_mem2_used());
-#endif
-   return total;
-}
-
 frontend_ctx_driver_t frontend_ctx_gx = {
    frontend_gx_get_env,             /* get_env */
    frontend_gx_init,
@@ -602,8 +611,6 @@ frontend_ctx_driver_t frontend_ctx_gx = {
    frontend_gx_get_arch,            /* get_architecture */
    NULL,                            /* get_powerstate */
    frontend_gx_parse_drive_list,    /* parse_drive_list */
-   frontend_gx_get_total_mem,       /* get_total_mem */
-   frontend_gx_get_free_mem,        /* get_free_mem */
    NULL,                            /* install_signal_handler */
    NULL,                            /* get_sighandler_state */
    NULL,                            /* set_sighandler_state */
@@ -612,8 +619,6 @@ frontend_ctx_driver_t frontend_ctx_gx = {
    NULL,                            /* detach_console */
    NULL,                            /* get_lakka_version */
    NULL,                            /* set_screen_brightness */
-   NULL,                            /* watch_path_for_changes */
-   NULL,                            /* check_for_path_changes */
    NULL,                            /* set_sustained_performance_mode */
    NULL,                            /* get_cpu_model_name  */
    NULL,                            /* get_user_language   */

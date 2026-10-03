@@ -241,7 +241,7 @@ static void gl_cg_set_uniform_parameter(
 
       if (param->lookup.add_prefix)
       {
-         size_t _len = strlcpy(ident, "IN.", sizeof(ident));
+         size_t _len = strlcpy_lit(ident, "IN.", sizeof(ident));
          strlcpy(ident + _len, param->lookup.ident, sizeof(ident) - _len);
       }
       location = cgGetNamedParameter(prog, param->lookup.add_prefix ? ident : param->lookup.ident);
@@ -342,16 +342,18 @@ static bool gl_cg_set_coords(void *shader_data,
       return true;
    }
 
-   if (cg->prg[cg->active_idx].vertex)
+   /* A NULL stream means the caller has nothing for that attribute;
+    * leave it unbound rather than walk a NULL pointer. */
+   if (cg->prg[cg->active_idx].vertex && coords->vertex)
       gl_cg_set_coord_array(cg->prg[cg->active_idx].vertex, cg, coords->vertex, 2);
 
-   if (cg->prg[cg->active_idx].tex)
+   if (cg->prg[cg->active_idx].tex && coords->tex_coord)
       gl_cg_set_coord_array(cg->prg[cg->active_idx].tex, cg, coords->tex_coord, 2);
 
-   if (cg->prg[cg->active_idx].lut_tex)
+   if (cg->prg[cg->active_idx].lut_tex && coords->lut_tex_coord)
       gl_cg_set_coord_array(cg->prg[cg->active_idx].lut_tex, cg, coords->lut_tex_coord, 2);
 
-   if (cg->prg[cg->active_idx].color)
+   if (cg->prg[cg->active_idx].color && coords->color)
       gl_cg_set_coord_array(cg->prg[cg->active_idx].color, cg, coords->color, 4);
 
    return true;
@@ -386,12 +388,12 @@ static void gl_cg_set_params(void *dat, void *shader_data)
    float originalaspectrotated;
    video_shader_ctx_params_t          *params =
       (video_shader_ctx_params_t*)dat;
-   unsigned width                             = params->width;
-   unsigned height                            = params->height;
-   unsigned tex_width                         = params->tex_width;
-   unsigned tex_height                        = params->tex_height;
-   unsigned out_width                         = params->out_width;
-   unsigned out_height                        = params->out_height;
+   unsigned width                             = VIDEO_SCALE_W(params->dims);
+   unsigned height                            = VIDEO_SCALE_H(params->dims);
+   unsigned tex_width                         = VIDEO_SCALE_W(params->tex_dims);
+   unsigned tex_height                        = VIDEO_SCALE_H(params->tex_dims);
+   unsigned out_width                         = VIDEO_SCALE_W(params->out_dims);
+   unsigned out_height                        = VIDEO_SCALE_H(params->out_dims);
    unsigned frame_count                       = params->frame_counter;
    const void *_info                          = params->info;
    const void *_prev_info                     = params->prev_info;
@@ -431,14 +433,14 @@ static void gl_cg_set_params(void *dat, void *shader_data)
             1.0);
    }
 #endif
-   cg_gl_set_param_1f(cg->prg[cg->active_idx].rotation_f, (float)retroarch_get_rotation());
-   cg_gl_set_param_1f(cg->prg[cg->active_idx].rotation_v, (float)retroarch_get_rotation());
+   cg_gl_set_param_1f(cg->prg[cg->active_idx].rotation_f, (float)video_driver_get_rotation_snapshot());
+   cg_gl_set_param_1f(cg->prg[cg->active_idx].rotation_v, (float)video_driver_get_rotation_snapshot());
 
    cg_gl_set_param_1f(cg->prg[cg->active_idx].originalaspect_f, (float)video_driver_get_core_aspect());
    cg_gl_set_param_1f(cg->prg[cg->active_idx].originalaspect_v, (float)video_driver_get_core_aspect());
 
    /* OriginalAspectRotated: return 1/aspect for 90 and 270 rotated content */
-   rot = retroarch_get_rotation();
+   rot = video_driver_get_rotation_snapshot();
    originalaspectrotated = video_driver_get_core_aspect();
    if (rot == 1 || rot == 3)
       originalaspectrotated = 1/originalaspectrotated;
@@ -919,7 +921,7 @@ static void gl_cg_set_program_attributes(void *data, unsigned i)
    if (i > 1)
    {
       char pass_str[64];
-      size_t _len = strlcpy(pass_str, "PASSPREV", sizeof(pass_str));
+      size_t _len = strlcpy_lit(pass_str, "PASSPREV", sizeof(pass_str));
       snprintf(pass_str + _len, sizeof(pass_str) - _len, "%u", i);
       gl_cg_set_pass_attrib(&cg->prg[i], &cg->prg[i].orig, pass_str);
    }

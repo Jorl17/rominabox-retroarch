@@ -56,7 +56,7 @@
  * All bytes are crafted in C rather than committed as binary fixtures.
  *
  * Build with AddressSanitizer for full coverage:
- *   make CFLAGS='-fsanitize=address -g -O0' LDFLAGS='-fsanitize=address'
+ *   make SANITIZER=address
  */
 
 #include <stdio.h>
@@ -66,6 +66,10 @@
 
 #include <file/archive_file.h>
 #include <lists/string_list.h>
+#include <encodings/crc32.h>
+#include <encodings/deflate.h>
+#include <streams/file_stream.h>
+#include <file/file_path.h>
 
 static int failures = 0;
 
@@ -125,6 +129,94 @@ static size_t write_minimal_lfh(uint8_t *dst, const char *name)
    if (namelen > 0)
       memcpy(dst + 30, name, namelen);
    return 30 + namelen;
+}
+
+static size_t write_stored_lfh(uint8_t *dst, const char *name,
+      const uint8_t *payload, size_t payload_len, uint32_t crc32)
+{
+   size_t namelen = name ? strlen(name) : 0;
+   put_u32(dst + 0,  LFH_SIG);
+   put_u16(dst + 4,  20);        /* version needed to extract          */
+   put_u16(dst + 6,  0);         /* flags                              */
+   put_u16(dst + 8,  0);         /* method = STORED                    */
+   put_u16(dst + 10, 0);         /* mtime                              */
+   put_u16(dst + 12, 0);         /* mdate                              */
+   put_u32(dst + 14, crc32);
+   put_u32(dst + 18, (uint32_t)payload_len);
+   put_u32(dst + 22, (uint32_t)payload_len);
+   put_u16(dst + 26, (uint16_t)namelen);
+   put_u16(dst + 28, 0);         /* extra length                       */
+   if (namelen > 0)
+      memcpy(dst + 30, name, namelen);
+   if (payload_len > 0)
+      memcpy(dst + 30 + namelen, payload, payload_len);
+   return 30 + namelen + payload_len;
+}
+
+static size_t write_stored_cfh(uint8_t *dst, const char *name,
+      size_t payload_len, uint32_t crc32, uint32_t lfh_offset)
+{
+   size_t namelen = name ? strlen(name) : 0;
+   put_u32(dst + 0,  CFH_SIG);
+   put_u16(dst + 4,  20);        /* version made by                    */
+   put_u16(dst + 6,  20);        /* version needed to extract          */
+   put_u16(dst + 8,  0);         /* flags                              */
+   put_u16(dst + 10, 0);         /* method = STORED                    */
+   put_u16(dst + 12, 0);         /* mtime                              */
+   put_u16(dst + 14, 0);         /* mdate                              */
+   put_u32(dst + 16, crc32);
+   put_u32(dst + 20, (uint32_t)payload_len);
+   put_u32(dst + 24, (uint32_t)payload_len);
+   put_u16(dst + 28, (uint16_t)namelen);
+   put_u16(dst + 30, 0);         /* extra length                       */
+   put_u16(dst + 32, 0);         /* comment length                     */
+   put_u16(dst + 34, 0);         /* disk number start                  */
+   put_u16(dst + 36, 0);         /* internal attributes                */
+   put_u32(dst + 38, 0);         /* external attributes                */
+   put_u32(dst + 42, lfh_offset);
+   if (namelen > 0)
+      memcpy(dst + 46, name, namelen);
+   return 46 + namelen;
+}
+
+static size_t write_appledouble_collision_zip(uint8_t *dst)
+{
+   static const char *names[]        = {
+      "__MACOSX/regular.nes",
+      "folder/._sidecar.nes",
+      "folder\\._backslash.nes",
+      "__MACOSX/._game.nes",
+      "game.nes"
+   };
+   static const char metadata[]      = "METADATA";
+   static const char rom[]           = "ROMDATA";
+   uint32_t lfh_offsets[5]           = {0};
+   uint32_t cdir_offset              = 0;
+   uint32_t cdir_size                = 0;
+   size_t len                        = 0;
+   size_t i;
+
+   for (i = 0; i < 4; i++)
+   {
+      lfh_offsets[i] = (uint32_t)len;
+      len += write_stored_lfh(dst + len, names[i],
+            (const uint8_t*)metadata, sizeof(metadata) - 1, 0x8927a858u);
+   }
+
+   lfh_offsets[4] = (uint32_t)len;
+   len += write_stored_lfh(dst + len, names[4],
+         (const uint8_t*)rom, sizeof(rom) - 1, 0xcd69c26au);
+
+   cdir_offset = (uint32_t)len;
+   for (i = 0; i < 4; i++)
+      len += write_stored_cfh(dst + len, names[i],
+            sizeof(metadata) - 1, 0x8927a858u, lfh_offsets[i]);
+   len += write_stored_cfh(dst + len, names[4],
+         sizeof(rom) - 1, 0xcd69c26au, lfh_offsets[4]);
+   cdir_size = (uint32_t)len - cdir_offset;
+
+   len += write_eocd(dst + len, 5, cdir_size, cdir_offset);
+   return len;
 }
 
 /* --- test harness -------------------------------------------------- */
@@ -342,6 +434,513 @@ static void test_directory_size_overflow(void)
          buf, len);
 }
 
+/* ================================================================== */
+/* Case F: macOS AppleDouble metadata before the real content file.
+ * The archive list must skip the metadata entry, and explicit member
+ * reads must match "game.nes" exactly instead of substring-matching
+ * "__MACOSX/._game.nes".                                             */
+/* ================================================================== */
+static void test_appledouble_exact_member_selection(void)
+{
+   uint8_t  zip_bytes[1024];
+   uint8_t  source_bytes[16];
+   int      failures_before           = failures;
+   size_t   len                       = 0;
+   void    *read_buf                  = NULL;
+   int64_t  read_len                  = 0;
+   int64_t  source_size               = 0;
+   int64_t  source_read               = 0;
+   char     archive_path[128];
+   const char *tmp_path               = "rarch_zip_regression_test.zip";
+   const char *member_path            = "rarch_zip_regression_test.zip#game.nes";
+   const char *rom_name               = "game.nes";
+   const char *rom_payload            = "ROMDATA";
+   struct string_list *list           = NULL;
+   file_archive_entry_source_t *src   = NULL;
+   const struct file_archive_file_backend *zip_backend =
+         file_archive_get_zlib_file_backend();
+
+   memset(zip_bytes, 0, sizeof(zip_bytes));
+   memset(source_bytes, 0, sizeof(source_bytes));
+
+   len = write_appledouble_collision_zip(zip_bytes);
+   write_file(tmp_path, zip_bytes, len);
+
+   if (!zip_backend)
+   {
+      printf("[FAIL] AppleDouble regression requires the ZIP backend\n");
+      failures++;
+   }
+   else if (file_archive_get_file_backend(tmp_path) != zip_backend)
+   {
+      printf("[FAIL] AppleDouble regression did not select the ZIP backend\n");
+      failures++;
+   }
+
+   list = file_archive_get_file_list(tmp_path, "nes");
+   if (!list)
+   {
+      printf("[FAIL] AppleDouble archive produced no file list\n");
+      failures++;
+   }
+   else if (list->size != 1
+         || strcmp(list->elems[0].data, rom_name) != 0)
+   {
+      const char *selected = list->size ? list->elems[0].data : "<empty>";
+      printf("[FAIL] AppleDouble archive selected \"%s\" instead of \"%s\"\n",
+            selected, rom_name);
+      failures++;
+   }
+   if (list)
+      string_list_free(list);
+   list = NULL;
+
+   list = file_archive_get_file_list(tmp_path, NULL);
+   if (!list)
+   {
+      printf("[FAIL] Unfiltered AppleDouble archive produced no file list\n");
+      failures++;
+   }
+   else if (list->size != 1
+         || strcmp(list->elems[0].data, rom_name) != 0)
+   {
+      const char *selected = list->size ? list->elems[0].data : "<empty>";
+      printf("[FAIL] Unfiltered AppleDouble archive selected \"%s\" instead of \"%s\"\n",
+            selected, rom_name);
+      failures++;
+   }
+   if (list)
+      string_list_free(list);
+   list = NULL;
+
+   if (!file_archive_compressed_read(member_path, &read_buf, NULL, &read_len)
+         || read_len != (int64_t)strlen(rom_payload)
+         || memcmp(read_buf, rom_payload, (size_t)read_len) != 0)
+   {
+      printf("[FAIL] compressed read did not select exact ZIP member\n");
+      failures++;
+   }
+
+   snprintf(archive_path, sizeof(archive_path), "%s", member_path);
+   src = file_archive_entry_source_open(archive_path, &source_size);
+   if (!src || source_size != (int64_t)strlen(rom_payload))
+   {
+      printf("[FAIL] entry source did not open exact ZIP member\n");
+      failures++;
+   }
+   else
+   {
+      source_read = file_archive_entry_source_read(src,
+            source_bytes, sizeof(source_bytes));
+      if (source_read != (int64_t)strlen(rom_payload)
+            || memcmp(source_bytes, rom_payload, (size_t)source_read) != 0)
+      {
+         printf("[FAIL] entry source did not read exact ZIP member\n");
+         failures++;
+      }
+   }
+
+   if (failures == failures_before)
+      printf("[SUCCESS] AppleDouble metadata ignored during ZIP member selection\n");
+
+   if (src)
+      file_archive_entry_source_close(src);
+   if (read_buf)
+      free(read_buf);
+   remove(tmp_path);
+}
+
+static void test_init_failure_cleanup(void)
+{
+   uint8_t buf[22];
+   int failures_before = failures;
+   bool returnerr = true;
+   const char *tmp_path = "rarch_zip_regression_test.zip";
+   file_archive_transfer_t state;
+   struct archive_extract_userdata userdata;
+
+   memset(buf, 0, sizeof(buf));
+   write_eocd(buf, 0, 20, 20);
+   write_file(tmp_path, buf, sizeof(buf));
+
+   memset(&state, 0, sizeof(state));
+   memset(&userdata, 0, sizeof(userdata));
+   state.type        = ARCHIVE_TRANSFER_INIT;
+   userdata.transfer = &state;
+
+   if (file_archive_parse_file_iterate(&state, &returnerr,
+            tmp_path, NULL, NULL, &userdata) != -1
+         || returnerr
+         || state.type != ARCHIVE_TRANSFER_DEINIT_ERROR
+         || state.archive_file
+         || state.context
+         || userdata.transfer)
+   {
+      printf("[FAIL] archive init failure did not clean up immediately\n");
+      failures++;
+   }
+#ifdef VFS_HAVE_FILE_MAPPING
+   if (state.archive_mmap_data)
+   {
+      printf("[FAIL] archive init failure retained the mapping\n");
+      failures++;
+   }
+#endif
+
+   if (state.archive_file)
+      file_archive_parse_file_iterate_stop(&state);
+
+   memset(&state, 0, sizeof(state));
+   state.type = ARCHIVE_TRANSFER_INIT;
+
+   if (file_archive_parse_file_iterate(&state, NULL,
+            tmp_path, NULL, NULL, NULL) != -1
+         || state.archive_file
+         || state.context)
+   {
+      printf("[FAIL] archive init cleanup requires an error-result pointer\n");
+      failures++;
+   }
+
+   if (state.archive_file)
+      file_archive_parse_file_iterate_stop(&state);
+
+   remove(tmp_path);
+
+   if (failures == failures_before)
+      printf("[SUCCESS] archive init failure cleaned up immediately\n");
+}
+
+/* file_archive_get_file_crc32_and_size() used to loop with no way out.
+ * Its iterate call is guarded on the transfer still being in ITERATE,
+ * but nothing broke once it left that state, and the name tests then
+ * re-read a current_file_path that could no longer change - so asking
+ * for a member the archive does not hold spun at full CPU forever.
+ *
+ * An archive that fails to open produces an empty walk and lands in
+ * exactly the same place, which is how it was found: a directory of
+ * 7z files stopped a scan dead rather than being skipped.
+ *
+ * A regression here does not fail this test so much as hang it. That
+ * is deliberate - there is no portable way to bound the call from
+ * inside - and a stuck test is a visible failure either way. */
+static void test_missing_member_terminates(void)
+{
+   const char *tmp_path = "rarch_zip_regression_test.zip";
+   uint8_t     buf[512];
+   size_t      len = 0;
+   char        member[256];
+   uint64_t    size = 12345;
+   uint32_t    crc;
+
+   /* One stored entry named "present.bin", built the same way as the
+    * cases above. */
+   len += write_minimal_lfh(buf + len, "present.bin");
+   len += write_eocd(buf + len, 1, 0, (uint32_t)len);
+
+   write_file(tmp_path, buf, len);
+
+   snprintf(member, sizeof(member), "%s#absent.bin", tmp_path);
+   crc = file_archive_get_file_crc32_and_size(member, &size);
+   remove(tmp_path);
+
+   if (crc != 0 || size != 0)
+   {
+      printf("FAIL  missing member reported crc=%08X size=%llu, "
+             "expected nothing\n", crc, (unsigned long long)size);
+      failures++;
+   }
+   else
+      printf("ok    missing member returns nothing rather than hanging\n");
+}
+
+/* path_get_archive_delim() recognises every archive extension the tree
+ * knows, but a backend exists only for the codecs compiled in.  This
+ * build carries HAVE_COMPRESSION alone, so '.7z' and '.zst' members
+ * reach file_archive_compressed_read() with no backend behind them and
+ * must be reported as read failures. */
+static void test_missing_backend_reports_failure(void)
+{
+   static const char *cases[] = { "backendless.7z", "backendless.zst" };
+   char tmp_path[1024];
+   char member[1088];
+   uint8_t buf[512];
+   size_t len;
+   size_t i;
+
+   for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+   {
+      void *read_buf  = NULL;
+      int64_t read_len = -1;
+      int ret;
+
+      /* Contents are irrelevant: the lookup fails before any read. */
+      len = 0;
+      len += write_minimal_lfh(buf + len, "member.bin");
+      len += write_eocd(buf + len, 1, 0, (uint32_t)len);
+
+      snprintf(tmp_path, sizeof(tmp_path), "%s", cases[i]);
+      write_file(tmp_path, buf, len);
+
+      snprintf(member, sizeof(member), "%s#member.bin", tmp_path);
+      ret = file_archive_compressed_read(member, &read_buf, NULL, &read_len);
+      remove(tmp_path);
+      free(read_buf);
+
+      if (ret != 0 || read_len != 0)
+      {
+         printf("FAIL  \"%s\" without a backend returned ret=%d len=%lld, "
+                "expected a clean failure\n", cases[i], ret,
+                (long long)read_len);
+         failures++;
+      }
+      else
+         printf("ok    \"%s\" without a backend fails instead of "
+                "dereferencing NULL\n", cases[i]);
+   }
+}
+
+/* Members of different methods extracted through one transfer, which
+ * keeps its inflate stream and read buffer from member to member: a
+ * DEFLATE member spanning several 128 KiB input slices is followed by
+ * small DEFLATE and STORED ones, and every member must come out
+ * byte-exact.  Run again with every recorded CRC wrong, every member
+ * must be refused and none written. */
+#define SEQ_MEMBERS 6
+
+typedef struct
+{
+   uint8_t *data;
+   uint8_t *packed;
+   uint32_t size;
+   uint32_t csize;
+   uint32_t crc;
+   unsigned method;
+} seq_member_t;
+
+static bool seq_deflate(seq_member_t *m)
+{
+   size_t bound = m->size + m->size / 8 + 1024;
+   size_t done  = 0;
+   void *z      = rdeflate_new(6, -15);
+
+   if (!z || !(m->packed = (uint8_t*)malloc(bound)))
+   {
+      rdeflate_free(z);
+      return false;
+   }
+   rdeflate_set_in(z, m->data, m->size);
+   rdeflate_set_out(z, m->packed, bound);
+   rdeflate_finish(z);
+   for (;;)
+   {
+      size_t rd = 0, wr = 0;
+      int st    = rdeflate_process(z, &rd, &wr);
+      done     += wr;
+      if (st == RDEFLATE_PROCESS_END)
+         break;
+      if (st == RDEFLATE_PROCESS_ERROR || (rd == 0 && wr == 0))
+      {
+         rdeflate_free(z);
+         return false;
+      }
+   }
+   rdeflate_free(z);
+   m->csize = (uint32_t)done;
+   return true;
+}
+
+static int seq_extract_cb(const char *name, const char *valid_exts,
+      const uint8_t *cdata, unsigned cmode, uint32_t csize, uint32_t size,
+      uint32_t checksum, struct archive_extract_userdata *userdata)
+{
+   char out[64];
+   unsigned *n = (unsigned*)userdata->cb_data;
+
+   snprintf(out, sizeof(out), "rarch_zip_seq_out_%s", name);
+   if (file_archive_perform_mode(out, valid_exts, cdata, cmode,
+            csize, size, checksum, userdata))
+      (*n)++;
+   return 1;
+}
+
+static void member_sequence(bool corrupt)
+{
+   static const unsigned methods[SEQ_MEMBERS] = { 8, 0, 8, 8, 0, 8 };
+   static const uint32_t sizes[SEQ_MEMBERS]   =
+      { 3000, 777, 512 * 1024, 5000, 1, 1 };
+   const char *tmp_path = "rarch_zip_seq_test.zip";
+   seq_member_t m[SEQ_MEMBERS];
+   struct archive_extract_userdata userdata;
+   file_archive_transfer_t state;
+   uint32_t offsets[SEQ_MEMBERS];
+   uint32_t lcg      = 1;
+   uint8_t *buf      = NULL;
+   size_t len        = 0;
+   size_t cap        = 0;
+   size_t cd_start;
+   unsigned extracted = 0;
+   unsigned i;
+   bool ok           = true;
+   bool returnerr    = true;
+
+   memset(m, 0, sizeof(m));
+
+   for (i = 0; i < SEQ_MEMBERS; i++)
+   {
+      uint32_t j;
+      m[i].size   = sizes[i];
+      m[i].method = methods[i];
+      m[i].data   = (uint8_t*)malloc(m[i].size);
+      /* Text-like for the small members, noise for the large one so
+       * its compressed size spans several input slices. */
+      for (j = 0; j < m[i].size; j++)
+      {
+         lcg = lcg * 1103515245u + 12345u;
+         m[i].data[j] = (m[i].size > 65536)
+            ? (uint8_t)(lcg >> 16)
+            : (uint8_t)('a' + ((lcg >> 16) % 7) + i);
+      }
+      m[i].crc = encoding_crc32(0, m[i].data, m[i].size);
+      if (corrupt)
+         m[i].crc ^= 1;
+      if (m[i].method == 8)
+      {
+         if (!seq_deflate(&m[i]))
+            ok = false;
+      }
+      else
+         m[i].csize = m[i].size;
+      cap += 30 + 46 + 2 * 16 + m[i].csize;
+   }
+   cap += 22;
+
+   if (ok && m[2].csize <= 2 * 128 * 1024)
+   {
+      printf("FAIL  member sequence fixture: large member too small\n");
+      failures++;
+      ok = false;
+   }
+
+   if (ok && (buf = (uint8_t*)malloc(cap)))
+   {
+      char name[16];
+
+      for (i = 0; i < SEQ_MEMBERS; i++)
+      {
+         size_t nl;
+         snprintf(name, sizeof(name), "m%u.bin", i);
+         nl         = strlen(name);
+         offsets[i] = (uint32_t)len;
+         put_u32(buf + len + 0,  LFH_SIG);
+         put_u16(buf + len + 4,  20);
+         put_u16(buf + len + 6,  0);
+         put_u16(buf + len + 8,  (uint16_t)m[i].method);
+         put_u16(buf + len + 10, 0);
+         put_u16(buf + len + 12, 0);
+         put_u32(buf + len + 14, m[i].crc);
+         put_u32(buf + len + 18, m[i].csize);
+         put_u32(buf + len + 22, m[i].size);
+         put_u16(buf + len + 26, (uint16_t)nl);
+         put_u16(buf + len + 28, 0);
+         memcpy(buf + len + 30, name, nl);
+         memcpy(buf + len + 30 + nl,
+               m[i].method == 8 ? m[i].packed : m[i].data, m[i].csize);
+         len += 30 + nl + m[i].csize;
+      }
+
+      cd_start = len;
+      for (i = 0; i < SEQ_MEMBERS; i++)
+      {
+         size_t nl;
+         snprintf(name, sizeof(name), "m%u.bin", i);
+         nl = strlen(name);
+         len += write_stored_cfh(buf + len, name, m[i].size, m[i].crc,
+               offsets[i]);
+         /* write_stored_cfh writes method 0 and csize == size. */
+         put_u16(buf + len - 46 - nl + 10, (uint16_t)m[i].method);
+         put_u32(buf + len - 46 - nl + 20, m[i].csize);
+      }
+      len += write_eocd(buf + len, SEQ_MEMBERS,
+            (uint32_t)(len - cd_start), (uint32_t)cd_start);
+
+      write_file(tmp_path, buf, len);
+
+      memset(&state, 0, sizeof(state));
+      memset(&userdata, 0, sizeof(userdata));
+      state.type       = ARCHIVE_TRANSFER_INIT;
+      userdata.cb_data = &extracted;
+
+      while (file_archive_parse_file_iterate(&state, &returnerr, tmp_path,
+               NULL, seq_extract_cb, &userdata) == 0) { }
+
+      remove(tmp_path);
+
+      if (extracted != (corrupt ? 0 : SEQ_MEMBERS))
+         ok = false;
+
+      for (i = 0; i < SEQ_MEMBERS; i++)
+      {
+         char out[64];
+         void *got      = NULL;
+         int64_t gotlen = 0;
+
+         snprintf(out, sizeof(out), "rarch_zip_seq_out_m%u.bin", i);
+         if (corrupt)
+         {
+            if (path_is_valid(out))
+            {
+               printf("FAIL  member sequence: m%u.bin (method %u) "
+                      "written despite a wrong CRC\n", i, m[i].method);
+               ok = false;
+            }
+         }
+         else if (!filestream_read_file(out, &got, &gotlen)
+               || gotlen != (int64_t)m[i].size
+               || memcmp(got, m[i].data, m[i].size))
+         {
+            printf("FAIL  member sequence: m%u.bin (method %u) differs\n",
+                  i, m[i].method);
+            ok = false;
+         }
+         free(got);
+         remove(out);
+      }
+   }
+   else
+      ok = false;
+
+   free(buf);
+   for (i = 0; i < SEQ_MEMBERS; i++)
+   {
+      free(m[i].data);
+      free(m[i].packed);
+   }
+
+   if (!ok)
+   {
+      printf("FAIL  member sequence%s: %u of %u members extracted, "
+             "contents as reported above\n",
+             corrupt ? " (wrong CRCs)" : "", extracted, SEQ_MEMBERS);
+      failures++;
+   }
+   else if (corrupt)
+      printf("ok    members failing their recorded CRC are refused\n");
+   else
+      printf("ok    mixed DEFLATE/STORED members extract intact through "
+             "one transfer\n");
+}
+
+static void test_member_sequence_reuse(void)
+{
+   member_sequence(false);
+}
+
+static void test_member_crc_mismatch(void)
+{
+   member_sequence(true);
+}
+
 int main(void)
 {
    test_truncated_entry();
@@ -349,6 +948,12 @@ int main(void)
    test_empty_filename();
    test_combined_offset_size_overflow();
    test_directory_size_overflow();
+   test_appledouble_exact_member_selection();
+   test_init_failure_cleanup();
+   test_missing_member_terminates();
+   test_missing_backend_reports_failure();
+   test_member_sequence_reuse();
+   test_member_crc_mismatch();
 
    if (failures)
    {

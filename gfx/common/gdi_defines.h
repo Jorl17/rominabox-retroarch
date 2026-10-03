@@ -25,6 +25,22 @@
 
 #include "../video_defines.h"
 
+#ifdef HAVE_OVERLAY
+/* On-screen input overlay entry. Defined at file scope (not inside
+ * struct gdi) so the tag resolves to the same type in both C and C++;
+ * see the note at the 'overlays' member below. */
+struct gdi_overlay
+{
+   HBITMAP   bmp;
+   /* In VIDEO_SCALE_PACK's layout. */
+   unsigned  tex_dims;
+   float     tex_coords[4];
+   float     vert_coords[4];
+   float     alpha_mod;
+   bool      fullscreen;
+};
+#endif
+
 typedef struct gdi
 {
 #ifndef __WINRT__
@@ -50,8 +66,7 @@ typedef struct gdi
    HBITMAP bmp_menu;
    HBITMAP bmp_menu_old;
    uint32_t *menu_pixels;          /* DIB-backing pointer; passed straight to SetDIBitsToDevice in the present path. */
-   unsigned menu_surface_width;
-   unsigned menu_surface_height;
+   unsigned menu_surface_dims;
 
    /* Pre-allocated brushes for solid-fill quads. The current brush is
     * cached and reused when consecutive quads share a colour, which
@@ -93,39 +108,33 @@ typedef struct gdi
     *     slot back and forth.
     *
     * Each slot tracks the HBITMAP, the DIB pixel pointer (we write
-    * into it directly), and the current capacity in width/height.
-    * Width and height are tracked separately rather than as a
-    * pixel count because BITMAPINFOHEADER cares about both. */
+    * into it directly), and the current capacity as a packed size.
+    * Both axes are kept rather than a pixel count because
+    * BITMAPINFOHEADER cares about each of them. */
    HBITMAP   scratch_1x1_bmp;
    uint32_t *scratch_1x1_pixels;
    HBITMAP   scratch_quad_bmp;
    uint32_t *scratch_quad_pixels;
-   unsigned  scratch_quad_w;
-   unsigned  scratch_quad_h;
+   unsigned  scratch_quad_dims;
    HBITMAP   scratch_rgui_bmp;
    uint32_t *scratch_rgui_pixels;
-   unsigned  scratch_rgui_w;
-   unsigned  scratch_rgui_h;
+   unsigned  scratch_rgui_dims;
 
-   unsigned frame_width;
-   unsigned frame_height;
-   unsigned screen_width;
-   unsigned screen_height;
-   /* Surface (window) size last published via video_driver_set_output_size,
-    * tracked here so gdi_alive can read it without locking. */
-   unsigned full_width;
-   unsigned full_height;
-   /* Actual size of gdi->bmp (the DDB).  Separate from frame_width
+   unsigned frame_dims;
+   unsigned screen_dims;
+   /* Surface (window) size last published via video_driver_set_output_dims,
+    * tracked here so gdi_alive can read it without locking. In
+    * VIDEO_SCALE_PACK's layout, as are the sizes around it. */
+   unsigned full_dims;
+   /* Actual size of gdi->bmp (the DDB).  Separate from frame_dims
     * because when RGUI is active we draw the menu (a different size
     * than the core) into bmp; without a dedicated tracker, the
-    * comparison against frame_width would trigger a destructive
+    * comparison against frame_dims would trigger a destructive
     * DeleteObject + CreateCompatibleBitmap on every frame, racing
     * with WM_PAINT and producing visible flicker. */
-   unsigned bmp_width;
-   unsigned bmp_height;
+   unsigned bmp_dims;
 
-   unsigned menu_width;
-   unsigned menu_height;
+   unsigned menu_dims;
    unsigned menu_pitch;
    unsigned frame_pitch;
    unsigned frame_bits;
@@ -170,17 +179,16 @@ typedef struct gdi
     * is a 4-float (x, y, w, h) tuple in 0..1 space (window space
     * for vert when fullscreen, viewport space otherwise; texture
     * space for tex).  vertex_geom flips y the same way d3d8 does
-    * to keep the same on-screen behaviour. */
-   struct gdi_overlay
-   {
-      HBITMAP   bmp;
-      unsigned  tex_w;
-      unsigned  tex_h;
-      float     tex_coords[4];
-      float     vert_coords[4];
-      float     alpha_mod;
-      bool      fullscreen;
-   } *overlays;
+    * to keep the same on-screen behaviour.
+    *
+    * Note: struct gdi_overlay is defined at file scope (above this
+    * typedef) rather than inline here. Defining a struct inside
+    * another struct's body scopes the tag to the enclosing type in
+    * C++ (gdi::gdi_overlay), so under CXX_BUILD a file-scope
+    * 'struct gdi_overlay *' in gdi_gfx.c would refer to a different,
+    * incomplete type. A top-level definition keeps a single shared
+    * type in both C and C++. */
+   struct gdi_overlay *overlays;
    unsigned overlays_size;
    bool overlays_enabled;
 #endif

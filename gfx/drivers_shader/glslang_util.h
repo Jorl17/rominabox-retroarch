@@ -20,6 +20,7 @@
 #include <retro_common_api.h>
 #include <retro_inline.h>
 
+#include "glslang_compile.h"
 #include "../video_shader_parse.h"
 
 typedef enum glslang_format
@@ -122,7 +123,13 @@ typedef enum glslang_filter_chain_address
    GLSLANG_FILTER_CHAIN_ADDRESS_MIRRORED_REPEAT      = 1,
    GLSLANG_FILTER_CHAIN_ADDRESS_CLAMP_TO_EDGE        = 2,
    GLSLANG_FILTER_CHAIN_ADDRESS_CLAMP_TO_BORDER      = 3,
-   GLSLANG_FILTER_CHAIN_ADDRESS_MIRROR_CLAMP_TO_EDGE = 4,
+   /* One entry per wrap mode a preset can name (rarch_wrap_to_address
+    * below), and no more: the Vulkan filter chain creates a sampler for
+    * every entry. A fifth, mirror-clamp-to-edge, stood here with no
+    * wrap mode mapping to it; its samplers were never bound, and
+    * creating them is invalid on a device without
+    * VK_KHR_sampler_mirror_clamp_to_edge - which is every device a
+    * core creates for itself through create_device. */
    GLSLANG_FILTER_CHAIN_ADDRESS_COUNT
 } glslang_filter_chain_address;
 
@@ -156,6 +163,7 @@ struct shader_line_buf
 
 RETRO_BEGIN_DECLS
 
+
 static INLINE enum glslang_filter_chain_address rarch_wrap_to_address(
       enum gfx_wrap_type type)
 {
@@ -180,6 +188,36 @@ const char *glslang_format_to_string(glslang_format fmt);
 enum glslang_format glslang_find_format(const char *fmt);
 
 /* Initialize a shader_line_buf to empty state. Returns false on alloc failure. */
+/* Include cache.
+ *
+ * Expanding a shader re-reads whatever its '#include' directives name,
+ * and shader packs share helper .inc files across passes, so expanding
+ * a whole preset reads the same handful of files many times over.  A
+ * cache handle lets one caller keep those reads for the span it cares
+ * about - a pass, a parameter-harvesting loop, a whole filter chain -
+ * instead of each root expansion starting cold.
+ *
+ * The handle is owned by the caller and is not internally synchronised:
+ * give each thread (or each chain creation) its own.  Passing NULL to
+ * the _cached entry point behaves exactly like
+ * glslang_read_shader_file(), i.e. a cache scoped to that one call. */
+void *glslang_include_cache_new(void);
+
+void glslang_include_cache_free(void *cache);
+
+/* Expand @path but keep only its '#pragma' lines, following '#include'
+ * as usual.  glslang_parse_meta() reads nothing else, so a caller after
+ * shader metadata gets the same lines in the same order without the
+ * flattened source around them - a 12-pass pack emits hundreds of lines
+ * this way rather than a hundred thousand.  Not for compilation. */
+bool glslang_read_shader_pragmas_cached(const char *path,
+      struct shader_line_buf *output, void *cache);
+
+/* As glslang_read_shader_file(), but reads through @cache. */
+bool glslang_read_shader_file_cached(const char *path,
+      struct shader_line_buf *output, bool root_file, bool is_optional,
+      void *cache);
+
 bool shader_line_buf_init(struct shader_line_buf *buf);
 
 /* Free all memory owned by a shader_line_buf. */

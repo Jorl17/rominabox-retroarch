@@ -15,6 +15,7 @@
 
 #include <compat/strl.h>
 #include <retro_environment.h>
+#include <retro_atomic.h>
 #include <gfx/scaler/pixconv.h>
 
 #ifdef HAVE_CONFIG_H
@@ -32,10 +33,41 @@
 #ifdef __cplusplus
 extern const GUID DECLSPEC_SELECTANY libretro_IID_IDXGIOutput6 = { 0x068346e8,0xaaec,
 0x4b84, {0xad,0xd7,0x13,0x7f,0x51,0x3f,0x77,0xa1 } };
+extern const GUID DECLSPEC_SELECTANY libretro_IID_IDXGISwapChain3 = { 0x94d99bdb,0xf1f8,
+0x4ab0, {0xb2,0x36,0x7d,0xa0,0x17,0x0e,0xda,0xb1 } };
+extern const GUID DECLSPEC_SELECTANY libretro_IID_IDXGISwapChain4 = { 0x3d585d5a,0xbd4a,
+0x489e, {0xb1,0xf4,0x3d,0xbc,0xb6,0x45,0x2f,0xfb } };
 #else
 const GUID DECLSPEC_SELECTANY libretro_IID_IDXGIOutput6 = { 0x068346e8,0xaaec,
 0x4b84, {0xad,0xd7,0x13,0x7f,0x51,0x3f,0x77,0xa1 } };
+const GUID DECLSPEC_SELECTANY libretro_IID_IDXGISwapChain3 = { 0x94d99bdb,0xf1f8,
+0x4ab0, {0xb2,0x36,0x7d,0xa0,0x17,0x0e,0xda,0xb1 } };
+const GUID DECLSPEC_SELECTANY libretro_IID_IDXGISwapChain4 = { 0x3d585d5a,0xbd4a,
+0x489e, {0xb1,0xf4,0x3d,0xbc,0xb6,0x45,0x2f,0xfb } };
 #endif
+
+/* The drivers create an IDXGISwapChain and hold it as an
+ * IDXGISwapChain4: on the DXGI runtime of Windows 10 and later every
+ * swapchain is one. On DXGI 1.1 or 1.2 - Windows 7 and 8, and Wine -
+ * the object ends at IDXGISwapChain or IDXGISwapChain1, and a call
+ * through a later slot reads past its vtable. So before a call that
+ * IDXGISwapChain3 or 4 introduced, ask the object whether it is one;
+ * the reference the query hands back is dropped at once, the caller
+ * keeps using the pointer it has. */
+static bool dxgi_swapchain_implements(DXGISwapChain chain, const GUID *iid)
+{
+   void *probe = NULL;
+#ifdef __cplusplus
+   if (FAILED(chain->QueryInterface(*iid, &probe)) || !probe)
+      return false;
+   ((IUnknown*)probe)->Release();
+#else
+   if (FAILED(chain->lpVtbl->QueryInterface(chain, iid, &probe)) || !probe)
+      return false;
+   ((IUnknown*)probe)->lpVtbl->Release((IUnknown*)probe);
+#endif
+   return true;
+}
 
 #ifdef HAVE_DXGI_HDR
 typedef enum hdr_root_constants
@@ -113,6 +145,12 @@ DXGI_FORMAT* dxgi_get_format_fallback_list(DXGI_FORMAT format)
       {
          static DXGI_FORMAT formats[] = { DXGI_FORMAT_B5G6R5_UNORM, DXGI_FORMAT_B8G8R8X8_UNORM,
                                           DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                                          DXGI_FORMAT_UNKNOWN };
+         return formats;
+      }
+      case DXGI_FORMAT_R10G10B10A2_UNORM:
+      {
+         static DXGI_FORMAT formats[] = { DXGI_FORMAT_R10G10B10A2_UNORM,
                                           DXGI_FORMAT_UNKNOWN };
          return formats;
       }
@@ -315,7 +353,7 @@ void dxgi_copy(
                         b = b >> 3;
                         a = (src_val >> 24) & 255;
                         a = a >> 7;
-                        *dst_ptr++ = (r << 10) | (g << 5) | (b << 0) | (a << 11);
+                        *dst_ptr++ = (r << 10) | (g << 5) | (b << 0) | (a << 15);
                      }
                      src_ptr = (UINT32*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT16*)((UINT8*)dst_ptr + dp);
@@ -573,7 +611,7 @@ void dxgi_copy(
                         g = g >> 3;
                         b = (src_val >> 0) & 255;
                         b = b >> 3;
-                        *dst_ptr++ = (r << 10) | (g << 5) | (b << 0) | (1 << 11);
+                        *dst_ptr++ = (r << 10) | (g << 5) | (b << 0) | (1 << 15);
                      }
                      src_ptr = (UINT32*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT16*)((UINT8*)dst_ptr + dp);
@@ -811,7 +849,7 @@ void dxgi_copy(
                         UINT8 src_val = *src_ptr++;
                         a = (src_val >> 0) & 255;
                         a = a >> 7;
-                        *dst_ptr++ = (0 << 10) | (0 << 5) | (0 << 0) | (a << 11);
+                        *dst_ptr++ = (0 << 10) | (0 << 5) | (0 << 0) | (a << 15);
                      }
                      src_ptr = (UINT8*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT16*)((UINT8*)dst_ptr + dp);
@@ -1044,7 +1082,7 @@ void dxgi_copy(
                         UINT8 src_val = *src_ptr++;
                         r = (src_val >> 0) & 255;
                         r = r >> 3;
-                        *dst_ptr++ = (r << 10) | (0 << 5) | (0 << 0) | (1 << 11);
+                        *dst_ptr++ = (r << 10) | (0 << 5) | (0 << 0) | (1 << 15);
                      }
                      src_ptr = (UINT8*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT16*)((UINT8*)dst_ptr + dp);
@@ -1166,17 +1204,7 @@ void dxgi_copy(
                   for (i = 0; i < height; i++)
                   {
                      for (j = 0; j < width; j++)
-                     {
-                        unsigned r = 0, g = 0, b = 0;
-                        UINT16 src_val = *src_ptr++;
-                        r = (src_val >> 11) & 31;
-                        r = (r << 3) | (r >> 2);
-                        g = (src_val >> 5) & 63;
-                        g = (g << 2) | (g >> 4);
-                        b = (src_val >> 0) & 31;
-                        b = (b << 3) | (b >> 2);
-                        *dst_ptr++ = (r << 16) | (g << 8) | (b << 0);
-                     }
+                        *dst_ptr++ = pixconv_rgb565_to_xrgb8888(*src_ptr++);
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT32*)((UINT8*)dst_ptr + dp);
                   }
@@ -1269,7 +1297,7 @@ void dxgi_copy(
                         g = (src_val >> 5) & 63;
                         g = g >> 1;
                         b = (src_val >> 0) & 31;
-                        *dst_ptr++ = (r << 10) | (g << 5) | (b << 0) | (1 << 11);
+                        *dst_ptr++ = (r << 10) | (g << 5) | (b << 0) | (1 << 15);
                      }
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT16*)((UINT8*)dst_ptr + dp);
@@ -1374,17 +1402,9 @@ void dxgi_copy(
                   {
                      for (j = 0; j < width; j++)
                      {
-                        unsigned r = 0, g = 0, b = 0, a = 0;
-                        UINT16 src_val = *src_ptr++;
-                        r = (src_val >> 10) & 31;
-                        r = (r << 3) | (r >> 2);
-                        g = (src_val >> 5) & 31;
-                        g = (g << 3) | (g >> 2);
-                        b = (src_val >> 0) & 31;
-                        b = (b << 3) | (b >> 2);
-                        a = (src_val >> 11) & 1;
-                        a = (a << 7) | (a >> 0);
-                        *dst_ptr++ = (r << 0) | (g << 8) | (b << 16) | (a << 24);
+                        UINT32 src_val = *src_ptr++;
+                        *dst_ptr++ = pixconv_0rgb1555_to_xbgr8888(src_val)
+                              | ((0u - (src_val >> 15)) & 0xff000000u);
                      }
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT32*)((UINT8*)dst_ptr + dp);
@@ -1406,17 +1426,7 @@ void dxgi_copy(
                   for (i = 0; i < height; i++)
                   {
                      for (j = 0; j < width; j++)
-                     {
-                        unsigned r = 0, g = 0, b = 0;
-                        UINT16 src_val = *src_ptr++;
-                        r = (src_val >> 10) & 31;
-                        r = (r << 3) | (r >> 2);
-                        g = (src_val >> 5) & 31;
-                        g = (g << 3) | (g >> 2);
-                        b = (src_val >> 0) & 31;
-                        b = (b << 3) | (b >> 2);
-                        *dst_ptr++ = (r << 16) | (g << 8) | (b << 0);
-                     }
+                        *dst_ptr++ = pixconv_0rgb1555_to_xrgb8888(*src_ptr++);
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT32*)((UINT8*)dst_ptr + dp);
                   }
@@ -1440,8 +1450,7 @@ void dxgi_copy(
                      {
                         unsigned a = 0;
                         UINT16 src_val = *src_ptr++;
-                        a = (src_val >> 11) & 1;
-                        a = (a << 7) | (a >> 0);
+                        a = ((src_val >> 15) & 1) * 255;
                         *dst_ptr++ = (a << 0);
                      }
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
@@ -1543,8 +1552,7 @@ void dxgi_copy(
                         g = g >> 1;
                         b = (src_val >> 0) & 31;
                         b = b >> 1;
-                        a = (src_val >> 11) & 1;
-                        a = (a << 3) | (a >> 0);
+                        a = ((src_val >> 15) & 1) * 15;
                         *dst_ptr++ = (r << 8) | (g << 4) | (b << 0) | (a << 12);
                      }
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
@@ -1568,17 +1576,9 @@ void dxgi_copy(
                   {
                      for (j = 0; j < width; j++)
                      {
-                        unsigned r = 0, g = 0, b = 0, a = 0;
-                        UINT16 src_val = *src_ptr++;
-                        r = (src_val >> 10) & 31;
-                        r = (r << 3) | (r >> 2);
-                        g = (src_val >> 5) & 31;
-                        g = (g << 3) | (g >> 2);
-                        b = (src_val >> 0) & 31;
-                        b = (b << 3) | (b >> 2);
-                        a = (src_val >> 11) & 1;
-                        a = (a << 7) | (a >> 0);
-                        *dst_ptr++ = (r << 16) | (g << 8) | (b << 0) | (a << 24);
+                        UINT32 src_val = *src_ptr++;
+                        *dst_ptr++ = pixconv_0rgb1555_to_xrgb8888(src_val)
+                              | ((0u - (src_val >> 15)) & 0xff000000u);
                      }
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT32*)((UINT8*)dst_ptr + dp);
@@ -1609,8 +1609,7 @@ void dxgi_copy(
                         g = g >> 1;
                         b = (src_val >> 0) & 31;
                         b = b >> 1;
-                        a = (src_val >> 11) & 1;
-                        a = (a << 3) | (a >> 0);
+                        a = ((src_val >> 15) & 1) * 15;
                         *dst_ptr++ = (r << 4) | (g << 8) | (b << 12) | (a << 0);
                      }
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
@@ -1642,19 +1641,7 @@ void dxgi_copy(
                   for (i = 0; i < height; i++)
                   {
                      for (j = 0; j < width; j++)
-                     {
-                        unsigned r = 0, g = 0, b = 0, a = 0;
-                        UINT16 src_val = *src_ptr++;
-                        r = (src_val >> 8) & 15;
-                        r = (r << 4) | (r >> 0);
-                        g = (src_val >> 4) & 15;
-                        g = (g << 4) | (g >> 0);
-                        b = (src_val >> 0) & 15;
-                        b = (b << 4) | (b >> 0);
-                        a = (src_val >> 12) & 15;
-                        a = (a << 4) | (a >> 0);
-                        *dst_ptr++ = (r << 0) | (g << 8) | (b << 16) | (a << 24);
-                     }
+                        *dst_ptr++ = pixconv_argb4444_to_abgr8888(*src_ptr++);
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT32*)((UINT8*)dst_ptr + dp);
                   }
@@ -1675,17 +1662,7 @@ void dxgi_copy(
                   for (i = 0; i < height; i++)
                   {
                      for (j = 0; j < width; j++)
-                     {
-                        unsigned r = 0, g = 0, b = 0;
-                        UINT16 src_val = *src_ptr++;
-                        r = (src_val >> 8) & 15;
-                        r = (r << 4) | (r >> 0);
-                        g = (src_val >> 4) & 15;
-                        g = (g << 4) | (g >> 0);
-                        b = (src_val >> 0) & 15;
-                        b = (b << 4) | (b >> 0);
-                        *dst_ptr++ = (r << 16) | (g << 8) | (b << 0);
-                     }
+                        *dst_ptr++ = pixconv_argb4444_to_argb8888(*src_ptr++ & 0x0fff);
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT32*)((UINT8*)dst_ptr + dp);
                   }
@@ -1802,7 +1779,7 @@ void dxgi_copy(
                         b = (b << 1) | (b >> 3);
                         a = (src_val >> 12) & 15;
                         a = a >> 3;
-                        *dst_ptr++ = (r << 10) | (g << 5) | (b << 0) | (a << 11);
+                        *dst_ptr++ = (r << 10) | (g << 5) | (b << 0) | (a << 15);
                      }
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT16*)((UINT8*)dst_ptr + dp);
@@ -1838,19 +1815,7 @@ void dxgi_copy(
                   for (i = 0; i < height; i++)
                   {
                      for (j = 0; j < width; j++)
-                     {
-                        unsigned r = 0, g = 0, b = 0, a = 0;
-                        UINT16 src_val = *src_ptr++;
-                        r = (src_val >> 8) & 15;
-                        r = (r << 4) | (r >> 0);
-                        g = (src_val >> 4) & 15;
-                        g = (g << 4) | (g >> 0);
-                        b = (src_val >> 0) & 15;
-                        b = (b << 4) | (b >> 0);
-                        a = (src_val >> 12) & 15;
-                        a = (a << 4) | (a >> 0);
-                        *dst_ptr++ = (r << 16) | (g << 8) | (b << 0) | (a << 24);
-                     }
+                        *dst_ptr++ = pixconv_argb4444_to_argb8888(*src_ptr++);
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT32*)((UINT8*)dst_ptr + dp);
                   }
@@ -2046,7 +2011,7 @@ void dxgi_copy(
                         b = b >> 3;
                         a = (src_val >> 24) & 255;
                         a = a >> 7;
-                        *dst_ptr++ = (r << 10) | (g << 5) | (b << 0) | (a << 11);
+                        *dst_ptr++ = (r << 10) | (g << 5) | (b << 0) | (a << 15);
                      }
                      src_ptr = (UINT32*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT16*)((UINT8*)dst_ptr + dp);
@@ -2317,7 +2282,7 @@ void dxgi_copy(
                         b = (b << 1) | (b >> 3);
                         a = (src_val >> 0) & 15;
                         a = a >> 3;
-                        *dst_ptr++ = (r << 10) | (g << 5) | (b << 0) | (a << 11);
+                        *dst_ptr++ = (r << 10) | (g << 5) | (b << 0) | (a << 15);
                      }
                      src_ptr = (UINT16*)((UINT8*)src_ptr + sp);
                      dst_ptr = (UINT16*)((UINT8*)dst_ptr + dp);
@@ -2398,6 +2363,46 @@ void dxgi_copy(
                      in  += src_pitch ? (int)src_pitch  : (int)(width * sizeof(UINT16));
                      out += dst_pitch ? (int)dst_pitch  : (int)(width * sizeof(UINT16));
                   }
+               }
+               break;
+            }
+            default:
+               break;
+         }
+         break;
+      }
+
+      case DXGI_FORMAT_R10G10B10A2_UNORM:
+      {
+         /* Native 10-bit source. The ABI's XRGB2101010 packs R in bits
+          * [29:20], G in [19:10], B in [9:0]; DXGI_FORMAT_R10G10B10A2_UNORM
+          * expects R in the LOW 10 bits and B in the high 10 bits, so R and B
+          * must be swapped during the copy (there is no B-first 10-bit DXGI
+          * format). Alpha is forced opaque (3 = max for a 2-bit channel). */
+         switch ((unsigned)dst_format)
+         {
+            case DXGI_FORMAT_R10G10B10A2_UNORM:
+            {
+               const UINT32* src_ptr = (const UINT32*)src_data;
+               UINT32*       dst_ptr = (UINT32*)dst_data;
+               int sp = src_pitch;
+               int dp = dst_pitch;
+               if (sp)
+                  sp -= width * sizeof(*src_ptr);
+               if (dp)
+                  dp -= width * sizeof(*dst_ptr);
+               for (i = 0; i < height; i++)
+               {
+                  for (j = 0; j < width; j++)
+                  {
+                     UINT32 src_val = *src_ptr++;
+                     unsigned r = (src_val >> 20) & 0x3ff;
+                     unsigned g = (src_val >> 10) & 0x3ff;
+                     unsigned b =  src_val        & 0x3ff;
+                     *dst_ptr++ = r | (g << 10) | (b << 20) | (0x3u << 30);
+                  }
+                  src_ptr = (UINT32*)((UINT8*)src_ptr + sp);
+                  dst_ptr = (UINT32*)((UINT8*)dst_ptr + dp);
                }
                break;
             }
@@ -2510,6 +2515,47 @@ inline static int dxgi_compute_intersection_area(
            * MAX(0, MIN(ay2, by2) - MAX(ay1, by1));
 }
 
+/* Self-contained display-in-HDR-mode probe for callers that must not
+ * pull COM/DXGI headers into their own translation unit (win32_common
+ * compiles without the CINTERFACE / COBJMACROS arrangement the d3d
+ * driver TUs set up before including any Windows header, which breaks
+ * MSVC against the real SDK headers -- MinGW's are lenient and masked
+ * it). Creates a factory via the dynamically-loaded entry point, runs
+ * the support check (which also performs the display-flag bookkeeping)
+ * and releases it. */
+bool dxgi_display_hdr_active(HWND hwnd)
+{
+#ifdef __WINRT__
+   DXGIFactory2 factory = NULL;
+   bool         ret     = false;
+   if (FAILED(DXGICreateFactory2(&factory)) || !factory)
+      return false;
+#else
+   DXGIFactory1 factory = NULL;
+   bool         ret     = false;
+   if (FAILED(DXGICreateFactory1(&factory)) || !factory)
+      return false;
+#endif
+   ret = dxgi_check_display_hdr_support(factory, hwnd);
+   Release(factory);
+   return ret;
+}
+
+/* Set from the frame-path HDR check when the display cannot do HDR;
+ * consumed on the main thread. */
+static retro_atomic_int_t dxgi_hdr_disable_pending;
+
+void dxgi_hdr_process_deferred_disable(void)
+{
+   if (retro_atomic_load_acquire_int(&dxgi_hdr_disable_pending))
+   {
+      settings_t *settings           = config_get_ptr();
+      retro_atomic_store_relaxed_int(&dxgi_hdr_disable_pending, 0);
+      settings->flags               |= SETTINGS_FLG_MODIFIED;
+      settings->uints.video_hdr_mode = 0;
+   }
+}
+
 #ifdef __WINRT__
 bool dxgi_check_display_hdr_support(DXGIFactory2 factory, HWND hwnd)
 #else
@@ -2562,14 +2608,9 @@ bool dxgi_check_display_hdr_support(DXGIFactory1 factory, HWND hwnd)
 #endif
    {
       UINT i = 0;
-#ifdef __cplusplus
-      while (  dxgi_adapter->EnumOutputs(i, &current_output)
-            != DXGI_ERROR_NOT_FOUND)
-#else
-      while (  dxgi_adapter->lpVtbl->EnumOutputs(dxgi_adapter, i, &current_output)
-            != DXGI_ERROR_NOT_FOUND)
-#endif
+      for (;;)
       {
+         HRESULT hr;
          RECT r, rect;
          DXGI_OUTPUT_DESC desc;
          int intersect_area;
@@ -2578,6 +2619,21 @@ bool dxgi_check_display_hdr_support(DXGIFactory1 factory, HWND hwnd)
          int ay1               = 0;
          int ax2               = 0;
          int ay2               = 0;
+
+#ifdef __cplusplus
+         hr                     = dxgi_adapter->EnumOutputs(i, &current_output);
+#else
+         hr                     = dxgi_adapter->lpVtbl->EnumOutputs(
+               dxgi_adapter, i, &current_output);
+#endif
+         /* Stop at the end of the output list (DXGI_ERROR_NOT_FOUND) or on
+          * any other failure. Some drivers can return a failure HRESULT
+          * other than DXGI_ERROR_NOT_FOUND together with a NULL output,
+          * which must never be dereferenced. */
+         if (FAILED(hr) || !current_output)
+            break;
+
+         i++;
 
          if (win32_get_client_rect(&rect))
          {
@@ -2595,7 +2651,12 @@ bool dxgi_check_display_hdr_support(DXGIFactory1 factory, HWND hwnd)
 #endif
          {
             RARCH_ERR("[DXGI] Failed to get DXGI output description.\n");
-            i++;
+#ifdef __cplusplus
+            current_output->Release();
+#else
+            Release(current_output);
+#endif
+            current_output      = NULL;
             continue;
          }
 
@@ -2629,7 +2690,13 @@ bool dxgi_check_display_hdr_support(DXGIFactory1 factory, HWND hwnd)
             best_intersect_area = (float)intersect_area;
          }
 
-         i++;
+         /* Release this iteration's reference; best_output holds its own. */
+#ifdef __cplusplus
+         current_output->Release();
+#else
+         Release(current_output);
+#endif
+         current_output         = NULL;
       }
 
       if (current_output)
@@ -2674,24 +2741,42 @@ bool dxgi_check_display_hdr_support(DXGIFactory1 factory, HWND hwnd)
       {
          supported = (desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020);
 
+         /* The panel's peak as Windows reports it; this check runs on
+          * frame paths, so it is told only when it changes */
+         if (supported && desc1.MaxLuminance > 0.0f)
+         {
+            static unsigned dxgi_last_peak = 0;
+            unsigned peak = (unsigned)(desc1.MaxLuminance + 0.5f);
+            if (peak != dxgi_last_peak)
+            {
+               dxgi_last_peak = peak;
+               video_driver_set_display_peak_nits(desc1.MaxLuminance);
+               RARCH_LOG("[DXGI] Display peak luminance: %u nits (from Windows).\n", peak);
+            }
+         }
+
 	 /* When Windows reports HDR support (PQ/ST.2084),
 	  * scRGB (R16G16B16A16_FLOAT + G10_NONE_P709) is
 	  * always available — the Windows HDR compositor
 	  * guarantees both paths. */
          if (supported)
          {
-            uint32_t disp_flags = video_driver_get_disp_flags();
-            disp_flags |= VIDEO_FLAG_HDR_SUPPORT;
-            disp_flags |= VIDEO_FLAG_HDR10_SUPPORT;
-            disp_flags |= VIDEO_FLAG_SCRGB_SUPPORT;
-            video_driver_set_disp_flags(disp_flags);
+            video_driver_modify_disp_flags(
+                  VIDEO_FLAG_HDR_SUPPORT
+                | VIDEO_FLAG_HDR10_SUPPORT
+                | VIDEO_FLAG_SCRGB_SUPPORT, 0);
          }
          else
          {
-            settings_t*    settings           = config_get_ptr();
-            settings->flags                  |= SETTINGS_FLG_MODIFIED;
-            settings->uints.video_hdr_mode    = 0;
-            video_driver_set_disp_flags(video_driver_get_disp_flags() & ~(VIDEO_FLAG_HDR_SUPPORT | VIDEO_FLAG_HDR10_SUPPORT | VIDEO_FLAG_SCRGB_SUPPORT));
+            /* Force-disabling the HDR setting is a settings write,
+             * and this check runs from the D3D frame paths - the
+             * video thread under the wrapper, main running free.
+             * Flag it; the main thread applies it in
+             * dxgi_hdr_process_deferred_disable() on its next
+             * video_driver_frame. The disp-flags clear is atomic
+             * and stays here. */
+            retro_atomic_store_release_int(&dxgi_hdr_disable_pending, 1);
+            video_driver_modify_disp_flags(0, VIDEO_FLAG_HDR_SUPPORT | VIDEO_FLAG_HDR10_SUPPORT | VIDEO_FLAG_SCRGB_SUPPORT);
          }
       }
       else
@@ -2723,6 +2808,12 @@ void dxgi_swapchain_color_space(
       DXGI_COLOR_SPACE_TYPE *chain_color_space,
       DXGI_COLOR_SPACE_TYPE color_space)
 {
+   /* CheckColorSpaceSupport and SetColorSpace1 are IDXGISwapChain3's.
+    * A swapchain without them is on a runtime with no colour space
+    * to select: it presents what it always did. */
+   if (!chain_handle
+         || !dxgi_swapchain_implements(chain_handle, &libretro_IID_IDXGISwapChain3))
+      return;
    if (*chain_color_space != color_space)
    {
       UINT color_space_support = 0;
@@ -2781,8 +2872,22 @@ void dxgi_set_hdr_metadata(
    const display_chromaticities_t* chroma           = NULL;
    DXGI_HDR_METADATA_HDR10 hdr10_meta_data          = {0};
    int selected_chroma                              = 0;
+   /* The driver's fixed values unless Use Display Peak supplies the
+    * display's */
+   float display_peak = video_driver_hdr_metadata_peak(0.0f);
+   if (display_peak > 0.0f)
+   {
+      max_output_nits = display_peak;
+      max_cll         = display_peak;
+      if (max_fall > display_peak)
+         max_fall     = display_peak;
+   }
 
    if (!handle)
+      return;
+   /* SetHDRMetaData is IDXGISwapChain4's; a swapchain without it has
+    * no HDR metadata to set or to clear. */
+   if (!dxgi_swapchain_implements(handle, &libretro_IID_IDXGISwapChain4))
       return;
 
    /* Clear the hdr meta data if the monitor does not support HDR */
@@ -2889,6 +2994,7 @@ void dxgi_set_hdr_metadata(
 
 #include <math.h>
 #include <stdint.h>
+#include <formats/rpng.h>
 
 /* IEEE 754 binary16 -> binary32.  Used to decode FP16 scRGB samples. */
 static INLINE float dxgi_half_to_float(uint16_t h)
@@ -3103,5 +3209,157 @@ bool dxgi_hdr_readback_to_bgr24(
    }
 
    return false;
+}
+
+/* ST.2084 (PQ) inverse-EOTF: normalised linear [0,1] -> PQ code [0,1].
+ * Constants match dxgi_st2084_to_linear above and the forward HDR
+ * shader pipeline. */
+static INLINE float dxgi_st2084_encode(float v)
+{
+   const float m1 = 0.1593017578125f;
+   const float m2 = 78.84375f;
+   const float c1 = 0.8359375f;
+   const float c2 = 18.8515625f;
+   const float c3 = 18.6875f;
+   float yp;
+   if (v < 0.0f) v = 0.0f;
+   else if (v > 1.0f) v = 1.0f;
+   yp = powf(v, m1);
+   return powf((c1 + c2 * yp) / (1.0f + c3 * yp), m2);
+}
+
+bool dxgi_hdr_readback_to_rgb16(
+      DXGI_FORMAT  src_format,
+      const void*  src_data,
+      unsigned     src_pitch,
+      unsigned     src_x,
+      unsigned     src_y,
+      unsigned     width,
+      unsigned     height,
+      uint16_t*    dst_rgb48,
+      float*       out_max_cll,
+      float*       out_max_fall)
+{
+   unsigned y, x;
+   float    max_cll  = 0.0f;
+   double   sum_fall = 0.0;
+
+   if (!src_data || !dst_rgb48 || !width || !height)
+      return false;
+
+   if (src_format == DXGI_FORMAT_R10G10B10A2_UNORM)
+   {
+      const uint8_t* src_row = (const uint8_t*)src_data
+            + (size_t)src_pitch * src_y;
+
+      for (y = 0; y < height; y++, src_row += src_pitch)
+      {
+         uint16_t* dst = dst_rgb48 + 3 * (size_t)(height - y - 1) * width;
+         const uint32_t* src = (const uint32_t*)src_row + src_x;
+         for (x = 0; x < width; x++)
+         {
+            /* R10G10B10A2_UNORM: R[9:0] G[19:10] B[29:20] A[31:30] --
+             * same channel placement as Vulkan's A2B10G10R10. */
+            uint32_t px = src[x];
+            uint32_t r  = (px      ) & 0x3FFu;
+            uint32_t g  = (px >> 10) & 0x3FFu;
+            uint32_t b  = (px >> 20) & 0x3FFu;
+            uint32_t mx;
+            float    lvl;
+            /* 10->16 bit, replicating high bits so 0x3FF -> 0xFFFF. */
+            dst[3 * x + 0] = (uint16_t)((r << 6) | (r >> 4));
+            dst[3 * x + 1] = (uint16_t)((g << 6) | (g >> 4));
+            dst[3 * x + 2] = (uint16_t)((b << 6) | (b >> 4));
+            /* Light level = brightest channel decoded from PQ to nits. */
+            mx  = r; if (g > mx) mx = g; if (b > mx) mx = b;
+            lvl = dxgi_st2084_to_linear((float)mx * (1.0f / 1023.0f))
+                  * 10000.0f;
+            if (lvl > max_cll) max_cll = lvl;
+            sum_fall += lvl;
+         }
+      }
+   }
+   else if (src_format == DXGI_FORMAT_R16G16B16A16_FLOAT)
+   {
+      const uint8_t* src_row = (const uint8_t*)src_data
+            + (size_t)src_pitch * src_y;
+
+      for (y = 0; y < height; y++, src_row += src_pitch)
+      {
+         uint16_t* dst = dst_rgb48 + 3 * (size_t)(height - y - 1) * width;
+         const uint16_t* src = (const uint16_t*)src_row + (size_t)src_x * 4;
+         for (x = 0; x < width; x++)
+         {
+            /* scRGB: linear Rec.709, 1.0 = 80 nits.  Decode the halves,
+             * scale to absolute nits, PQ-encode into 16 bit.  Extended
+             * range (negatives, >10000 nits) clamps -- unavoidable for
+             * a UNORM PNG. */
+            float r = dxgi_half_to_float(src[x * 4 + 0]);
+            float g = dxgi_half_to_float(src[x * 4 + 1]);
+            float b = dxgi_half_to_float(src[x * 4 + 2]);
+            float lvl;
+            float nr = r * (80.0f / 10000.0f);
+            float ng = g * (80.0f / 10000.0f);
+            float nb = b * (80.0f / 10000.0f);
+            dst[3 * x + 0] = (uint16_t)(dxgi_st2084_encode(nr) * 65535.0f + 0.5f);
+            dst[3 * x + 1] = (uint16_t)(dxgi_st2084_encode(ng) * 65535.0f + 0.5f);
+            dst[3 * x + 2] = (uint16_t)(dxgi_st2084_encode(nb) * 65535.0f + 0.5f);
+            lvl = r; if (g > lvl) lvl = g; if (b > lvl) lvl = b;
+            lvl *= 80.0f;
+            if (lvl < 0.0f) lvl = 0.0f;
+            else if (lvl > 10000.0f) lvl = 10000.0f;
+            if (lvl > max_cll) max_cll = lvl;
+            sum_fall += lvl;
+         }
+      }
+   }
+   else
+      return false;
+
+   if (out_max_cll)
+      *out_max_cll  = max_cll;
+   if (out_max_fall)
+      *out_max_fall = (float)(sum_fall / ((double)width * (double)height));
+   return true;
+}
+
+void dxgi_hdr_meta_fill(
+      struct rpng_hdr_metadata *meta,
+      bool         is_scrgb,
+      float        max_cll,
+      float        max_fall,
+      float        max_luminance,
+      float        min_luminance)
+{
+   if (!meta)
+      return;
+
+   memset(meta, 0, sizeof(*meta));
+   meta->colour_primaries      = is_scrgb ? 1 : 9;
+   meta->transfer_function     = 16; /* SMPTE ST 2084 (PQ) */
+   meta->matrix_coefficients   = 0;  /* RGB (must be 0 for PNG) */
+   meta->video_full_range_flag = 1;
+
+   meta->max_cll  = max_cll;
+   meta->max_fall = max_fall;
+
+   meta->write_mdcv = 1;
+   if (is_scrgb)
+   {
+      /* Rec.709 primaries. */
+      meta->primary_chromaticity[0][0] = 0.640f; meta->primary_chromaticity[0][1] = 0.330f;
+      meta->primary_chromaticity[1][0] = 0.300f; meta->primary_chromaticity[1][1] = 0.600f;
+      meta->primary_chromaticity[2][0] = 0.150f; meta->primary_chromaticity[2][1] = 0.060f;
+   }
+   else
+   {
+      /* Rec.2020 primaries. */
+      meta->primary_chromaticity[0][0] = 0.708f; meta->primary_chromaticity[0][1] = 0.292f;
+      meta->primary_chromaticity[1][0] = 0.170f; meta->primary_chromaticity[1][1] = 0.797f;
+      meta->primary_chromaticity[2][0] = 0.131f; meta->primary_chromaticity[2][1] = 0.046f;
+   }
+   meta->white_point[0] = 0.3127f; meta->white_point[1] = 0.3290f; /* D65 */
+   meta->max_luminance  = max_luminance;
+   meta->min_luminance  = min_luminance;
 }
 #endif

@@ -17,7 +17,7 @@
 #include <unistd.h>
 
 #ifdef HAVE_WAYLAND_BACKPORT
-#include "../../gfx/common/wayland_client_backport.h"
+#include "../../gfx/common/wayland_common_backport.h"
 #endif
 
 #include <wayland-client.h>
@@ -30,6 +30,7 @@
 #endif
 
 #include "../common/wayland_common.h"
+#include "../common/wayland_resize.h"
 #include "../../frontend/frontend_driver.h"
 #include "../../input/common/wayland_common.h"
 #include "../../input/input_driver.h"
@@ -45,27 +46,15 @@
 #endif
 
 /* Shell surface callbacks. */
-static void xdg_toplevel_handle_configure(void *data,
-      struct xdg_toplevel *toplevel,
-      int32_t width, int32_t height, struct wl_array *states)
-{
-   gfx_ctx_wayland_data_t *wl = (gfx_ctx_wayland_data_t*)data;
-   if (wl->ignore_configuration)
-      return;
-   xdg_toplevel_handle_configure_common(wl, toplevel, width, height, states);
-   wl->configured = false;
-}
-
 static void gfx_ctx_wl_destroy_resources(gfx_ctx_wayland_data_t *wl)
 {
    if (!wl)
       return;
    vulkan_context_destroy(&wl->vk, wl->surface);
-   gfx_ctx_wl_destroy_resources_common(wl);
 }
 
 static void gfx_ctx_wl_check_window(void *data, bool *quit,
-      bool *resize, unsigned *width, unsigned *height)
+      bool *resize, unsigned *dims)
 {
    gfx_ctx_wayland_data_t *wl = (gfx_ctx_wayland_data_t*)data;
 
@@ -73,26 +62,27 @@ static void gfx_ctx_wl_check_window(void *data, bool *quit,
     * central place, so use that to trigger swapchain reinit. */
    *resize = wl->vk.flags & VK_DATA_FLAG_NEED_NEW_SWAPCHAIN;
 
-   gfx_ctx_wl_check_window_common(wl, gfx_ctx_wl_get_video_size_common, quit, resize, 
-      width, height);
+   gfx_ctx_wl_check_window_common(wl, gfx_ctx_wl_get_video_size_common,
+         quit, resize, dims);
 
 }
 
-static bool gfx_ctx_wl_set_resize(void *data, unsigned width, unsigned height)
+static bool gfx_ctx_wl_set_resize(void *data, unsigned dims)
 {
    gfx_ctx_wayland_data_t *wl = (gfx_ctx_wayland_data_t*)data;
 
    wl->last_buffer_scale = wl->buffer_scale;
    wl->last_fractional_scale_num = wl->fractional_scale_num;
-   if (!wl->fractional_scale)
-      wl_surface_set_buffer_scale(wl->surface, wl->buffer_scale);
 
-   if (vulkan_create_swapchain(&wl->vk, width, height, wl->swap_interval))
+   if (vulkan_create_swapchain(&wl->vk, dims, wl->swap_interval))
    {
-      wl->ignore_configuration = false;
-      wl->vk.context.flags |= VK_CTX_FLAG_INVALID_SWAPCHAIN;
+      wl_surface_resized(wl->surface, wl->fractional_scale != NULL,
+            wl->buffer_scale, &wl->ignore_configuration);
       if (wl->vk.flags & VK_DATA_FLAG_CREATED_NEW_SWAPCHAIN)
+      {
+         wl->vk.context.flags |= VK_CTX_FLAG_INVALID_SWAPCHAIN;
          vulkan_acquire_next_image(&wl->vk);
+      }
 
       wl->vk.flags         &= ~VK_DATA_FLAG_NEED_NEW_SWAPCHAIN;
 
@@ -103,40 +93,12 @@ static bool gfx_ctx_wl_set_resize(void *data, unsigned width, unsigned height)
    return false;
 }
 
-#ifdef HAVE_LIBDECOR_H
-static void
-libdecor_frame_handle_configure(struct libdecor_frame *frame,
-      struct libdecor_configuration *configuration, void *data)
-{
-   gfx_ctx_wayland_data_t *wl   = (gfx_ctx_wayland_data_t*)data;
-   if (wl->ignore_configuration)
-      return;
-   libdecor_frame_handle_configure_common(frame, configuration, wl);
-
-   wl->configured = false;
-}
-#endif
-
-static const toplevel_listener_t toplevel_listener = {
-#ifdef HAVE_LIBDECOR_H
-   .libdecor_frame_interface = {
-     libdecor_frame_handle_configure,
-     libdecor_frame_handle_close,
-     libdecor_frame_handle_commit,
-   },
-#endif
-   .xdg_toplevel_listener = {
-      xdg_toplevel_handle_configure,
-      xdg_toplevel_handle_close,
-   },
-};
-
 static void *gfx_ctx_wl_init(void *data)
 {
    int i;
    gfx_ctx_wayland_data_t *wl = NULL;
 
-   if (!gfx_ctx_wl_init_common(&toplevel_listener, &wl))
+   if (!gfx_ctx_wl_init_common(NULL, &wl))
       goto error;
 
    if (!vulkan_context_init(&wl->vk, VULKAN_WSI_WAYLAND))
@@ -146,9 +108,7 @@ static void *gfx_ctx_wl_init(void *data)
 
 error:
    gfx_ctx_wl_destroy_resources(wl);
-
-   if (wl)
-      free(wl);
+   gfx_ctx_wl_free_common(wl, false);
 
    return NULL;
 }
@@ -167,7 +127,7 @@ static void gfx_ctx_wl_destroy(void *data)
       slock_free(wl->vk.context.queue_lock);
 #endif
 
-   free(wl);
+   gfx_ctx_wl_free_common(wl, true);
 }
 
 static void gfx_ctx_wl_set_swap_interval(void *data, int swap_interval)
@@ -180,12 +140,22 @@ static void gfx_ctx_wl_set_swap_interval(void *data, int swap_interval)
       if (wl->vk.swapchain)
          wl->vk.flags  |= VK_DATA_FLAG_NEED_NEW_SWAPCHAIN;
    }
+
+   if (wl->tearing_control)
+   {
+      wp_tearing_control_v1_set_presentation_hint(wl->tearing_control,
+                                                  swap_interval == 0
+                                                  ? WP_TEARING_CONTROL_V1_PRESENTATION_HINT_ASYNC
+                                                  : WP_TEARING_CONTROL_V1_PRESENTATION_HINT_VSYNC);
+   }
 }
 
 static bool gfx_ctx_wl_set_video_mode(void *data,
-      unsigned width, unsigned height,
+      unsigned dims,
       bool fullscreen)
 {
+   unsigned width  = VIDEO_SCALE_W(dims);
+   unsigned height = VIDEO_SCALE_H(dims);
    gfx_ctx_wayland_data_t *wl   = (gfx_ctx_wayland_data_t*)data;
 
    if (!gfx_ctx_wl_set_video_mode_common_size(wl, width, height, fullscreen))
@@ -200,9 +170,7 @@ static bool gfx_ctx_wl_set_video_mode(void *data,
 
    if (!vulkan_surface_create(&wl->vk, VULKAN_WSI_WAYLAND,
          wl->input.dpy, wl->surface,
-         wl->buffer_width,
-         wl->buffer_height,
-         wl->swap_interval))
+         wl->buffer_dims, wl->swap_interval))
       goto error;
 
    /* Fullscreen is compositor-sized on Wayland.
@@ -270,18 +238,62 @@ static void *gfx_ctx_wl_get_context_data(void *data)
    return &wl->vk.context;
 }
 
+static bool gfx_ctx_wl_vk_presentable(void *data)
+{
+   gfx_ctx_wayland_data_t *wl = (gfx_ctx_wayland_data_t*)data;
+   if (!wl)
+      return false;
+   /* Also false while the compositor says the surface is suspended:
+    * it is not being scanned out, so a presented frame goes nowhere. */
+   if (wl->suspended)
+      return false;
+   return wl->vk.swapchain != VK_NULL_HANDLE;
+}
+
 static void gfx_ctx_wl_swap_buffers(void *data)
 {
    gfx_ctx_wayland_data_t *wl = (gfx_ctx_wayland_data_t*)data;
 
+   if (wl->present.clock)
+      wl_present_dispatch(&wl->present, wl->input.dpy);
+
+   /* While the compositor reports the surface suspended (occluded,
+    * minimized, screen locked), skip presentation-time pacing,
+    * feedback, and present/acquire: the surface is not being scanned
+    * out, so there are no vblank events to track and no frame to
+    * present.  Keep the event queue moving so the resume configure is
+    * seen.  Compositors older than xdg_wm_base v6 never send the
+    * state; wl->suspended then stays false and this block never runs.
+    *
+    * No wait here.  gfx_ctx_wl_vk_presentable() reports the same
+    * suspended flag, and the runloop waits a frame on it - once, where
+    * it can see whether audio or the frame limiter is already holding
+    * the loop, and without throttling a fast-forward that is meant to
+    * run free.  The sleep this used to do was conditional on
+    * swap_interval for that last reason; the runloop's check covers it
+    * properly. */
+   if (wl->suspended)
+   {
+      flush_wayland_fd(&wl->input);
+      return;
+   }
+
+   /* RetroArch's Vulkan WSI uses a FIFO present mode whenever vsync is
+    * active (swap_interval != 0), which already blocks to vblank; a
+    * manual clock_nanosleep here would stack a second wait on top of
+    * it.  Collect presentation feedback for timing data, but leave
+    * pacing to the swapchain. */
+   if (wl->present.clock)
+      wl_present_request(&wl->present, wl->surface);
+
    if (wl->vk.context.flags & VK_CTX_FLAG_HAS_ACQUIRED_SWAPCHAIN)
    {
       wl->vk.context.flags &= ~VK_CTX_FLAG_HAS_ACQUIRED_SWAPCHAIN;
-      if (wl->vk.swapchain == VK_NULL_HANDLE)
-      {
-         retro_sleep(10);
-      }
-      else
+      /* No swapchain - the window is minimised or zero-sized, and
+       * the create is retried in vulkan_acquire_next_image() below,
+       * which throttles that path itself. Nothing to present and
+       * nothing to wait for here. */
+      if (wl->vk.swapchain != VK_NULL_HANDLE)
          vulkan_present(&wl->vk, wl->vk.context.current_swapchain_index);
    }
    vulkan_acquire_next_image(&wl->vk);
@@ -338,5 +350,6 @@ const gfx_ctx_driver_t gfx_ctx_vk_wayland = {
    gfx_ctx_wl_get_context_data,
    NULL,
    NULL, /* create_surface */
-   NULL  /* destroy_surface */
+   NULL  /* destroy_surface */,
+   gfx_ctx_wl_vk_presentable
 };

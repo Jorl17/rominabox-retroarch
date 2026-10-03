@@ -102,7 +102,7 @@ void win32_monitor_from_window(void);
 void win32_monitor_init(void);
 
 bool win32_set_video_mode(void *data,
-      unsigned width, unsigned height,
+      unsigned dims,
       bool fullscreen);
 
 bool win32_suspend_screensaver(void *data, bool enable);
@@ -117,13 +117,47 @@ bool is_running_on_xbox(void);
 
 bool win32_has_focus(void *data);
 
+/* When the compositor last saw a vertical blank, on the QPC clock
+ * cpu_features_get_time_usec() keeps here, from
+ * DwmGetCompositionTimingInfo; 0 when DWM cannot say (pre-Vista, or
+ * composition off). A reported timestamp, not a scanline estimate, and
+ * valid for any presentation that goes through the compositor - which
+ * on current Windows is every windowed and borderless swapchain, GL
+ * and Vulkan alike. A context that bypasses the compositor gets a
+ * timestamp that stops advancing, which callers already treat as
+ * absent. dwmapi is resolved at runtime and not linked. */
+retro_time_t win32_dwm_last_vblank_time(void);
+
 #ifdef HAVE_CLIP_WINDOW
 void win32_clip_window(bool grab);
 #endif
 
+#if !defined(_XBOX)
+/* Size/move and menu-loop handling for any window whose wndproc runs on
+ * the run loop's thread: content pauses, audio is stopped cleanly and a
+ * timer re-presents the last frame. See win32_common.c. */
+#define WIN32_SIZEMOVE_TIMER_ID 0x5241
+void win32_sizemove_enter(HWND hwnd);
+void win32_sizemove_exit(HWND hwnd);
+void win32_sizemove_tick(void);
+void win32_sizemove_abort(void);
+
+/* HID hotplug settle timer. WM_DEVICECHANGE arrives once per HID
+ * interface, so one composite device (a headset with volume keys, a
+ * keyboard with a media collection) sends a burst, and each event
+ * used to reinitialise the joypad driver - one full DirectInput
+ * enumeration per event, back to back. The input driver arms this
+ * timer instead; re-arming restarts it, so the reinit runs once,
+ * WIN32_HOTPLUG_SETTLE_MS after the last event of the burst. */
+#define WIN32_HOTPLUG_TIMER_ID  0x5242
+#define WIN32_HOTPLUG_SETTLE_MS 250
+void win32_hotplug_arm(void);
+bool win32_hotplug_due(void);
+#endif
+
 void win32_check_window(void *data,
       bool *quit,
-      bool *resize, unsigned *width, unsigned *height);
+      bool *resize, unsigned *dims);
 
 void win32_set_window(unsigned *width, unsigned *height,
       bool fullscreen, bool windowed_full, void *rect_data);
@@ -134,38 +168,51 @@ void win32_destroy_window(void);
 
 uint8_t win32_get_flags(void);
 
-#if defined(HAVE_D3D8) || defined(HAVE_D3D9) || defined (HAVE_D3D10) || defined (HAVE_D3D11) || defined (HAVE_D3D12)
-LRESULT CALLBACK wnd_proc_d3d_dinput(HWND hwnd, UINT message,
-      WPARAM wparam, LPARAM lparam);
-LRESULT CALLBACK wnd_proc_d3d_winraw(HWND hwnd, UINT message,
-      WPARAM wparam, LPARAM lparam);
-LRESULT CALLBACK wnd_proc_d3d_common(HWND hwnd, UINT message,
-      WPARAM wparam, LPARAM lparam);
-#endif
+/* Re-read the synchronous keyboard state and publish it as a
+ * RETROKMOD_* mask. Only valid on the thread owning the main window's
+ * message queue; use win32_get_keyboard_mods() everywhere else. */
+uint16_t win32_update_keyboard_mods(void);
 
-#if defined(HAVE_VULKAN)
-LRESULT CALLBACK wnd_proc_vk_dinput(HWND hwnd, UINT message,
-      WPARAM wparam, LPARAM lparam);
-LRESULT CALLBACK wnd_proc_vk_winraw(HWND hwnd, UINT message,
-      WPARAM wparam, LPARAM lparam);
-LRESULT CALLBACK wnd_proc_vk_common(HWND hwnd, UINT message,
-      WPARAM wparam, LPARAM lparam);
-#endif
+/* Returns the last mask published by win32_update_keyboard_mods().
+ * Safe from any thread. */
+uint16_t win32_get_keyboard_mods(void);
 
-#if defined(HAVE_GDI)
-LRESULT CALLBACK wnd_proc_gdi_dinput(HWND hwnd, UINT message,
+/* The video family a window belongs to: what creating it sets up. */
+enum win32_window_family
+{
+   WIN32_WINDOW_D3D = 0,
+   WIN32_WINDOW_WGL,
+   WIN32_WINDOW_VULKAN,
+   WIN32_WINDOW_GDI
+};
+
+/* The window procedure, for every video driver. A driver registers it
+ * for its window class and says which family the window is before
+ * creating it. */
+LRESULT CALLBACK win32_window_proc(HWND hwnd, UINT message,
       WPARAM wparam, LPARAM lparam);
-LRESULT CALLBACK wnd_proc_gdi_winraw(HWND hwnd, UINT message,
-      WPARAM wparam, LPARAM lparam);
-LRESULT CALLBACK wnd_proc_gdi_common(HWND hwnd, UINT message,
-      WPARAM wparam, LPARAM lparam);
-#endif
+void win32_window_proc_setup(enum win32_window_family family);
 
 #ifdef _XBOX
 BOOL IsIconic(HWND hwnd);
 #endif
 
 void win32_setup_pixel_format(HDC hdc, bool supports_gl);
+
+/* True when win32_setup_pixel_format selected an FP16 (scRGB) backbuffer
+ * for HDR output.  Always false unless HDR was requested, the display is
+ * in HDR mode, and the WGL float-pixel-format path succeeded; every
+ * failure falls back to the ordinary 8-bit pixel format, so pre-HDR
+ * setups behave exactly as before. */
+bool win32_backbuffer_is_scrgb(void);
+
+/* True when the display the window is on is currently in HDR mode.
+ * Probed through the dynamically-loaded DXGI helper; reports false in
+ * builds without a D3D driver or on systems without HDR. As a side
+ * effect of the underlying DXGI check, the video display HDR support
+ * flags are updated (set when supported; cleared -- and the HDR mode
+ * setting forced off -- when not). */
+bool win32_display_hdr_active(HWND hwnd);
 
 #if !defined(__WINRT__)
 /* Programmatic replacement for the menu, dialog, accelerator,
@@ -214,13 +261,26 @@ typedef NTSTATUS(CALLBACK* D3DKMTOPENADAPTERFROMHDC)(D3DKMT_OPENADAPTERFROMHDC*)
 static D3DKMTOPENADAPTERFROMHDC pD3DKMTOpenAdapterFromHdc;
 typedef NTSTATUS(CALLBACK* D3DKMTGETSCANLINE)(D3DKMT_GETSCANLINE*);
 static D3DKMTGETSCANLINE pD3DKMTGetScanLine;
+typedef NTSTATUS(CALLBACK* D3DKMTWAITFORVERTICALBLANKEVENT)(D3DKMT_WAITFORVERTICALBLANKEVENT*);
+static D3DKMTWAITFORVERTICALBLANKEVENT pD3DKMTWaitForVerticalBlankEvent;
 
 typedef struct d3dkmt_adapter
 {
    D3DKMT_GETSCANLINE sl;
+   D3DKMT_WAITFORVERTICALBLANKEVENT vb;
 } d3dkmt_adapter_t;
 
 extern int d3dkmt_scanline_get(void);
+
+/* Block until the display signals vertical blank. Returns false when
+ * the entry point is unavailable or the wait fails, in which case the
+ * caller has no anchor and must fall back to polling.
+ *
+ * Measured on a 4K120 panel: 0 intervals outside +-20%% of the median
+ * across 499 samples, p1..p99 spread 30 us, period accurate to 0.02%%.
+ * That makes it a usable phase reference; GetScanLine at ~223 us a call
+ * is not. */
+extern bool d3dkmt_wait_vblank(void);
 #endif /* HAVE_D3DKMT */
 
 RETRO_END_DECLS

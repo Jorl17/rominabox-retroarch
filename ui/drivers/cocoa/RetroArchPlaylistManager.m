@@ -16,6 +16,7 @@
 #include "../../../libretro-common/include/lists/dir_list.h"
 #include "../../../libretro-common/include/file/file_path.h"
 #include "../../../libretro-common/include/string/stdstring.h"
+#include <compat/strl.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -120,7 +121,7 @@ typedef void (^PlaylistEntryBlock)(const struct playlist_entry *entry, playlist_
         config.fuzzy_archive_match = false;
         config.autofix_paths = false;
         strlcpy(config.path, playlist_path, sizeof(config.path));
-        strlcpy(config.base_content_directory, "", sizeof(config.base_content_directory));
+        strlcpy_lit(config.base_content_directory, "", sizeof(config.base_content_directory));
 
         playlist_t *playlist = playlist_init(&config);
         if (!playlist)
@@ -148,7 +149,7 @@ typedef void (^PlaylistEntryBlock)(const struct playlist_entry *entry, playlist_
 
     // Check if RetroArch is properly initialized
     runloop_state_t *runloop_st = runloop_state_get_ptr();
-    if (!runloop_st || !(runloop_st->flags & RUNLOOP_FLAG_IS_INITED)) {
+    if (!runloop_st || !runloop_is_inited()) {
         RARCH_LOG("RetroArch not fully initialized, cannot access playlists\n");
         return games;
     }
@@ -167,6 +168,12 @@ typedef void (^PlaylistEntryBlock)(const struct playlist_entry *entry, playlist_
         game.gameId = [NSString stringWithFormat:@"%@:%@", playlistName, @(index)];
         game.title = [NSString stringWithUTF8String:entry->label];
         game.fullPath = [NSString stringWithUTF8String:entry->path];
+
+        /* System/playlist display name (strip trailing ".lpl") */
+        if ([playlistName.pathExtension.lowercaseString isEqualToString:@"lpl"])
+            game.system = playlistName.stringByDeletingPathExtension;
+        else
+            game.system = playlistName;
 
         /* Extract filename from path */
         const char *filename = path_basename(entry->path);
@@ -195,7 +202,7 @@ typedef void (^PlaylistEntryBlock)(const struct playlist_entry *entry, playlist_
 {
     // Check if RetroArch is properly initialized
     runloop_state_t *runloop_st = runloop_state_get_ptr();
-    if (!runloop_st || !(runloop_st->flags & RUNLOOP_FLAG_IS_INITED)) {
+    if (!runloop_st || !runloop_is_inited()) {
         RARCH_LOG("RetroArch not fully initialized, cannot find games\n");
         return nil;
     }
@@ -209,6 +216,59 @@ typedef void (^PlaylistEntryBlock)(const struct playlist_entry *entry, playlist_
     }
 
     return nil;
+}
+
++ (nullable NSData *)exportAllGamesAsJSONData
+{
+    NSArray<RetroArchPlaylistGame *> *allGames = [self getAllGames];
+    NSMutableArray<NSDictionary *> *serialized =
+        [[NSMutableArray alloc] initWithCapacity:allGames.count];
+
+    for (RetroArchPlaylistGame *game in allGames) {
+        NSMutableDictionary *dict = [[NSMutableDictionary alloc] init];
+
+        // "titleId" is the same <filename> used in the retroarch://game/<filename> launch scheme
+        dict[@"titleId"]   = game.filename ?: @"";
+        dict[@"titleName"] = game.title ?: @"";
+        dict[@"filename"]  = game.filename ?: @"";
+        dict[@"gameId"]    = game.gameId ?: @"";
+        dict[@"developer"] = @"";
+        dict[@"version"]   = @"";
+        if (game.system)
+            dict[@"system"] = game.system;
+        if (game.coreName)
+            dict[@"coreName"] = game.coreName;
+
+        [serialized addObject:dict];
+    }
+
+    NSError *error = nil;
+    NSData *json = [NSJSONSerialization dataWithJSONObject:serialized
+                                                  options:0
+                                                    error:&error];
+    if (!json) {
+        RARCH_WARN("Failed to serialize game library: %s\n",
+                   [[error localizedDescription] UTF8String]);
+        return nil;
+    }
+
+    return json;
+}
+
++ (nullable NSString *)exportAllGamesAsBase64URLString
+{
+    NSData *json = [self exportAllGamesAsJSONData];
+    if (!json)
+        return nil;
+
+    /* URL-safe base64 (base64url) without padding, matching the encoding other
+     * front-ends use for their library callbacks. */
+    NSString *encoded = [json base64EncodedStringWithOptions:0];
+    encoded = [encoded stringByReplacingOccurrencesOfString:@"+" withString:@"-"];
+    encoded = [encoded stringByReplacingOccurrencesOfString:@"/" withString:@"_"];
+    encoded = [encoded stringByReplacingOccurrencesOfString:@"=" withString:@""];
+
+    return encoded;
 }
 
 // Private helper method to extract games from a playlist

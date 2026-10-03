@@ -25,6 +25,8 @@
 #include "menu_displaylist.h"
 #include "../file_path_special.h"
 #include "../core_info.h"
+#include "../msg_hash_lbl_str.h"
+#include "../gfx/gfx_surface.h"
 
 #define CONTENTLESS_CORE_ICON_DEFAULT "default.png"
 
@@ -273,7 +275,7 @@ static void contentless_cores_load_icons(contentless_cores_state_t *state)
    size_t i;
    char icon_path[PATH_MAX_LENGTH];
    char icon_directory[DIR_MAX_LENGTH];
-   bool rgba_supported              = (video_driver_get_disp_flags() & VIDEO_FLAG_USE_RGBA);
+   bool rgba_supported              = gfx_surface_wants_rgba();
    core_info_list_t *core_info_list = NULL;
 
    if (!state)
@@ -480,7 +482,7 @@ unsigned menu_displaylist_contentless_cores(file_list_t *list,
    if (  (count == 0)
        && menu_entries_append(list,
             msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NO_CORES_AVAILABLE),
-            msg_hash_to_str(MENU_ENUM_LABEL_NO_CORES_AVAILABLE),
+            MENU_ENUM_LABEL_NO_CORES_AVAILABLE_STR,
             MENU_ENUM_LABEL_NO_CORES_AVAILABLE,
             0, 0, 0, NULL))
       count++;

@@ -473,7 +473,7 @@ static size_t frontend_win32_get_os(char *s, size_t len, int *major, int *minor)
        * so use build number to insert version label */
       if (!server && vi.dwMajorVersion == 10 && vi.dwBuildNumber == 10240
             && !*display_version && !*release_id)
-         strlcpy(release_id, "1507", sizeof(release_id));
+         strlcpy_lit(release_id, "1507", sizeof(release_id));
    }
 
    /* Detect Windows version from build number, NT version, or platform ID.
@@ -488,15 +488,15 @@ static size_t frontend_win32_get_os(char *s, size_t len, int *major, int *minor)
          if (server)
          {
             if (vi.dwBuildNumber >= 26040)
-               _len = strlcpy(s, "Windows Server 2025", len);
+               _len = strlcpy_lit(s, "Windows Server 2025", len);
             else if (vi.dwBuildNumber >= 20201)
-               _len = strlcpy(s, "Windows Server 2022", len);
+               _len = strlcpy_lit(s, "Windows Server 2022", len);
             else if (vi.dwBuildNumber >= 17623)
-               _len = strlcpy(s, "Windows Server 2019", len);
+               _len = strlcpy_lit(s, "Windows Server 2019", len);
             /* Early Server 2016 preview builds shared build numbers with
              * Windows 10 previews, so 10074 is used as a safe cutoff here */
             else if (vi.dwBuildNumber >= 10074)
-               _len = strlcpy(s, "Windows Server 2016", len);
+               _len = strlcpy_lit(s, "Windows Server 2016", len);
             else
                _len = snprintf(s, len, "Windows Server NT kernel %lu.%lu",
                      (unsigned long)vi.dwMajorVersion, (unsigned long)vi.dwMinorVersion);
@@ -505,10 +505,10 @@ static size_t frontend_win32_get_os(char *s, size_t len, int *major, int *minor)
          {
             /* Detect Windows 11 starting from an early leaked preview build */
             if (vi.dwBuildNumber >= 21996)
-               _len = strlcpy(s, "Windows 11", len);
+               _len = strlcpy_lit(s, "Windows 11", len);
             /* Detect Windows 10 from the first NT 10.0-based preview build */
             else if (vi.dwBuildNumber >= 9888)
-               _len = strlcpy(s, "Windows 10", len);
+               _len = strlcpy_lit(s, "Windows 10", len);
             else
                _len = snprintf(s, len, "Windows NT kernel %lu.%lu",
                      (unsigned long)vi.dwMajorVersion, (unsigned long)vi.dwMinorVersion);
@@ -553,22 +553,22 @@ static size_t frontend_win32_get_os(char *s, size_t len, int *major, int *minor)
             case 2:
                if (server || win32_is_server_from_registry())
                {
-                  _len = strlcpy(s, "Windows Server 2003", len);
+                  _len = strlcpy_lit(s, "Windows Server 2003", len);
                   if (GetSystemMetrics(SM_SERVERR2))
-                     _len += strlcpy(s + _len, " R2", len - _len);
+                     _len += strlcpy_lit(s + _len, " R2", len - _len);
                }
                else
                {
                   /* XP "x64 Edition" is NT 5.2 (XP is 5.1) and only ever had one
                    * edition, making it safe to use the full product name here */
-                  _len = strlcpy(s, "Windows XP Professional x64 Edition", len);
+                  _len = strlcpy_lit(s, "Windows XP Professional x64 Edition", len);
                }
                break;
             case 1:
-               _len = strlcpy(s, "Windows XP", len);
+               _len = strlcpy_lit(s, "Windows XP", len);
                break;
             case 0:
-               _len = strlcpy(s, "Windows 2000", len);
+               _len = strlcpy_lit(s, "Windows 2000", len);
                break;
             default:
                _len = snprintf(s, len, "Windows NT kernel %lu.%lu",
@@ -582,24 +582,24 @@ static size_t frontend_win32_get_os(char *s, size_t len, int *major, int *minor)
          {
             case 0:
                if (vi.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
-                  _len = strlcpy(s, "Windows 95", len);
+                  _len = strlcpy_lit(s, "Windows 95", len);
                else if (vi.dwPlatformId == VER_PLATFORM_WIN32_NT)
-                  _len = strlcpy(s, "Windows NT 4.0", len);
+                  _len = strlcpy_lit(s, "Windows NT 4.0", len);
                else
-                  _len = strlcpy(s, "Unknown", len);
+                  _len = strlcpy_lit(s, "Unknown", len);
                break;
             case 90:
                /* Apparently it's not "ME". Official naming always uses "Me" */
-               _len = strlcpy(s, "Windows Me", len);
+               _len = strlcpy_lit(s, "Windows Me", len);
                break;
             case 10:
             {
                DWORD win98_build;
                win98_build = (DWORD)(LOWORD(vi.dwBuildNumber));
-               _len = strlcpy(s, "Windows 98", len);
+               _len = strlcpy_lit(s, "Windows 98", len);
                /* 98/98 SE are both Win9x 4.10, so detect SE by build number */
                if (win98_build >= 2222)
-                  _len += strlcpy(s + _len, " Second Edition", len - _len);
+                  _len += strlcpy_lit(s + _len, " Second Edition", len - _len);
                break;
             }
             default:
@@ -625,15 +625,15 @@ static size_t frontend_win32_get_os(char *s, size_t len, int *major, int *minor)
    {
       if (*display_version)
       {
-         _len += strlcpy(s + _len, " (", len - _len);
+         _len += strlcpy_lit(s + _len, " (", len - _len);
          _len += strlcpy(s + _len, display_version, len - _len);
-         _len += strlcpy(s + _len, ")", len - _len);
+         _len += strlcpy_lit(s + _len, ")", len - _len);
       }
       else if (*release_id)
       {
-         _len += strlcpy(s + _len, " (", len - _len);
+         _len += strlcpy_lit(s + _len, " (", len - _len);
          _len += strlcpy(s + _len, release_id, len - _len);
-         _len += strlcpy(s + _len, ")", len - _len);
+         _len += strlcpy_lit(s + _len, ")", len - _len);
       }
    }
    /* Hide x86/x64 for XP x64 ("x64" is already shown in the OS name) 
@@ -643,16 +643,16 @@ static size_t frontend_win32_get_os(char *s, size_t len, int *major, int *minor)
              (vi.dwMajorVersion == 5 && vi.dwMinorVersion >= 1))
          && !(vi.dwMajorVersion == 5 && vi.dwMinorVersion == 2))
    {
-      _len += strlcpy(s + _len, " ",  len - _len);
+      _len += strlcpy_lit(s + _len, " ",  len - _len);
       _len += strlcpy(s + _len, arch, len - _len);
    }
 
-   _len += strlcpy(s + _len, " - Build ", len - _len);
+   _len += strlcpy_lit(s + _len, " - Build ", len - _len);
    _len += strlcpy(s + _len, build_str, len - _len);
 
    if (*vi.szCSDVersion)
    {
-      _len += strlcpy(s + _len, " ", len - _len);
+      _len += strlcpy_lit(s + _len, " ", len - _len);
       strlcpy(s + _len, vi.szCSDVersion, len - _len);
    }
 
@@ -737,13 +737,10 @@ enum frontend_architecture frontend_win32_get_arch(void)
    {
       case PROCESSOR_ARCHITECTURE_AMD64:
          return FRONTEND_ARCH_X86_64;
-         break;
       case PROCESSOR_ARCHITECTURE_INTEL:
          return FRONTEND_ARCH_X86;
-         break;
       case PROCESSOR_ARCHITECTURE_ARM:
          return FRONTEND_ARCH_ARM;
-         break;
       default:
          break;
    }
@@ -898,40 +895,6 @@ static void frontend_win32_env_get(int *argc, char *argv[],
 
 #ifndef IS_SALAMANDER
    dir_check_defaults("custom.ini");
-#endif
-}
-
-static uint64_t frontend_win32_get_total_mem(void)
-{
-   /* OSes below 2000 don't have the Ex version,
-    * and non-Ex cannot work with >4GB RAM */
-#if _WIN32_WINNT >= 0x0500
-   MEMORYSTATUSEX mem_info;
-   mem_info.dwLength = sizeof(MEMORYSTATUSEX);
-   GlobalMemoryStatusEx(&mem_info);
-   return mem_info.ullTotalPhys;
-#else
-   MEMORYSTATUS mem_info;
-   mem_info.dwLength = sizeof(MEMORYSTATUS);
-   GlobalMemoryStatus(&mem_info);
-   return mem_info.dwTotalPhys;
-#endif
-}
-
-static uint64_t frontend_win32_get_free_mem(void)
-{
-   /* OSes below 2000 don't have the Ex version,
-    * and non-Ex cannot work with >4GB RAM */
-#if _WIN32_WINNT >= 0x0500
-   MEMORYSTATUSEX mem_info;
-   mem_info.dwLength = sizeof(MEMORYSTATUSEX);
-   GlobalMemoryStatusEx(&mem_info);
-   return mem_info.ullAvailPhys;
-#else
-   MEMORYSTATUS mem_info;
-   mem_info.dwLength = sizeof(MEMORYSTATUS);
-   GlobalMemoryStatus(&mem_info);
-   return mem_info.dwAvailPhys;
 #endif
 }
 
@@ -1259,7 +1222,7 @@ static bool accessibility_speak_windows(int speed,
 
    if (g_plat_win32_flags & PLAT_WIN32_FLAG_USE_POWERSHELL)
    {
-      const char *template_lang = "powershell.exe -NoProfile -WindowStyle Hidden -Command \"Add-Type -AssemblyName System.Speech; $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; $synth.SelectVoice(\\\"%s\\\"); $synth.Rate = %s; $synth.Speak($input);\"";
+      const char *template_lang = "powershell.exe -NoProfile -WindowStyle Hidden -Command \"Add-Type -AssemblyName System.Speech; $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; try { $synth.SelectVoice(\\\"%s\\\") } catch { }; $synth.Rate = %s; $synth.Speak($input);\"";
       const char *template_nolang = "powershell.exe -NoProfile -WindowStyle Hidden -Command \"Add-Type -AssemblyName System.Speech; $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; $synth.Rate = %s; $synth.Speak($input);\"";
       if (language && language[0] != '\0')
          snprintf(cmd, sizeof(cmd), template_lang, language, speeds[speed-1]);
@@ -1360,8 +1323,6 @@ frontend_ctx_driver_t frontend_ctx_win32 = {
    frontend_win32_get_arch,        /* get_architecture          */
    frontend_win32_get_powerstate,
    frontend_win32_parse_drive_list,
-   frontend_win32_get_total_mem,
-   frontend_win32_get_free_mem,
    NULL,                            /* install_signal_handler   */
    NULL,                            /* get_sighandler_state     */
    NULL,                            /* set_sighandler_state     */
@@ -1370,8 +1331,6 @@ frontend_ctx_driver_t frontend_ctx_win32 = {
    frontend_win32_detach_console,   /* detach_console           */
    NULL,                            /* get_lakka_version        */
    NULL,                            /* set_screen_brightness    */
-   NULL,                            /* watch_path_for_changes   */
-   NULL,                            /* check_for_path_changes   */
    NULL,                            /* set_sustained_performance_mode */
    frontend_win32_get_cpu_model_name,
    frontend_win32_get_user_language,
@@ -1387,3 +1346,34 @@ frontend_ctx_driver_t frontend_ctx_win32 = {
    "win32",                         /* ident               */
    NULL                             /* get_video_driver    */
 };
+
+/* Windows GUI-subsystem entry point.
+ *
+ * RetroArch links as a GUI-subsystem app (-mwindows) so no console
+ * window appears. The C runtime startup that this pulls in calls
+ * WinMain rather than main on some toolchains (notably MSYS2's
+ * mingw-w64, via crtexewin.o). RetroArch's actual entry is main()
+ * (in retroarch.c, or ui_qt.cpp for Qt builds); that WinMain used to
+ * be supplied by SDL's shim library (libSDL2main), but RetroArch now
+ * sets SDL_MAIN_HANDLED and does not link -lSDL*main, so we provide
+ * the one-line bridge ourselves here.
+ *
+ * This lives in platform_win32.c because it is compiled exactly once
+ * for every Win32 desktop build regardless of which file owns main()
+ * and regardless of whether SDL is enabled. main() always has C
+ * linkage (the language gives it that specially), so no extern "C"
+ * dance is needed even under CXX_BUILD. */
+#if !defined(_XBOX) && !defined(__WINRT__)
+#include <stdlib.h> /* __argc, __argv */
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
+      LPSTR lpCmdLine, int nShowCmd)
+{
+   int main(int argc, char *argv[]);
+   (void)hInstance;
+   (void)hPrevInstance;
+   (void)lpCmdLine;
+   (void)nShowCmd;
+   return main(__argc, __argv);
+}
+#endif

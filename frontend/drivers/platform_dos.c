@@ -193,8 +193,6 @@ frontend_ctx_driver_t frontend_ctx_dos = {
 	frontend_dos_get_arch,        /* get_architecture */
 	NULL,                         /* get_powerstate */
 	NULL,                         /* parse_drive_list */
-	NULL,                         /* get_total_mem */
-	NULL,                         /* get_free_mem  */
 	NULL,                         /* install_signal_handler */
 	NULL,                         /* get_sighandler_state */
 	NULL,                         /* set_sighandler_state */
@@ -203,8 +201,6 @@ frontend_ctx_driver_t frontend_ctx_dos = {
 	NULL,                         /* detach_console */
 	NULL,                         /* get_lakka_version */
 	NULL,                         /* set_screen_brightness */
-	NULL,                         /* watch_path_for_changes */
-	NULL,                         /* check_for_path_changes */
 	NULL,                         /* set_sustained_performance_mode */
 	NULL,                         /* get_cpu_model_name */
 	NULL,                         /* get_user_language */

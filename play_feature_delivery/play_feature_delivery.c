@@ -18,6 +18,8 @@
 
 #include "com_retroarch_browser_retroactivity_RetroActivityCommon.h"
 
+#include <retro_atomic.h>
+
 #ifdef HAVE_THREADS
 #include <rthreads/rthreads.h>
 #include <stdlib.h>
@@ -27,6 +29,7 @@
 #include "../frontend/drivers/platform_unix.h"
 
 #include "play_feature_delivery.h"
+#include <compat/strl.h>
 
 /***************************/
 /* Globals (do not fix...) */
@@ -43,28 +46,30 @@
 typedef struct
 {
 #ifdef HAVE_THREADS
-   slock_t *enabled_lock;
    slock_t *status_lock;
 #endif
+   /* Cached result of play_feature_delivery_enabled_internal():
+    * -1 = not yet queried, 0 = disabled, 1 = enabled.  Queried
+    * frequently, often in loops, so the fast path is a single
+    * acquire load with no lock.  A cold race can at worst issue
+    * the (idempotent) Java query twice; both stores write the
+    * same value. */
+   retro_atomic_int_t enabled_cached;
    unsigned download_progress;
    enum play_feature_delivery_install_status last_status;
    char last_core_name[256];
-   bool enabled;
-   bool enabled_set;
    bool active;
 } play_feature_delivery_state_t;
 
 static play_feature_delivery_state_t play_feature_delivery_state = {
 
 #ifdef HAVE_THREADS
-   NULL,                       /* enabled_lock */
    NULL,                       /* status_lock */
 #endif
+   RETRO_ATOMIC_INT_INITIALIZER(-1), /* enabled_cached */
    0,                          /* download_progress */
    PLAY_FEATURE_DELIVERY_IDLE, /* last_status */
    {'\0'},                     /* last_core_name */
-   false,                      /* enabled */
-   false,                      /* enabled_set */
    false,                      /* active */
 };
 
@@ -204,8 +209,6 @@ void play_feature_delivery_init(void)
    play_feature_delivery_deinit();
 
 #ifdef HAVE_THREADS
-   if (!state->enabled_lock)
-      state->enabled_lock = slock_new();
    if (!state->status_lock)
       state->status_lock  = slock_new();
 #endif
@@ -222,12 +225,6 @@ void play_feature_delivery_deinit(void)
    play_feature_delivery_state_t* state = play_feature_delivery_get_state();
 
 #ifdef HAVE_THREADS
-   if (state->enabled_lock)
-   {
-      slock_free(state->enabled_lock);
-      state->enabled_lock = NULL;
-   }
-
    if (state->status_lock)
    {
       slock_free(state->status_lock);
@@ -292,32 +289,21 @@ static bool play_feature_delivery_enabled_internal(void)
 bool play_feature_delivery_enabled(void)
 {
    play_feature_delivery_state_t* state = play_feature_delivery_get_state();
-   bool enabled;
-
-   /* Lock mutex */
-#ifdef HAVE_THREADS
-   slock_lock(state->enabled_lock);
-#endif
 
    /* Calling Java functions is slow. We need to
     * check Play Store build status frequently,
     * often in loops, so rely on a cached global
     * status flag instead dealing with Java
     * interfaces */
-   if (!state->enabled_set)
+   int cached = retro_atomic_load_acquire_int(&state->enabled_cached);
+
+   if (cached < 0)
    {
-      state->enabled     = play_feature_delivery_enabled_internal();
-      state->enabled_set = true;
+      cached = play_feature_delivery_enabled_internal() ? 1 : 0;
+      retro_atomic_store_release_int(&state->enabled_cached, cached);
    }
 
-   enabled = state->enabled;
-
-   /* Unlock mutex */
-#ifdef HAVE_THREADS
-   slock_unlock(state->enabled_lock);
-#endif
-
-   return enabled;
+   return (cached == 1);
 }
 
 /* Returns a list of cores currently available
@@ -362,7 +348,7 @@ struct string_list *play_feature_delivery_available_cores(void)
          char core_file[256];
          /* Generate core file name */
          size_t _len = strlcpy(core_file, core_name, sizeof(core_file));
-         strlcpy(core_file       + _len,
+         strlcpy_lit(core_file       + _len,
                "_libretro_android.so",
                sizeof(core_file) - _len);
          /* Add entry to list */
@@ -507,21 +493,29 @@ bool play_feature_delivery_download(const char *core_file)
          core_file, core_name, sizeof(core_name)))
       return false;
 
-   /* Lock mutex */
+   /* We only support one download at a time: claim it under the
+    * lock, then ask Java with the lock released. The status callbacks
+    * take the same lock, and one that came back on this thread, or
+    * one Java's own thread delivers while this call waits on it,
+    * would otherwise wait on a lock this thread is holding. */
 #ifdef HAVE_THREADS
    slock_lock(state->status_lock);
 #endif
-
-   /* We only support one download at a time */
    if (!state->active)
    {
-      /* Update status */
       state->download_progress = 0;
       state->last_status       = PLAY_FEATURE_DELIVERY_PENDING;
       state->active            = true;
       strlcpy(state->last_core_name, core_name,
             sizeof(state->last_core_name));
+      ret                      = true;
+   }
+#ifdef HAVE_THREADS
+   slock_unlock(state->status_lock);
+#endif
 
+   if (ret)
+   {
       /* Convert core name to a Java-style string */
       core_name_jni = (*env)->NewStringUTF(env, core_name);
 
@@ -531,14 +525,7 @@ bool play_feature_delivery_download(const char *core_file)
 
       /* Free core_name_jni reference */
       (*env)->DeleteLocalRef(env, core_name_jni);
-
-      ret = true;
    }
-
-   /* Unlock mutex */
-#ifdef HAVE_THREADS
-   slock_unlock(state->status_lock);
-#endif
 
    return ret;
 }

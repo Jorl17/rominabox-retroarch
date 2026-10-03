@@ -1,7 +1,7 @@
 compiler    := gcc
 extra_flags :=
 use_neon    := 0
-release	    := release
+build       = release
 DYLIB	    := so
 PREFIX      := /usr
 INSTALLDIR  := $(PREFIX)/lib/retroarch/filters/video
@@ -123,6 +123,7 @@ objects += blargg_ntsc_snes.$(DYLIB) \
 			  scanline2x.$(DYLIB) \
 			  grid2x.$(DYLIB) \
 			  grid3x.$(DYLIB) \
+			  grid4x.$(DYLIB) \
 			  gameboy3x.$(DYLIB) \
 			  gameboy4x.$(DYLIB) \
 			  dot_matrix_3x.$(DYLIB) \
@@ -145,8 +146,10 @@ all: build;
 %.o: %.c
 	$(CC) -c -o $@ $(flags) $<
 
+# Libraries go after the objects: with --as-needed, a library named
+# before the objects that use it is dropped from the link.
 %.$(DYLIB): %.o
-	$(CC) -o $@ $(ldflags) $(flags) $^
+	$(CC) -o $@ $(ldflags) $(flags) $^ $(LIBS) -lm
 
 build: $(objects)
 

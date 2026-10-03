@@ -20,11 +20,14 @@
 * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
+#include <retro_posix_source.h>
+
 #include <media/media_detect_cd.h>
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
 #include <file/file_path.h>
 #include <retro_miscellaneous.h>
+#include <compat/strl.h>
 
 /*#define MEDIA_CUE_PARSE_DEBUG*/
 
@@ -59,7 +62,7 @@ static bool media_skip_spaces(const char **s, size_t len)
 /* Fill in "info" with detected CD info. Use this when you have a cue file and want it parsed to find the first data track and any pregap info. */
 bool media_detect_cd_info_cue(const char *path, media_detect_cd_info_t *info)
 {
-   RFILE *file                          = NULL;
+   char *buf                            = NULL;
    char *line                           = NULL;
    char track_path[PATH_MAX_LENGTH]     = {0};
    char track_abs_path[PATH_MAX_LENGTH] = {0};
@@ -72,7 +75,15 @@ bool media_detect_cd_info_cue(const char *path, media_detect_cd_info_t *info)
    if (!path || !*path || !info)
       return false;
 
-   if (!(file = filestream_open(path, RETRO_VFS_FILE_ACCESS_READ, 0)))
+   /* Read the whole cue once, then walk it line by line in memory:
+    * filestream_getline reads a byte per call through the VFS
+    * (getc == a 1-byte filestream_read), so the previous loop cost
+    * one virtual read per character.  The cue grammar is a flat
+    * sequence of lines with no includes or mid-parse seeks, so a
+    * single slurp and an in-place newline scan parse identically -
+    * each line is exactly what getline would have returned (it split
+    * on \n and kept any trailing \r, and so does this). */
+   if (!filestream_read_file(path, (void**)&buf, NULL) || !buf)
    {
 #ifdef MEDIA_CUE_PARSE_DEBUG
       printf("[MEDIA] Could not open cue path for reading: %s\n", path);
@@ -81,16 +92,17 @@ bool media_detect_cd_info_cue(const char *path, media_detect_cd_info_t *info)
       return false;
    }
 
-   while (!filestream_eof(file) && (line = filestream_getline(file)))
+   line = buf;
+   while (line && *line)
    {
-      size_t _len = 0;
+      size_t _len         = 0;
       const char *command = NULL;
+      char *next          = strchr(line, '\n');
+      if (next)
+         *next = '\0';
 
-      if (!line || !*line)
-      {
-         free(line);
-         continue;
-      }
+      if (!*line)
+         goto next_line;
 
       _len    = strlen(line);
       command = line;
@@ -241,10 +253,13 @@ bool media_detect_cd_info_cue(const char *path, media_detect_cd_info_t *info)
          }
       }
 
-      free(line);
+next_line:
+      if (!next)
+         break;
+      line = next + 1;
    }
 
-   filestream_close(file);
+   free(buf);
 
    if (*track_path)
    {
@@ -343,7 +358,7 @@ bool media_detect_cd_info(const char *path, uint64_t pregap_bytes, media_detect_
           * but I have not seen any real examples of them. */
          info->system_id = MEDIA_CD_SYSTEM_MEGA_CD;
 
-         strlcpy(info->system, "Sega CD / Mega CD", sizeof(info->system));
+         strlcpy_lit(info->system, "Sega CD / Mega CD", sizeof(info->system));
 
          title_pos = buf + offset + 0x150;
 
@@ -353,7 +368,7 @@ bool media_detect_cd_info(const char *path, uint64_t pregap_bytes, media_detect_
             media_zero_trailing_spaces(info->title, sizeof(info->title));
          }
          else
-            strlcpy(info->title, "N/A", sizeof(info->title));
+            strlcpy_lit(info->title, "N/A", sizeof(info->title));
 
          serial_pos = buf + offset + 0x183;
 
@@ -380,7 +395,7 @@ bool media_detect_cd_info(const char *path, uint64_t pregap_bytes, media_detect_
 
          info->system_id = MEDIA_CD_SYSTEM_SATURN;
 
-         strlcpy(info->system, "Sega Saturn", sizeof(info->system));
+         strlcpy_lit(info->system, "Sega Saturn", sizeof(info->system));
 
          title_pos = buf + offset + 0x60;
 
@@ -390,7 +405,7 @@ bool media_detect_cd_info(const char *path, uint64_t pregap_bytes, media_detect_
             media_zero_trailing_spaces(info->title, sizeof(info->title));
          }
          else
-            strlcpy(info->title, "N/A", sizeof(info->title));
+            strlcpy_lit(info->title, "N/A", sizeof(info->title));
 
          serial_pos = buf + offset + 0x20;
 
@@ -446,7 +461,7 @@ bool media_detect_cd_info(const char *path, uint64_t pregap_bytes, media_detect_
 
          info->system_id = MEDIA_CD_SYSTEM_DREAMCAST;
 
-         strlcpy(info->system, "Sega Dreamcast", sizeof(info->system));
+         strlcpy_lit(info->system, "Sega Dreamcast", sizeof(info->system));
 
          title_pos = buf + offset + 0x80;
 
@@ -456,7 +471,7 @@ bool media_detect_cd_info(const char *path, uint64_t pregap_bytes, media_detect_
             media_zero_trailing_spaces(info->title, sizeof(info->title));
          }
          else
-            strlcpy(info->title, "N/A", sizeof(info->title));
+            strlcpy_lit(info->title, "N/A", sizeof(info->title));
 
          serial_pos = buf + offset + 0x40;
 
@@ -510,7 +525,7 @@ bool media_detect_cd_info(const char *path, uint64_t pregap_bytes, media_detect_
 
          info->system_id = MEDIA_CD_SYSTEM_PSX;
 
-         strlcpy(info->system, "Sony PlayStation", sizeof(info->system));
+         strlcpy_lit(info->system, "Sony PlayStation", sizeof(info->system));
 
          title_pos = buf + offset + (16 * sector_size) + 40;
 
@@ -520,17 +535,17 @@ bool media_detect_cd_info(const char *path, uint64_t pregap_bytes, media_detect_
             media_zero_trailing_spaces(info->title, sizeof(info->title));
          }
          else
-            strlcpy(info->title, "N/A", sizeof(info->title));
+            strlcpy_lit(info->title, "N/A", sizeof(info->title));
       }
       else if (!memcmp(buf + offset, "\x01\x5a\x5a\x5a\x5a\x5a\x01\x00\x00\x00\x00\x00", 12))
       {
          info->system_id = MEDIA_CD_SYSTEM_3DO;
-         strlcpy(info->system, "3DO", sizeof(info->system));
+         strlcpy_lit(info->system, "3DO", sizeof(info->system));
       }
       else if (!memcmp(buf + offset + 0x950, "PC Engine CD-ROM SYSTEM", 23))
       {
          info->system_id = MEDIA_CD_SYSTEM_PC_ENGINE_CD;
-         strlcpy(info->system, "TurboGrafx-CD / PC-Engine CD", sizeof(info->system));
+         strlcpy_lit(info->system, "TurboGrafx-CD / PC-Engine CD", sizeof(info->system));
       }
 
       free(buf);

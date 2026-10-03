@@ -119,7 +119,6 @@ static bool bsv_movie_init_record(
    time_t t                     = time(NULL);
    time_t time_lil              = swap_if_big64(t);
    uint32_t state_size          = 0;
-   uint32_t content_crc         = 0;
    uint32_t header[REPLAY_HEADER_LEN]  = {0};
    intfstream_t *file           = intfstream_open_file(path,
          RETRO_VFS_FILE_ACCESS_WRITE | RETRO_VFS_FILE_ACCESS_READ,
@@ -145,7 +144,7 @@ static bool bsv_movie_init_record(
 #endif
    handle->checkpoint_compression = REPLAY_CHECKPOINT2_COMPRESSION_NONE;
    if (settings->bools.savestate_file_compression)
-#if defined(HAVE_ZSTD)
+#ifdef HAVE_RZSTD
       handle->checkpoint_compression = REPLAY_CHECKPOINT2_COMPRESSION_ZSTD;
 #elif defined(HAVE_ZLIB)
       handle->checkpoint_compression = REPLAY_CHECKPOINT2_COMPRESSION_ZLIB;
@@ -153,11 +152,19 @@ static bool bsv_movie_init_record(
       {}
 #endif
 
-   content_crc              = content_get_crc();
-
    header[REPLAY_HEADER_MAGIC_INDEX] = swap_if_big32(REPLAY_MAGIC);
    header[REPLAY_HEADER_VERSION_INDEX] = swap_if_big32(handle->version);
-   header[REPLAY_HEADER_CRC_INDEX] = swap_if_big32(content_crc);
+   /* Left at zero.  This field has only ever been written, never read:
+    * nothing checks a replay's stored CRC against the content it is
+    * being played back against, here or anywhere else.  Filling it in
+    * meant calling content_get_crc, which for a core using
+    * need_fullpath reads the entire disc image from disk - a full read
+    * to populate a header field no code consults.
+    *
+    * If replay playback is ever taught to verify its content, this is
+    * where the value goes back, and it should be taken from whatever
+    * the frontend already has rather than forcing a read. */
+   header[REPLAY_HEADER_CRC_INDEX] = 0;
 
    info_size                = core_serialize_size();
    state_size               = (unsigned)info_size;
@@ -186,6 +193,8 @@ static bool bsv_movie_init_record(
 #ifdef HAVE_STATESTREAM
    handle->superblocks      = uint32s_index_new(superblock_size, handle->commit_interval, handle->commit_threshold);
    handle->blocks           = uint32s_index_new(block_size/4, handle->commit_interval, handle->commit_threshold);
+   if (!handle->superblocks || !handle->blocks)
+      return false;
 #endif
    if (state_size)
       return bsv_movie_reset_recording(handle);
@@ -244,6 +253,17 @@ static bsv_movie_t *bsv_movie_init_internal(const char *path, enum rarch_movie_t
    return handle;
 
 error:
+   /* The playback init path reads the first checkpoint and the first
+    * frame's events before the handle is installed.  On a short read
+    * those readers set BSV_FLAG_MOVIE_END on the global input state,
+    * but the handle is freed here and never enqueued, so the PLAYBACK
+    * flag is never set alongside it.  Left behind, MOVIE_END makes the
+    * run loop issue CMD_EVENT_PAUSE after every frame while
+    * movie_stop() has no PLAYBACK/RECORDING flag to clear it through:
+    * a permanent pause that survives Close Content and only ends with
+    * a process restart (#19622).  A handle that failed to initialise
+    * must not leave any flag behind. */
+   input_state_get_ptr()->bsv_movie_state.flags &= ~BSV_FLAG_MOVIE_END;
    if (handle)
       bsv_movie_free(handle);
    return NULL;
@@ -288,9 +308,14 @@ static bool bsv_movie_start_playback(input_driver_state_t *input_st, char *path)
       input_st->bsv_movie_state_handle. */
    if (!(state = bsv_movie_init_internal(path, RARCH_MOVIE_PLAYBACK)))
    {
-      RARCH_ERR("[Replay] %s: \"%s\".\n",
-            msg_hash_to_str(MSG_FAILED_TO_LOAD_MOVIE_FILE),
-            path);
+      /* This runs from the task callback, after CMD_EVENT_PLAY_REPLAY
+       * has already returned success, so the command's own failure
+       * message never fires for an unreadable file.  Tell the user
+       * here, as the record path does. */
+      _msg = msg_hash_to_str(MSG_FAILED_TO_LOAD_MOVIE_FILE);
+      runloop_msg_queue_push(_msg, strlen(_msg), 1, 180, true, NULL,
+            MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
+      RARCH_ERR("[Replay] %s: \"%s\".\n", _msg, path);
       return false;
    }
 
@@ -313,6 +338,29 @@ static bool bsv_movie_start_playback(input_driver_state_t *input_st, char *path)
    needed due to mixing sync and async during initialization. */
 typedef struct bsv_state moviectl_task_state_t;
 
+/* True from the push of a playback-start task until its main-thread
+ * callback has installed the replay handle.
+ *
+ * A flag rather than a task_queue_find() for the same reason the
+ * state-load equivalent is one: the unthreaded gather lifts every
+ * running task off the queue before invoking any handler, so a
+ * finder can report "nothing in flight" while the task is sitting in
+ * that pass, and the threaded gather has a narrower version of the
+ * same window between a worker finishing and its callback running.
+ * The flag transitions strictly on the main thread. */
+static bool movie_playback_start_pending = false;
+static int64_t movie_playback_start_id  = 0;
+
+bool movie_playback_start_in_progress(void *data)
+{
+   return movie_playback_start_pending;
+}
+
+int64_t movie_playback_start_identifier(void)
+{
+   return movie_playback_start_id;
+}
+
 static void task_moviectl_playback_handler(retro_task_t *task)
 {
    uint8_t flg;
@@ -333,8 +381,12 @@ static void moviectl_start_playback_cb(retro_task_t *task,
 {
   struct bsv_state *state        = (struct bsv_state *)task_data;
   input_driver_state_t *input_st = input_state_get_ptr();
+  movie_playback_start_pending   = false;
   input_st->bsv_movie_state      = *state;
-  bsv_movie_start_playback(input_st, state->movie_start_path);
+  if (   bsv_movie_start_playback(input_st, state->movie_start_path)
+      && input_st->bsv_movie_state_next_handle)
+     movie_playback_start_id     =
+        input_st->bsv_movie_state_next_handle->identifier;
   free(state);
 }
 
@@ -402,6 +454,16 @@ bool movie_stop_record(input_driver_state_t *input_st)
    bsv_movie_t *movie = input_st->bsv_movie_state_handle;
    uint32_t frame_count;
    const char *_msg = msg_hash_to_str(MSG_MOVIE_RECORD_STOPPED);
+   /* The record task installs the handle as next_handle; the run loop
+    * promotes it on the next frame (bsv_movie_dequeue_next).  Halted
+    * before a frame has run - from the menu with the core paused, say
+    * - it is still pending, and stopping through the promoted handle
+    * alone returned false with the RECORDING flag and the pending
+    * handle both left in place: the session was stuck "recording" and
+    * every later Record/Play Replay refused.  A pending recording is
+    * a recording of zero frames; finish it like any other. */
+   if (!movie)
+      movie = input_st->bsv_movie_state_next_handle;
    if (!movie)
       return false;
    runloop_msg_queue_push(_msg, strlen(_msg), 2, 180, true, NULL,
@@ -434,6 +496,11 @@ bool movie_stop(input_driver_state_t *input_st)
       return movie_stop_playback(input_st);
    else if (input_st->bsv_movie_state.flags & BSV_FLAG_MOVIE_RECORDING)
       return movie_stop_record(input_st);
+   /* No movie is active, so nothing above cleared the flags.  Drop a
+    * stray MOVIE_END here too: the run loop pauses every frame while
+    * it is set, and this is also what Close Content calls, so it must
+    * not carry the flag into the next content. */
+   input_st->bsv_movie_state.flags &= ~BSV_FLAG_MOVIE_END;
    if (input_st->bsv_movie_state_handle)
       RARCH_ERR("[Replay] Didn't really stop movie!\n");
    return true;
@@ -455,8 +522,14 @@ bool movie_start_playback(input_driver_state_t *input_st, char *path)
      task->callback                = moviectl_start_playback_cb;
      task->title                   = strdup(msg_hash_to_str(MSG_STARTING_MOVIE_PLAYBACK));
 
+     movie_playback_start_pending  = true;
+     movie_playback_start_id       = 0;
+
      if (task_queue_push(task))
         return true;
+
+     /* Refused: no callback will run for this task. */
+     movie_playback_start_pending  = false;
   }
 
    if (state)

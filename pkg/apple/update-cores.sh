@@ -241,6 +241,7 @@ appstore_cores=(
     mrboom
     mu
     mupen64plus_next
+    native32emu
     neocd
     nestopia
     noods
@@ -264,6 +265,7 @@ appstore_cores=(
     quicknes
     race
     reminiscence
+    rustynes
     sameboy
     sameduck
     scummvm
@@ -277,6 +279,7 @@ appstore_cores=(
     stella2023
     tgbdual
     theodore
+    tia
     tic80
     tyrquake
     uzem

@@ -24,7 +24,7 @@
  * drawables we lose it, on iOS every frame and in a Cocoa view after a live
  * resize, which may come without another resize notification. On other
  * platforms the viewport stays until the window changes. */
-#if defined(IOS) || defined(OSX)
+#if TARGET_OS_IPHONE || TARGET_OS_OSX
 #define GL_WINDOW_LOSES_VIEWPORT 1
 #else
 #define GL_WINDOW_LOSES_VIEWPORT 0

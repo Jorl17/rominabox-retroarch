@@ -132,6 +132,8 @@ static void frontend_wiiu_get_env_settings(int *argc, char *argv[],
          "database/rdb", sizeof(g_defaults.dirs[DEFAULT_DIR_DATABASE]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_LOGS], g_defaults.dirs[DEFAULT_DIR_CORE],
          "logs", sizeof(g_defaults.dirs[DEFAULT_DIR_LOGS]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CACHE], g_defaults.dirs[DEFAULT_DIR_CORE],
+         "temp", sizeof(g_defaults.dirs[DEFAULT_DIR_CACHE]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_THUMBNAILS], g_defaults.dirs[DEFAULT_DIR_PORT],
          "thumbnails", sizeof(g_defaults.dirs[DEFAULT_DIR_THUMBNAILS]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_OVERLAY], g_defaults.dirs[DEFAULT_DIR_PORT],
@@ -340,8 +342,6 @@ frontend_ctx_driver_t frontend_ctx_wiiu =
    frontend_wiiu_get_arch,       /* get_architecture */
    NULL,                         /* get_powerstate */
    frontend_wiiu_parse_drive_list,
-   NULL,                         /* get_total_mem */
-   NULL,                         /* get_free_mem */
    NULL,                         /* install_signal_handler */
    NULL,                         /* get_signal_handler_state */
    NULL,                         /* set_signal_handler_state       */
@@ -350,8 +350,6 @@ frontend_ctx_driver_t frontend_ctx_wiiu =
    NULL,                         /* detach_console                 */
    NULL,                         /* get_lakka_version              */
    NULL,                         /* set_screen_brightness          */
-   NULL,                         /* watch_path_for_changes         */
-   NULL,                         /* check_for_path_changes         */
    NULL,                         /* set_sustained_performance_mode */
    NULL,                         /* get_cpu_model_name             */
    NULL,                         /* get_user_language              */
@@ -483,6 +481,9 @@ static void main_loop(void)
 
    for (;;)
    {
+      /* The frame's vsync wait: tasks run until the swap has gone
+       * out, a frame at most.  Before there is a video driver there is
+       * nothing to draw, and the queue runs dry instead. */
       if (video_driver_get_ptr())
       {
          start_time = OSGetSystemTime();

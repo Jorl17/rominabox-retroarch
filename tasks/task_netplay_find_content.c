@@ -48,6 +48,9 @@
 #ifdef HAVE_NETWORKING
 
 #include "../network/netplay/netplay.h"
+#ifdef __MACH__
+#include <TargetConditionals.h>
+#endif
 
 enum
 {
@@ -546,7 +549,7 @@ static void task_netplay_crc_scan_callback(retro_task_t *task,
          {
             const char *content_path        = (state->state & STATE_RELOAD) ?
                data->current.content_path : data->content_paths.elems[0].data;
-#if IOS
+#if TARGET_OS_IPHONE
             char tmp[PATH_MAX_LENGTH];
             fill_pathname_expand_special(tmp, content_path, sizeof(tmp));
             content_path = tmp;
@@ -631,7 +634,7 @@ static void task_netplay_crc_scan_callback(retro_task_t *task,
                   command_event(CMD_EVENT_NETPLAY_INIT_DIRECT_DEFERRED,
                      data->hostname);
 
-               task_push_load_subsystem_with_core(NULL,
+               task_push_load_subsystem_with_core(NULL, NULL,
                   &content_info, CORE_TYPE_PLAIN, NULL, NULL);
             }
             else
@@ -822,7 +825,7 @@ bool task_push_netplay_crc_scan(uint32_t crc, const char *content,
          settings->paths.path_content_history, attr);
    }
 
-   data->current.crc = content_get_crc();
+   data->current.crc = netplay_content_crc();
 
    pbasename  = path_get(RARCH_PATH_BASENAME);
    if (pbasename && *pbasename)
