@@ -98,6 +98,10 @@ void TextEntry::complete(void *context, const char *value)
    self.editing_id.clear(); self.original.clear();
    self.document.set_shown(document_contract::TextKeyboard, false);
 }
+/* We compile in the on-screen keyboard but never open it. The player types
+ * account text on the physical keyboard, after pressing OK on a field. */
+static constexpr bool on_screen_keyboard = false;
+
 bool TextEntry::controller(rib_key key)
 {
    if (panel_id.empty()) return false;
@@ -110,6 +114,10 @@ bool TextEntry::controller(rib_key key)
    auto *field = dynamic_cast<Rml::ElementFormControlInput*>(focused);
    if (!field || hidden(field)) {
       if (focused && focused->GetTagName() == "button") focused->Click();
+      return true;
+   }
+   if (!on_screen_keyboard) {
+      field->Focus();
       return true;
    }
    editing_id = focused->GetId(); original = field->GetValue();
