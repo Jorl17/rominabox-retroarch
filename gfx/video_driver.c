@@ -5867,11 +5867,7 @@ bool video_driver_init_internal(bool *video_is_threaded, bool verbosity_enabled)
       else
 #endif
       {
-         /* ROM-in-a-Box: the Windows player and the macOS GL player take a
-          * game's window size from video_window_custom_size_enable, so one
-          * exported setting opens both at the same size. */
-#if (defined(HAVE_COCOA_METAL) && !defined(HAVE_COCOATOUCH)) || \
-    (defined(HAVE_SDL3) && !defined(WEBOS))
+#if WINDOW_SIZE_FROM_SAVED_POSITION
          bool window_custom_size_enable = settings->bools.video_window_save_positions;
 #else
          bool window_custom_size_enable = settings->bools.video_window_custom_size_enable;

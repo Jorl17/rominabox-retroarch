@@ -74,6 +74,20 @@
 
 RETRO_BEGIN_DECLS
 
+/* The setting we take a window's size from. We use the remembered window
+ * (video_window_save_positions) in the Cocoa Metal build and on SDL3, and
+ * the fixed size (video_window_custom_size_enable) everywhere else, also on
+ * desktop Windows and in the macOS OpenGL build, so a ROM-in-a-Box game
+ * opens at the same size on both with one setting. We size the window by
+ * it in video_driver.c, and we read and offer the fixed-size setting only
+ * where it applies. */
+#if (defined(HAVE_COCOA_METAL) && !defined(HAVE_COCOATOUCH)) || \
+    (defined(HAVE_SDL3) && !defined(WEBOS))
+#define WINDOW_SIZE_FROM_SAVED_POSITION 1
+#else
+#define WINDOW_SIZE_FROM_SAVED_POSITION 0
+#endif
+
 enum crt_switch_type
 {
    CRT_SWITCH_NONE = 0,
