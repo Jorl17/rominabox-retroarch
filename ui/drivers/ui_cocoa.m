@@ -854,6 +854,13 @@ static ui_application_t ui_application_cocoa = {
 
 - (void)setupMainWindow
 {
+   /* AppKit throws on -makeMainWindow for a window that cannot become
+    * main, such as the window of an exported game, which we keep off
+    * screen until its first frame is drawn (cocoa_gl_ctx.m). An exception
+    * here would end -applicationDidFinishLaunching: before the draw
+    * observer starts. We make that window key when we show it. */
+   if (![self.window canBecomeMainWindow])
+      return;
    [self.window makeMainWindow];
    [self.window makeKeyWindow];
 }
