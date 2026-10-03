@@ -6759,8 +6759,8 @@ static enum runloop_state_enum runloop_check_state(
 #endif
       /* The default bind is Escape. Use the key that is bound, so a
        * different menu key also goes through this path. */
-      if (input_config_binds[0][RARCH_MENU_TOGGLE].valid)
-         toggle_keys[toggle_count++] = (unsigned)input_config_binds[0][RARCH_MENU_TOGGLE].key;
+      if (RETRO_KEYBIND_VALID(&input_config_binds[0][RARCH_MENU_TOGGLE]))
+         toggle_keys[toggle_count++] = (unsigned)RETRO_KEYBIND_KEY(&input_config_binds[0][RARCH_MENU_TOGGLE]);
       for (bind = 0; bind < toggle_count; bind++)
          toggle_level |= input_driver_keyboard_pressed(toggle_keys[bind]);
       fire = held_key_menu_toggle_fires_any(
@@ -9007,7 +9007,7 @@ int runloop_iterate(void)
          return 1;
       case RUNLOOP_STATE_PAUSE:
 #ifdef HAVE_CHEEVOS
-         if (cheevos_enable)
+         if (settings->bools.cheevos_enable)
             rcheevos_idle();
 #endif
 #ifdef HAVE_NETWORKING

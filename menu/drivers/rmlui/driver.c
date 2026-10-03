@@ -35,7 +35,7 @@ static void driver_frame(void *data, video_frame_info_t *video)
 {
    rib_driver *driver = (rib_driver*)data;
    if (driver && video)
-      rib_menu_frame(driver->menu, (int)video->width, (int)video->height);
+      rib_menu_frame(driver->menu, (int)VIDEO_SCALE_W(video->dims), (int)VIDEO_SCALE_H(video->dims));
 }
 static void driver_reset(void *data, bool threaded)
 {

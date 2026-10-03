@@ -83,9 +83,9 @@ void rib_host_restore_keyboard_mapping(void)
    for (user = 0; user < MAX_USERS; ++user)
       for (bind_index = 0; input_config_bind_map_get_valid(bind_index);
            ++bind_index)
-         if (input_config_binds[user][bind_index].key != RETROK_UNKNOWN)
+         if (RETRO_KEYBIND_KEY(&input_config_binds[user][bind_index]) != RETROK_UNKNOWN)
             input_keyboard_mapping_bits(1,
-                  input_config_binds[user][bind_index].key);
+                  RETRO_KEYBIND_KEY(&input_config_binds[user][bind_index]));
 }
 
 /* The path of the core remap file, the one in use when there is no game or
@@ -434,15 +434,15 @@ void rib_host_load_bind(config_file_t *config, const char *id, unsigned index)
    entry = config_get_entry(config, base);
    if (entry && entry->value && *entry->value)
    {
-      input_keyboard_mapping_bits(0, bind->key);
-      bind->key = input_config_translate_str_to_rk(
-            entry->value, strlen(entry->value));
-      input_keyboard_mapping_bits(1, bind->key);
+      input_keyboard_mapping_bits(0, RETRO_KEYBIND_KEY(bind));
+      RETRO_KEYBIND_SET_KEY(bind, input_config_translate_str_to_rk(
+            entry->value, strlen(entry->value)));
+      input_keyboard_mapping_bits(1, RETRO_KEYBIND_KEY(bind));
    }
    input_config_parse_joy_button(base, config, "input_player1",
-         id, bind);
+         id, bind, &input_config_bind_labels[0][index]);
    input_config_parse_joy_axis(base, config, "input_player1",
-         id, bind);
+         id, bind, &input_config_bind_labels[0][index]);
    input_config_parse_mouse_button(base, config, "input_player1",
          id, bind);
 }
@@ -505,8 +505,8 @@ static void rib_rmlui_save_mouse_button(config_file_t *config,
 void rib_host_clear_bind(unsigned index)
 {
    struct retro_keybind *bind = &input_config_binds[0][index];
-   input_keyboard_mapping_bits(0, bind->key);
-   bind->key = RETROK_UNKNOWN;
+   input_keyboard_mapping_bits(0, RETRO_KEYBIND_KEY(bind));
+   RETRO_KEYBIND_SET_KEY(bind, RETROK_UNKNOWN);
    bind->joykey = NO_BTN;
    bind->joyaxis = AXIS_NONE;
    bind->mbutton = NO_BTN;
@@ -518,7 +518,7 @@ void rib_host_write_bind(config_file_t *config, const char *id, unsigned index)
    char key[96];
    char value[64];
    snprintf(key, sizeof(key), "input_player1_%s", id);
-   input_keymaps_translate_rk_to_str(bind->key, value, sizeof(value));
+   input_keymaps_translate_rk_to_str(RETRO_KEYBIND_KEY(bind), value, sizeof(value));
    config_set_string(config, key, value);
    snprintf(key, sizeof(key), "input_player1_%s_btn", id);
    rib_rmlui_save_joy_button(config, key, bind->joykey);
@@ -532,7 +532,8 @@ bool rib_host_bind_conflicts(unsigned left, unsigned right)
 {
    const struct retro_keybind *changed = &input_config_binds[0][left];
    const struct retro_keybind *candidate = &input_config_binds[0][right];
-   return (changed->key != RETROK_UNKNOWN && changed->key == candidate->key) ||
+   return (RETRO_KEYBIND_KEY(changed) != RETROK_UNKNOWN
+            && RETRO_KEYBIND_KEY(changed) == RETRO_KEYBIND_KEY(candidate)) ||
           (changed->joykey != NO_BTN && changed->joykey == candidate->joykey) ||
           (changed->joyaxis != AXIS_NONE && changed->joyaxis == candidate->joyaxis) ||
           (changed->mbutton != NO_BTN && changed->mbutton == candidate->mbutton);
@@ -582,7 +583,7 @@ bool rib_host_script_press(const char *name)
 
 bool rib_host_bind_key(unsigned index, unsigned *code)
 {
-   const enum retro_key key = input_config_binds[0][index].key;
+   const enum retro_key key = RETRO_KEYBIND_KEY(&input_config_binds[0][index]);
    if (!code || key == RETROK_UNKNOWN)
       return false;
    *code = (unsigned)key;
@@ -621,12 +622,12 @@ void rib_host_captured_input(char *binding, size_t length)
       return;
    binding[0] = '\0';
    /* During the capture we marked the key as used by a bind, but none uses it. */
-   if (input->key != RETROK_UNKNOWN)
+   if (RETRO_KEYBIND_KEY(input) != RETROK_UNKNOWN)
    {
-      input_keyboard_mapping_bits(0, input->key);
+      input_keyboard_mapping_bits(0, RETRO_KEYBIND_KEY(input));
       rib_host_restore_keyboard_mapping();
       key[0] = '\0';
-      input_keymaps_translate_rk_to_str(input->key, key, sizeof(key));
+      input_keymaps_translate_rk_to_str(RETRO_KEYBIND_KEY(input), key, sizeof(key));
       if (key[0] && !string_is_equal(key, "nul"))
          snprintf(binding, length, "%s%s", Key_prefix, key);
       return;

@@ -5485,7 +5485,7 @@ bool menu_input_rib_capture_start(struct retro_keybind *output, unsigned timeout
 {
    if (!output)
       return false;
-   output->key     = RETROK_UNKNOWN;
+   RETRO_KEYBIND_SET_KEY(output, RETROK_UNKNOWN);
    output->joykey  = NO_BTN;
    output->joyaxis = AXIS_NONE;
    output->mbutton = NO_BTN;

@@ -49,15 +49,9 @@ static inline const struct retro_keybind *rib_effective_pad(
       return NULL;
    *scratch = *bind;
    if (scratch->joykey == NO_BTN)
-   {
-      scratch->joykey       = automatic->joykey;
-      scratch->joykey_label = automatic->joykey_label;
-   }
+      scratch->joykey  = automatic->joykey;
    if (scratch->joyaxis == AXIS_NONE)
-   {
-      scratch->joyaxis       = automatic->joyaxis;
-      scratch->joyaxis_label = automatic->joyaxis_label;
-   }
+      scratch->joyaxis = automatic->joyaxis;
    return scratch;
 }
 
@@ -74,19 +68,21 @@ static inline void rib_lines_from_bind(const struct retro_keybind *bind,
    effective = rib_effective_pad(bind, automatic, &scratch);
    text[0] = '\0';
    /* There is no autoconfig for the keyboard, so we read the key from the bind. */
-   input_keymaps_translate_rk_to_str(bind->key, text, sizeof(text));
+   input_keymaps_translate_rk_to_str(RETRO_KEYBIND_KEY(bind), text, sizeof(text));
    if (text[0] && strcmp(text, "nul") != 0)
       rib_push_bind_line(details, kinds, count, "KEY", text);
    if (effective->joykey != NO_BTN)
    {
+      /* We do not show the names of the inputs from the pad (false), so
+       * there is no label. */
       input_config_get_bind_string_joykey(false, text, "", effective,
-            sizeof(text));
+            NULL, sizeof(text));
       rib_push_bind_line(details, kinds, count, "PAD", text);
    }
    if (effective->joyaxis != AXIS_NONE)
    {
       input_config_get_bind_string_joyaxis(false, text, "", effective,
-            sizeof(text));
+            NULL, sizeof(text));
       rib_push_bind_line(details, kinds, count, "AXIS", text);
    }
    if (bind->mbutton != NO_BTN)

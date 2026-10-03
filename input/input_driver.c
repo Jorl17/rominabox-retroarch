@@ -8018,8 +8018,7 @@ static const retro_keybind_set *rib_menu_pad_binds(void)
       for (port = 0; port < MAX_USERS; port++)
          for (bind = 0; bind < RARCH_BIND_LIST_END; bind++)
          {
-            unbound[port][bind].valid   = true;
-            unbound[port][bind].key     = RETROK_UNKNOWN;
+            unbound[port][bind].attr    = RETRO_KEYBIND_PACK(0, RETROK_UNKNOWN, true);
             unbound[port][bind].joykey  = NO_BTN;
             unbound[port][bind].joyaxis = AXIS_NONE;
             unbound[port][bind].mbutton = NO_BTN;
