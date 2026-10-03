@@ -37,6 +37,9 @@ static rib_pad_relay *relay;
 static HANDLE relay_request;
 static HANDLE relay_reply;
 static bool relay_gone;
+/* Locked from writing a request to reading its answer, because we list and
+ * set up controllers on a task thread and read them on the main thread. */
+static CRITICAL_SECTION relay_lock;
 /* The controllers whose state we have not passed to the driver since the
  * last read. */
 static bool relay_fresh[RIB_PAD_RELAY_PADS];
@@ -160,7 +163,9 @@ static ULONG STDMETHODCALLTYPE effect_release(IDirectInputEffect *self)
    LONG refs = InterlockedDecrement(&((relay_effect*)self)->refs);
    if (refs == 0)
    {
+      EnterCriticalSection(&relay_lock);
       effect_ask(self, RIB_PAD_RELAY_DROP_EFFECT, 0);
+      LeaveCriticalSection(&relay_lock);
       free(self);
    }
    return (ULONG)refs;
@@ -168,15 +173,23 @@ static ULONG STDMETHODCALLTYPE effect_release(IDirectInputEffect *self)
 
 static HRESULT STDMETHODCALLTYPE effect_set_parameters(IDirectInputEffect *self, LPCDIEFFECT given, DWORD flags)
 {
+   HRESULT answered;
    if (!carriable(given, flags))
       return DIERR_INVALIDPARAM;
+   EnterCriticalSection(&relay_lock);
    carry_effect(&relay->ask.effect, given, flags);
-   return effect_ask(self, RIB_PAD_RELAY_SET_EFFECT, flags);
+   answered = effect_ask(self, RIB_PAD_RELAY_SET_EFFECT, flags);
+   LeaveCriticalSection(&relay_lock);
+   return answered;
 }
 
 static HRESULT STDMETHODCALLTYPE effect_stop(IDirectInputEffect *self)
 {
-   return effect_ask(self, RIB_PAD_RELAY_STOP_EFFECT, 0);
+   HRESULT answered;
+   EnterCriticalSection(&relay_lock);
+   answered = effect_ask(self, RIB_PAD_RELAY_STOP_EFFECT, 0);
+   LeaveCriticalSection(&relay_lock);
+   return answered;
 }
 
 /* Calls on an effect that we never make in the joypad driver. */
@@ -303,9 +316,11 @@ static HRESULT STDMETHODCALLTYPE device_enum_objects(IDirectInputDevice8A *self,
    DWORD i;
    if (flags != DIDFT_ALL && !(flags & DIDFT_ABSAXIS))
       return DI_OK;
+   EnterCriticalSection(&relay_lock);
    for (i = 0; i < pad->axis_count; i++)
       if (callback(&pad->axes[i], context) == DIENUM_STOP)
          break;
+   LeaveCriticalSection(&relay_lock);
    return DI_OK;
 }
 
@@ -314,16 +329,20 @@ static HRESULT STDMETHODCALLTYPE device_set_property(IDirectInputDevice8A *self,
       REFGUID property, LPCDIPROPHEADER header)
 {
    const DIPROPRANGE *range = (const DIPROPRANGE*)header;
+   HRESULT answered;
    if (     property != DIPROP_RANGE
          || header->dwHow != DIPH_BYID
          || header->dwSize != sizeof(DIPROPRANGE))
       return DIERR_UNSUPPORTED;
+   EnterCriticalSection(&relay_lock);
    relay->ask.what      = RIB_PAD_RELAY_SET_RANGE;
    relay->ask.pad       = ((relay_device*)self)->pad;
    relay->ask.item      = header->dwObj;
    relay->ask.range_min = range->lMin;
    relay->ask.range_max = range->lMax;
-   return relay_exchange();
+   answered             = relay_exchange();
+   LeaveCriticalSection(&relay_lock);
+   return answered;
 }
 
 /* We open the controller in the launcher, so an acquire of the stand-in in
@@ -349,15 +368,20 @@ static HRESULT STDMETHODCALLTYPE device_poll(IDirectInputDevice8A *self)
 static HRESULT STDMETHODCALLTYPE device_get_device_state(IDirectInputDevice8A *self, DWORD size, LPVOID data)
 {
    relay_device *device = (relay_device*)self;
+   HRESULT answered     = DIERR_INPUTLOST;
    if (size != sizeof(DIJOYSTATE2))
       return DIERR_INVALIDPARAM;
+   EnterCriticalSection(&relay_lock);
    if (!relay_fresh[device->pad])
       relay_read();
-   if (relay_gone)
-      return DIERR_INPUTLOST;
-   memcpy(data, &relay->pads[device->pad].state, sizeof(DIJOYSTATE2));
-   relay_fresh[device->pad] = false;
-   return relay->pads[device->pad].result;
+   if (!relay_gone)
+   {
+      memcpy(data, &relay->pads[device->pad].state, sizeof(DIJOYSTATE2));
+      relay_fresh[device->pad] = false;
+      answered                 = relay->pads[device->pad].result;
+   }
+   LeaveCriticalSection(&relay_lock);
+   return answered;
 }
 
 /* We read the controller in the launcher as a DIJOYSTATE2, the format that
@@ -381,7 +405,9 @@ static HRESULT STDMETHODCALLTYPE device_get_device_info(IDirectInputDevice8A *se
 {
    if (info->dwSize != sizeof(DIDEVICEINSTANCEA))
       return DIERR_INVALIDPARAM;
+   EnterCriticalSection(&relay_lock);
    memcpy(info, &pad_of(self)->device, sizeof(DIDEVICEINSTANCEA));
+   LeaveCriticalSection(&relay_lock);
    return DI_OK;
 }
 
@@ -462,23 +488,30 @@ static HRESULT STDMETHODCALLTYPE device_create_effect(IDirectInputDevice8A *self
       return DIERR_UNSUPPORTED;
    if (!given || !carriable(given, every))
       return DIERR_INVALIDPARAM;
+   EnterCriticalSection(&relay_lock);
    memset(&relay->ask.effect, 0, sizeof(relay->ask.effect));
    carry_effect(&relay->ask.effect, given, every);
    relay->ask.what = RIB_PAD_RELAY_MAKE_EFFECT;
    relay->ask.pad  = ((relay_device*)self)->pad;
-   if (FAILED(made = relay_exchange()))
-      return made;
-   if (!(effect = (relay_effect*)calloc(1, sizeof(*effect))))
+   made            = relay_exchange();
+   if (SUCCEEDED(made))
    {
-      relay->ask.what = RIB_PAD_RELAY_DROP_EFFECT;
-      relay_exchange();
-      return DIERR_OUTOFMEMORY;
+      if (!(effect = (relay_effect*)calloc(1, sizeof(*effect))))
+      {
+         relay->ask.what = RIB_PAD_RELAY_DROP_EFFECT;
+         relay_exchange();
+         made = DIERR_OUTOFMEMORY;
+      }
+      else
+      {
+         effect->iface.lpVtbl = &effect_vtbl;
+         effect->refs         = 1;
+         effect->pad          = ((relay_device*)self)->pad;
+         effect->slot         = relay->ask.item;
+         *out                 = &effect->iface;
+      }
    }
-   effect->iface.lpVtbl = &effect_vtbl;
-   effect->refs         = 1;
-   effect->pad          = ((relay_device*)self)->pad;
-   effect->slot         = relay->ask.item;
-   *out                 = &effect->iface;
+   LeaveCriticalSection(&relay_lock);
    return made;
 }
 
@@ -683,8 +716,14 @@ static ULONG STDMETHODCALLTYPE input_release(IDirectInput8A *self)
 static HRESULT STDMETHODCALLTYPE input_create_device(IDirectInput8A *self, REFGUID guid,
       LPDIRECTINPUTDEVICE8A *out, LPUNKNOWN outer)
 {
-   int pad = relayed(guid);
+   int pad;
    relay_device *device;
+   EnterCriticalSection(&relay_lock);
+   pad = relayed(guid);
+   if (pad >= 0)
+      RARCH_LOG("[RIB] Controller \"%s\" opened through the launcher.\n",
+            relay->pads[pad].device.tszProductName);
+   LeaveCriticalSection(&relay_lock);
    if (pad < 0)
       return IDirectInput8_CreateDevice(real_of(self), guid, out, outer);
    if (!(device = (relay_device*)calloc(1, sizeof(*device))))
@@ -693,8 +732,6 @@ static HRESULT STDMETHODCALLTYPE input_create_device(IDirectInput8A *self, REFGU
    device->refs         = 1;
    device->pad          = (unsigned)pad;
    *out                 = &device->iface;
-   RARCH_LOG("[RIB] Controller \"%s\" opened through the launcher.\n",
-         relay->pads[pad].device.tszProductName);
    return DI_OK;
 }
 
@@ -708,21 +745,29 @@ static HRESULT STDMETHODCALLTYPE input_enum_devices(IDirectInput8A *self, DWORD 
    HRESULT listed;
    if (type != DI8DEVCLASS_GAMECTRL)
       return IDirectInput8_EnumDevices(real_of(self), type, callback, context, flags);
+   EnterCriticalSection(&relay_lock);
    relay->ask.what = RIB_PAD_RELAY_LIST;
-   if (FAILED(listed = relay_exchange()))
-      return listed;
-   for (i = 0; i < RIB_PAD_RELAY_PADS; i++)
-      relay_fresh[i] = false;
-   RARCH_LOG("[RIB] %lu controller(s) come through the launcher.\n", (unsigned long)relay->pad_count);
-   for (i = 0; i < relay->pad_count; i++)
-      if (callback(&relay->pads[i].device, context) == DIENUM_STOP)
-         break;
-   return DI_OK;
+   if (SUCCEEDED(listed = relay_exchange()))
+   {
+      for (i = 0; i < RIB_PAD_RELAY_PADS; i++)
+         relay_fresh[i] = false;
+      RARCH_LOG("[RIB] %lu controller(s) come through the launcher.\n", (unsigned long)relay->pad_count);
+      for (i = 0; i < relay->pad_count; i++)
+         if (callback(&relay->pads[i].device, context) == DIENUM_STOP)
+            break;
+      listed = DI_OK;
+   }
+   LeaveCriticalSection(&relay_lock);
+   return listed;
 }
 
 static HRESULT STDMETHODCALLTYPE input_get_device_status(IDirectInput8A *self, REFGUID guid)
 {
-   if (relayed(guid) >= 0)
+   int pad;
+   EnterCriticalSection(&relay_lock);
+   pad = relayed(guid);
+   LeaveCriticalSection(&relay_lock);
+   if (pad >= 0)
       return DI_OK;
    return IDirectInput8_GetDeviceStatus(real_of(self), guid);
 }
@@ -790,6 +835,7 @@ static bool relay_open(void)
    free(handles);
    relay_request = (HANDLE)(uintptr_t)request;
    relay_reply   = (HANDLE)(uintptr_t)reply;
+   InitializeCriticalSection(&relay_lock);
    return true;
 }
 
