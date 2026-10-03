@@ -53,6 +53,7 @@
 #include <queues/task_queue.h>
 
 #include "dinput_joypad.h"
+#include "../drivers/rominabox_dinput.h"
 
 #ifndef __XINPUT_JOYPAD_H
 #define __XINPUT_JOYPAD_H
@@ -471,6 +472,7 @@ static bool dinput_joypad_ctx_create(void)
                      (void**)&g_dinput_joypad_ctx, NULL))))
 #endif
          return false;
+      g_dinput_joypad_ctx = rib_dinput_for_game(g_dinput_joypad_ctx);
    }
    return true;
 }

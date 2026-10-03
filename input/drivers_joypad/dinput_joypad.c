@@ -39,6 +39,7 @@
 #include <queues/task_queue.h>
 
 #include "dinput_joypad.h"
+#include "../drivers/rominabox_dinput.h"
 
 struct dinput_joypad_data g_pads[MAX_USERS];
 unsigned g_joypad_cnt;
@@ -533,6 +534,7 @@ static bool dinput_joypad_ctx_create(void)
                      (void**)&g_dinput_joypad_ctx, NULL))))
 #endif
          return false;
+      g_dinput_joypad_ctx = rib_dinput_for_game(g_dinput_joypad_ctx);
    }
    return true;
 }

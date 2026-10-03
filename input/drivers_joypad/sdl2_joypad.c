@@ -35,6 +35,9 @@ typedef struct _sdl2_joypad
    SDL_GameController *controller;
    SDL_Haptic *haptic;
    int rumble_effect; /* -1 = not initialized, -2 = error/unsupported, -3 = use SDL_JoystickRumble instead of haptic */
+   /* The last strength of each motor from the core, by retro_rumble_effect.
+    * We set both at once in SDL, and each call from the core is for one. */
+   uint16_t rumble[2];
    unsigned num_axes;
    unsigned num_buttons;
    unsigned num_hats;
@@ -192,6 +195,8 @@ static void sdl2_pad_connect(unsigned id)
    }
 
    pad->rumble_effect = -1;
+   pad->rumble[RETRO_RUMBLE_STRONG] = 0;
+   pad->rumble[RETRO_RUMBLE_WEAK]   = 0;
 
    if (pad->haptic)
    {
@@ -464,14 +469,16 @@ static bool sdl2_joypad_set_rumble(unsigned pad, enum retro_rumble_effect effect
    switch (effect)
    {
       case RETRO_RUMBLE_STRONG:
-         efx.leftright.large_magnitude = strength;
-         break;
       case RETRO_RUMBLE_WEAK:
-         efx.leftright.small_magnitude = strength;
          break;
       default:
          return false;
    }
+
+   /* Set both motors, and keep the one this call is not for. */
+   joypad->rumble[effect]        = strength;
+   efx.leftright.large_magnitude = joypad->rumble[RETRO_RUMBLE_STRONG];
+   efx.leftright.small_magnitude = joypad->rumble[RETRO_RUMBLE_WEAK];
 
 #if SDL_SUPPORTS_RUMBLE
    if (joypad->rumble_effect == -3)
@@ -483,6 +490,7 @@ static bool sdl2_joypad_set_rumble(unsigned pad, enum retro_rumble_effect effect
          joypad->rumble_effect = -2;
          return false;
       }
+      return true;
    }
 #endif
 
