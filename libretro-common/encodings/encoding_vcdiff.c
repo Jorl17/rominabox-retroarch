@@ -163,6 +163,7 @@ struct vcdiff_stream
    uint8_t       *out;        /* target being built                   */
    size_t         out_len;    /* bytes produced so far                */
    size_t         out_cap;
+   uint8_t        out_lent;   /* 1: out is the caller's, of fixed size */
 
    /* Named near_cache, not near: MSVC still reserves "near" (and "far")
     * from its segmented-memory days, so a member called near does not
@@ -229,6 +230,9 @@ static bool vcd_reserve(struct vcd_dec *d, size_t need)
 
    if (need <= d->out_cap)
       return true;
+   /* We never move a lent target, so we refuse to write past its room. */
+   if (d->out_lent)
+      return false;
    /* The first reservation is the pre-pass's exact total, so take it
     * verbatim rather than rounding it up a doubling ladder; only
     * growth beyond a hint that turned out short doubles. */
@@ -863,12 +867,13 @@ static bool vcd_drain(struct vcdiff_stream *s)
    return true;
 }
 
-vcdiff_stream_t *vcdiff_stream_open(const uint8_t *patch, size_t patch_len,
-      size_t src_len)
+/* The first window, past the file header (s4.1), or NULL for a header we
+ * refuse.  We write the Hdr_Indicator to *@hdr. */
+static const uint8_t *vcd_header(const uint8_t *patch, size_t patch_len,
+      uint8_t *hdr_out)
 {
-   struct vcdiff_stream *s;
-   const uint8_t        *p;
-   uint8_t               hdr;
+   const uint8_t *p;
+   uint8_t        hdr;
 
    if (!patch || patch_len < 5)
       return NULL;
@@ -900,8 +905,30 @@ vcdiff_stream_t *vcdiff_stream_open(const uint8_t *patch, size_t patch_len,
       p += alen;                       /* informational only */
    }
 
+   *hdr_out = hdr;
+   return p;
+}
+
+/* A stream for writing into @lent, when the caller passes a target of
+ * @room bytes, which we neither move nor free. */
+static vcdiff_stream_t *vcd_open(const uint8_t *patch, size_t patch_len,
+      size_t src_len, uint8_t *lent, size_t room)
+{
+   struct vcdiff_stream *s;
+   const uint8_t        *p;
+   uint8_t               hdr;
+
+   if (!(p = vcd_header(patch, patch_len, &hdr)))
+      return NULL;
+
    if (!(s = (struct vcdiff_stream*)calloc(1, sizeof(*s))))
       return NULL;
+   if (lent)
+   {
+      s->out      = lent;
+      s->out_cap  = room;
+      s->out_lent = 1;
+   }
 
    s->patch     = patch;
    s->patch_len = patch_len;
@@ -935,6 +962,24 @@ vcdiff_stream_t *vcdiff_stream_open(const uint8_t *patch, size_t patch_len,
       }
    }
    return s;
+}
+
+vcdiff_stream_t *vcdiff_stream_open(const uint8_t *patch, size_t patch_len,
+      size_t src_len)
+{
+   return vcd_open(patch, patch_len, src_len, NULL, 0);
+}
+
+bool vcdiff_target_size(const uint8_t *patch, size_t patch_len,
+      size_t *size)
+{
+   const uint8_t *p;
+   uint8_t        hdr;
+
+   if (!size || !(p = vcd_header(patch, patch_len, &hdr)))
+      return false;
+   *size = vcd_total_target(p, patch + patch_len, 0);
+   return true;
 }
 
 size_t vcdiff_stream_feed(vcdiff_stream_t *s, const uint8_t *chunk,
@@ -1000,7 +1045,8 @@ void vcdiff_stream_free(vcdiff_stream_t *s)
 {
    if (!s)
       return;
-   free(s->out);
+   if (!s->out_lent)
+      free(s->out);
    free(s->own_src);
    free(s->sec[0]);
    free(s->sec[1]);
@@ -1011,17 +1057,19 @@ void vcdiff_stream_free(vcdiff_stream_t *s)
    free(s);
 }
 
-bool vcdiff_decode(const uint8_t *patch, size_t patch_len,
-      const uint8_t *src, size_t src_len,
-      uint8_t **out, size_t *out_len)
+/* Decode the whole patch against the whole of @src, which is borrowed,
+ * into a target that grows or, when @lent is given, into the caller's. */
+static vcdiff_stream_t *vcd_decode_whole(const uint8_t *patch,
+      size_t patch_len, const uint8_t *src, size_t src_len,
+      uint8_t *lent, size_t room, bool *ok)
 {
    struct vcdiff_stream *s;
-   bool ok;
 
+   *ok = false;
    if (!src && src_len)
-      return false;
-   if (!(s = vcdiff_stream_open(patch, patch_len, src_len)))
-      return false;
+      return NULL;
+   if (!(s = vcd_open(patch, patch_len, src_len, lent, room)))
+      return NULL;
 
    /* The whole source is already here, so point at the caller's buffer
     * rather than taking a copy of it - this path decodes patches
@@ -1030,13 +1078,40 @@ bool vcdiff_decode(const uint8_t *patch, size_t patch_len,
    s->src      = src;
    s->src_seen = src_len;
 
-   ok = vcd_drain(s) && s->p_off == patch_len;
+   *ok = vcd_drain(s) && s->p_off == patch_len;
+   return s;
+}
+
+bool vcdiff_decode(const uint8_t *patch, size_t patch_len,
+      const uint8_t *src, size_t src_len,
+      uint8_t **out, size_t *out_len)
+{
+   bool ok;
+   struct vcdiff_stream *s = vcd_decode_whole(patch, patch_len,
+         src, src_len, NULL, 0, &ok);
+
    if (ok)
    {
       *out     = s->out;
       *out_len = s->out_len;
       s->out   = NULL;
    }
+   vcdiff_stream_free(s);
+   return ok;
+}
+
+bool vcdiff_decode_into(const uint8_t *patch, size_t patch_len,
+      const uint8_t *src, size_t src_len,
+      uint8_t *out, size_t out_room, size_t *out_len)
+{
+   bool ok;
+   struct vcdiff_stream *s;
+
+   if (!out || !out_len)
+      return false;
+   s = vcd_decode_whole(patch, patch_len, src, src_len, out, out_room, &ok);
+   if (ok)
+      *out_len = s->out_len;
    vcdiff_stream_free(s);
    return ok;
 }

@@ -296,6 +296,28 @@ static size_t make_ips(uint8_t*pat,const uint8_t*src,size_t sl,size_t*want){size
 static void enc(uint8_t*b,size_t*o,uint64_t v){for(;;){uint8_t x=v&0x7f;v>>=7;if(!v){b[(*o)++]=x|0x80;break;}b[(*o)++]=x;v--;}}
 static uint32_t crc(const uint8_t*p,size_t n){static uint32_t T[256];static int I=0;uint32_t c;if(!I){uint32_t i,j;for(i=0;i<256;i++){c=i;for(j=0;j<8;j++)c=(c&1)?0xEDB88320u^(c>>1):c>>1;T[i]=c;}I=1;}c=~0u;while(n--)c=T[(c^*p++)&0xFF]^(c>>8);return ~c;}
 static size_t make_ups(uint8_t*pat,const uint8_t*src,size_t sl,uint8_t*tgt,size_t tl){size_t o=0,i=0;memcpy(pat,"UPS1",4);o=4;enc(pat,&o,sl);enc(pat,&o,tl);while(i<tl||i<sl){size_t run=0;while(i<tl){uint8_t s=i<sl?src[i]:0;if(s!=tgt[i])break;i++;run++;}enc(pat,&o,run);for(;;){uint8_t s=i<sl?src[i]:0,t=i<tl?tgt[i]:0,x=s^t;pat[o++]=x;i++;if(x==0)break;if(i>tl&&i>sl)break;}}{uint32_t sc=crc(src,sl),tc=crc(tgt,tl),pc;int k;for(k=0;k<4;k++)pat[o++]=sc>>(k*8);for(k=0;k<4;k++)pat[o++]=tc>>(k*8);pc=crc(pat,o);for(k=0;k<4;k++)pat[o++]=pc>>(k*8);}return o;}
+/* patch_stream_apply_into, into the room from patch_stream_target_room,
+ * must return what the stream returned: the same target when the patch
+ * applied (@ok), and a failure when it did not. */
+static int into_agrees(enum patch_stream_format fmt, const uint8_t *pat,
+      size_t pl, const uint8_t *src, size_t sl, int ok,
+      const uint8_t *want, size_t wl)
+{
+   size_t room = 0, got_len = 0;
+   uint8_t *got;
+   int applied, bad;
+   if (!patch_stream_target_room(fmt, pat, pl, sl, &room))
+      return ok;
+   got     = (uint8_t*)malloc(room ? room : 1);
+   applied = patch_stream_apply_into(fmt, pat, pl, src, sl, got, room, &got_len);
+   bad     = applied != ok || (ok && (got_len != wl || (wl && memcmp(got, want, wl))));
+   if (bad)
+      printf("  apply_into %s where the stream %s (format %d)\n",
+            applied ? "applied" : "refused", ok ? "applied" : "refused", (int)fmt);
+   free(got);
+   return bad;
+}
+
 static int cmp1(int fmt,const uint8_t*pat,size_t pl,const uint8_t*src,size_t sl,size_t chunk){
    uint8_t *os,*ss;uint64_t ol;size_t sl2,p=0;patch_stream_t*ps;
    uint8_t *priv=malloc(pl?pl:1); if(pl) memcpy(priv,pat,pl); /* private copy */
@@ -305,6 +327,7 @@ static int cmp1(int fmt,const uint8_t*pat,size_t pl,const uint8_t*src,size_t sl,
    while(p<sl){size_t n=chunk<sl-p?chunk:sl-p;patch_stream_feed(ps,src+p,n);p+=n;}
    if(!patch_stream_finish(ps,&ss,&sl2)){pstream_fail_note();free(os);patch_stream_free(ps);free(priv);return 1;}
    {int bad=(sl2!=ol)||(ol&&memcmp(os,ss,ol));
+    if(chunk==1) bad|=into_agrees(fmt?PATCH_STREAM_UPS:PATCH_STREAM_IPS,priv,pl,src,sl,1,ss,sl2);
     free(os);free(ss);patch_stream_free(ps);free(priv);return bad;}}
 static int run_ips_ups(void){
    size_t chunks[]={1,2,3,7,64,1024,1<<20};int trial,ci,fails=0,total=0;
@@ -411,6 +434,7 @@ static int run_bps(void)
          while(p<sl){ size_t n=chunks[ci]<sl-p?chunks[ci]:sl-p; patch_stream_feed(ps,src+p,n); p+=n; }
          total++;
          if(!patch_stream_finish(ps,&ss,&sl2)){ fails++; printf("finish failed t=%d chunk=%zu\n",trial,chunks[ci]); patch_stream_free(ps); free(os); free(priv); continue; }
+         if(ci==0) fails+=into_agrees(PATCH_STREAM_BPS,priv,pl,src,sl,1,ss,sl2);
          if(sl2!=ol||(ol&&memcmp(os,ss,ol))){ fails++;
             printf("MISMATCH t=%d chunk=%zu sl=%zu tl=%zu\n",trial,chunks[ci],sl,tl);
             for(k=0;k<ol&&k<8;k++) if(os[k]!=ss[k]){printf("  first diff@%zu %02x vs %02x\n",k,os[k],ss[k]);break;} }
@@ -1499,9 +1523,12 @@ static int run_xdelta(void)
       patch_stream_free(ps);
    }
 
+   bad |= into_agrees(PATCH_STREAM_XDELTA, xd_pat, sizeof(xd_pat),
+         xd_src, sizeof(xd_src), 1, whole, whole_len);
+
    if (!bad)
-      printf("PASS: xdelta streamed at 5 chunk sizes, matches whole-buffer,"
-             " short feed refused\n");
+      printf("PASS: xdelta streamed at 5 chunk sizes, matches whole-buffer"
+             " and apply_into, short feed refused\n");
    free(whole);
    return bad;
 }
@@ -1558,6 +1585,7 @@ static int run_refusal_parity(void)
          mine = patch_stream_finish(ps, &m, &ml) ? 1 : 0;
          free(m); patch_stream_free(ps);
          checked++;
+         bad_count += into_agrees(PATCH_STREAM_UPS, pat, pl, bad, sl, mine, NULL, 0);
          if (ora != mine)
          { printf("[FAIL] UPS on wrong source: oracle %s, streamed %s\n",
                   ora ? "accepted" : "refused", mine ? "accepted" : "refused");
@@ -1577,6 +1605,7 @@ static int run_refusal_parity(void)
          mine = patch_stream_finish(ps, &m, &ml) ? 1 : 0;
          free(m); patch_stream_free(ps);
          checked++;
+         bad_count += into_agrees(PATCH_STREAM_BPS, pat, pl, bad, sl, mine, NULL, 0);
          if (ora != mine)
          { printf("[FAIL] BPS on wrong source: oracle %s, streamed %s\n",
                   ora ? "accepted" : "refused", mine ? "accepted" : "refused");

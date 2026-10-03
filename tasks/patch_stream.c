@@ -24,14 +24,6 @@
 #include <encodings/encoding_vcdiff.h>
 #endif
 
-enum patch_stream_fmt
-{
-   PATCH_STREAM_IPS = 0,
-   PATCH_STREAM_UPS,
-   PATCH_STREAM_BPS,
-   PATCH_STREAM_XDELTA
-};
-
 /* One IPS record, pre-parsed at open().  The patch file is small and
  * fully resident, so indexing it up front costs nothing and turns the
  * per-chunk overlay into a bounded scan. */
@@ -88,6 +80,11 @@ struct patch_stream
    uint8_t        fmt;
    uint8_t        failed;
 
+   /* patch_stream_apply_into: the target belongs to the caller and has a
+    * fixed size, and we read the source where it is and keep no copy. */
+   uint8_t        out_lent;
+   const uint8_t *src_lent;
+
 #ifdef HAVE_XDELTA
    /* The VCDIFF decoder carries its own streaming state, so this
     * format is a shell around it rather than a second implementation. */
@@ -106,6 +103,9 @@ static bool patch_stream_reserve(patch_stream_t *ps, size_t need)
 
    if (need <= ps->out_cap)
       return true;
+   /* We never move a lent target, so we refuse to write past its room. */
+   if (ps->out_lent)
+      return false;
 
    cap = ps->out_cap ? ps->out_cap : 4096;
    while (cap < need)
@@ -148,6 +148,21 @@ static bool patch_stream_fill(patch_stream_t *ps, size_t at,
    if (at + len > ps->out_len)
       ps->out_len = at + len;
    return true;
+}
+
+/* A new stream, with output to @lent when it is given: the caller's target
+ * of @room bytes, which we neither move nor free. */
+static patch_stream_t *patch_stream_alloc(uint8_t *lent, size_t room)
+{
+   patch_stream_t *ps = (patch_stream_t*)calloc(1, sizeof(*ps));
+
+   if (ps && lent)
+   {
+      ps->out      = lent;
+      ps->out_cap  = room;
+      ps->out_lent = 1;
+   }
+   return ps;
 }
 
 /* BPS and UPS both end with a CRC-32 of the patch's own bytes in the
@@ -216,32 +231,24 @@ static uint32_t patch_stream_read24(const uint8_t *p)
    return ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | (uint32_t)p[2];
 }
 
-patch_stream_t *patch_stream_ips_open(const uint8_t *patch, size_t patch_len,
-      size_t src_len)
+/* Index the records of the patch in @ps, and compute the target length
+ * from them and the truncation extension.  *@reach is the furthest point of
+ * any write, whether the source copied through, a record or the target,
+ * which is beyond the target when the patch truncates. */
+static bool patch_stream_ips_index(patch_stream_t *ps, size_t *reach)
 {
-   patch_stream_t          *ps;
+   const uint8_t           *patch     = ps->patch;
+   size_t                   patch_len = ps->patch_len;
    struct patch_stream_rec *recs;
    size_t                   off = 5;
    size_t                   cap = 16;
    size_t                   n   = 0;
-
-   if (patch_len < 8 || memcmp(patch, "PATCH", 5))
-      return NULL;
-
-   if (!(ps = (patch_stream_t*)calloc(1, sizeof(*ps))))
-      return NULL;
+   size_t                   far = ps->src_len;
 
    if (!(recs = (struct patch_stream_rec*)malloc(cap * sizeof(*recs))))
-   {
-      free(ps);
-      return NULL;
-   }
+      return false;
 
-   ps->fmt       = PATCH_STREAM_IPS;
-   ps->patch     = patch;
-   ps->patch_len = patch_len;
-   ps->src_len   = src_len;
-   ps->tgt_len   = src_len;
+   ps->tgt_len   = ps->src_len;
 
    for (;;)
    {
@@ -318,19 +325,48 @@ patch_stream_t *patch_stream_ips_open(const uint8_t *patch, size_t patch_len,
 
       if ((size_t)addr + len > ps->tgt_len)
          ps->tgt_len = (size_t)addr + len;
+      if ((size_t)addr + len > far)
+         far = (size_t)addr + len;
       n++;
    }
 
    ps->recs     = recs;
    ps->recs_len = n;
+   *reach       = ps->tgt_len > far ? ps->tgt_len : far;
+   return true;
+}
 
-   if (!patch_stream_reserve(ps, ps->tgt_len))
+static patch_stream_t *patch_stream_ips_begin(const uint8_t *patch,
+      size_t patch_len, size_t src_len, uint8_t *lent, size_t room)
+{
+   patch_stream_t *ps;
+   size_t          reach;
+
+   if (patch_len < 8 || memcmp(patch, "PATCH", 5))
+      return NULL;
+
+   if (!(ps = patch_stream_alloc(lent, room)))
+      return NULL;
+
+   ps->fmt       = PATCH_STREAM_IPS;
+   ps->patch     = patch;
+   ps->patch_len = patch_len;
+   ps->src_len   = src_len;
+
+   if (     !patch_stream_ips_index(ps, &reach)
+         || !patch_stream_reserve(ps, ps->tgt_len))
    {
       patch_stream_free(ps);
       return NULL;
    }
 
    return ps;
+}
+
+patch_stream_t *patch_stream_ips_open(const uint8_t *patch, size_t patch_len,
+      size_t src_len)
+{
+   return patch_stream_ips_begin(patch, patch_len, src_len, NULL, 0);
 }
 
 static void patch_stream_ips_overlay(patch_stream_t *ps, size_t lo, size_t hi)
@@ -435,8 +471,8 @@ static bool patch_stream_ips_finish(patch_stream_t *ps,
  * back to the command boundary and retries on the next feed.
  * -------------------------------------------------------------------- */
 
-patch_stream_t *patch_stream_ups_open(const uint8_t *patch, size_t patch_len,
-      size_t src_len)
+static patch_stream_t *patch_stream_ups_begin(const uint8_t *patch,
+      size_t patch_len, size_t src_len, uint8_t *lent, size_t room)
 {
    patch_stream_t *ps;
    uint64_t declared_src;
@@ -447,7 +483,7 @@ patch_stream_t *patch_stream_ups_open(const uint8_t *patch, size_t patch_len,
          || !patch_stream_self_checksum_ok(patch, patch_len))
       return NULL;
 
-   if (!(ps = (patch_stream_t*)calloc(1, sizeof(*ps))))
+   if (!(ps = patch_stream_alloc(lent, room)))
       return NULL;
 
    ps->fmt       = PATCH_STREAM_UPS;
@@ -482,6 +518,12 @@ patch_stream_t *patch_stream_ups_open(const uint8_t *patch, size_t patch_len,
    return ps;
 }
 
+patch_stream_t *patch_stream_ups_open(const uint8_t *patch, size_t patch_len,
+      size_t src_len)
+{
+   return patch_stream_ups_begin(patch, patch_len, src_len, NULL, 0);
+}
+
 static bool patch_stream_ups_src_ready(patch_stream_t *ps)
 {
    return ps->s_off < ps->carry_base + ps->carry_len;
@@ -492,7 +534,7 @@ static uint8_t patch_stream_ups_src(patch_stream_t *ps)
    uint8_t n = 0;
 
    if (ps->s_off < ps->src_len)
-      n = ps->carry[ps->s_off - ps->carry_base];
+      n = (ps->src_lent ? ps->src_lent : ps->carry)[ps->s_off - ps->carry_base];
    ps->s_off++;
    return n;
 }
@@ -579,8 +621,9 @@ static void patch_stream_ups_run(patch_stream_t *ps)
             break;
       }
 
-      /* Release source the machine has passed. */
-      if (ps->s_off > ps->carry_base)
+      /* Release the source that the machine has passed.  A lent source
+       * belongs to the caller, and we leave it where it is. */
+      if (!ps->src_lent && ps->s_off > ps->carry_base)
       {
          size_t drop = ps->s_off - ps->carry_base;
 
@@ -707,8 +750,8 @@ static bool patch_stream_ups_finish(patch_stream_t *ps,
  * chunk boundaries fall.
  * -------------------------------------------------------------------- */
 
-patch_stream_t *patch_stream_bps_open(const uint8_t *patch, size_t patch_len,
-      size_t src_len)
+static patch_stream_t *patch_stream_bps_begin(const uint8_t *patch,
+      size_t patch_len, size_t src_len, uint8_t *lent, size_t room)
 {
    patch_stream_t *ps;
    uint64_t        decl_src;
@@ -720,7 +763,7 @@ patch_stream_t *patch_stream_bps_open(const uint8_t *patch, size_t patch_len,
          || !patch_stream_self_checksum_ok(patch, patch_len))
       return NULL;
 
-   if (!(ps = (patch_stream_t*)calloc(1, sizeof(*ps))))
+   if (!(ps = patch_stream_alloc(lent, room)))
       return NULL;
 
    ps->fmt       = PATCH_STREAM_BPS;
@@ -757,8 +800,17 @@ patch_stream_t *patch_stream_bps_open(const uint8_t *patch, size_t patch_len,
    return ps;
 }
 
+patch_stream_t *patch_stream_bps_open(const uint8_t *patch, size_t patch_len,
+      size_t src_len)
+{
+   return patch_stream_bps_begin(patch, patch_len, src_len, NULL, 0);
+}
+
 static void patch_stream_bps_run(patch_stream_t *ps)
 {
+   /* The source kept from the feeds, or the one from the caller. */
+   const uint8_t *src = ps->src_lent ? ps->src_lent : ps->src_buf;
+
    while (ps->p_off < ps->patch_len - 12)
    {
       size_t   save_p = ps->p_off;
@@ -802,7 +854,7 @@ static void patch_stream_bps_run(patch_stream_t *ps)
             }
             for (k = 0; k < len; k++)
             {
-               uint8_t v = ps->src_buf[ps->t_off];
+               uint8_t v = src[ps->t_off];
                if (!patch_stream_put(ps, ps->t_off, &v, 1))
                   ps->failed = 1;
                ps->t_off++;
@@ -890,7 +942,7 @@ static void patch_stream_bps_run(patch_stream_t *ps)
                ps->s_off = so;
                for (k = 0; k < len; k++)
                {
-                  uint8_t v = ps->src_buf[ps->s_off++];
+                  uint8_t v = src[ps->s_off++];
                   if (!patch_stream_put(ps, ps->t_off, &v, 1))
                      ps->failed = 1;
                   ps->t_off++;
@@ -1123,9 +1175,131 @@ void patch_stream_free(patch_stream_t *ps)
 #ifdef HAVE_XDELTA
    vcdiff_stream_free(ps->vcd);
 #endif
-   free(ps->out);
+   if (!ps->out_lent)
+      free(ps->out);
    free(ps->recs);
    free(ps->carry);
    free(ps->src_buf);
    free(ps);
+}
+
+/* --------------------------------------------------------------------
+ * the whole source at once, into the caller's target
+ * -------------------------------------------------------------------- */
+
+/* Pass the whole source to the stream where it is, as with the feeds:
+ * counted, checksummed and, for UPS, through the window for its reads. */
+static void patch_stream_lend_source(patch_stream_t *ps,
+      const uint8_t *src, size_t src_len)
+{
+   ps->src_lent   = src;
+   ps->src_seen   = src_len;
+   ps->src_crc    = encoding_crc32(0, src, src_len);
+   ps->carry_base = 0;
+   ps->carry_len  = src_len;
+}
+
+bool patch_stream_target_room(enum patch_stream_format fmt,
+      const uint8_t *patch, size_t patch_len, size_t src_len, size_t *room)
+{
+   patch_stream_t probe;
+   uint64_t       declared;
+   bool           ok;
+
+   if (!patch || !room)
+      return false;
+   memset(&probe, 0, sizeof(probe));
+   probe.patch     = patch;
+   probe.patch_len = patch_len;
+   probe.src_len   = src_len;
+
+   switch (fmt)
+   {
+      case PATCH_STREAM_IPS:
+         if (patch_len < 8 || memcmp(patch, "PATCH", 5))
+            return false;
+         ok = patch_stream_ips_index(&probe, room);
+         free(probe.recs);
+         return ok;
+      case PATCH_STREAM_UPS:
+      case PATCH_STREAM_BPS:
+         /* The declared length of the source, then of the target. We trust
+          * them only after the checksum of the patch matches, as in open(),
+          * because the room becomes an allocation or a file. */
+         if (     patch_len < 4
+               || memcmp(patch, fmt == PATCH_STREAM_UPS ? "UPS1" : "BPS1", 4)
+               || !patch_stream_self_checksum_ok(patch, patch_len))
+            return false;
+         probe.p_off = 4;
+         if (     !patch_stream_decode(&probe, &declared)
+               || !patch_stream_decode(&probe, &declared)
+               || declared > (uint64_t)((size_t)-1))
+            return false;
+         *room = (size_t)declared;
+         return true;
+      case PATCH_STREAM_XDELTA:
+#ifdef HAVE_XDELTA
+         return vcdiff_target_size(patch, patch_len, room);
+#else
+         return false;
+#endif
+   }
+   return false;
+}
+
+bool patch_stream_apply_into(enum patch_stream_format fmt,
+      const uint8_t *patch, size_t patch_len,
+      const uint8_t *src, size_t src_len,
+      uint8_t *out, size_t out_room, size_t *out_len)
+{
+   /* A place for an empty target to point to, so it still belongs to the
+    * caller and we allocate nothing for it. */
+   static uint8_t  none;
+   patch_stream_t *ps = NULL;
+   uint8_t        *done;
+   bool            ok;
+
+   if (!patch || !out_len || (!src && src_len) || (!out && out_room))
+      return false;
+   if (!out)
+      out = &none;
+
+   switch (fmt)
+   {
+      case PATCH_STREAM_IPS:
+         ps = patch_stream_ips_begin(patch, patch_len, src_len, out, out_room);
+         break;
+      case PATCH_STREAM_UPS:
+         ps = patch_stream_ups_begin(patch, patch_len, src_len, out, out_room);
+         break;
+      case PATCH_STREAM_BPS:
+         ps = patch_stream_bps_begin(patch, patch_len, src_len, out, out_room);
+         break;
+      case PATCH_STREAM_XDELTA:
+#ifdef HAVE_XDELTA
+         return vcdiff_decode_into(patch, patch_len, src, src_len,
+               out, out_room, out_len);
+#else
+         return false;
+#endif
+   }
+   if (!ps)
+      return false;
+
+   if (fmt == PATCH_STREAM_IPS)
+      /* For IPS we read the source once, in order, copy it through and
+       * keep none of it. */
+      patch_stream_feed(ps, src, src_len);
+   else
+   {
+      patch_stream_lend_source(ps, src, src_len);
+      if (fmt == PATCH_STREAM_UPS)
+         patch_stream_ups_run(ps);
+      else
+         patch_stream_bps_run(ps);
+   }
+
+   ok = patch_stream_finish(ps, &done, out_len);
+   patch_stream_free(ps);
+   return ok;
 }

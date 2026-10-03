@@ -111,6 +111,48 @@ bool patch_stream_failed(patch_stream_t *ps);
 /* NULL-safe. */
 void patch_stream_free(patch_stream_t *ps);
 
+/* Applying a patch to a source that is already whole, into memory from
+ * the caller.
+ *
+ * In the streaming form we copy the source we keep (BPS, xdelta, and UPS
+ * past the end of its commands) and grow the target with realloc, so a
+ * large source is in memory two or three times.  In this form we borrow
+ * both: we read the source where it is and write the target into @out,
+ * sized by the caller with patch_stream_target_room, which we never
+ * reallocate or free here.  When the caller maps the source and the target
+ * from files, only what the patch touches is in memory.
+ *
+ * We use the same appliers as in the streaming form, so the result and the
+ * failures are the same. */
+
+enum patch_stream_format
+{
+   PATCH_STREAM_IPS = 0,
+   PATCH_STREAM_UPS,
+   PATCH_STREAM_BPS,
+   PATCH_STREAM_XDELTA
+};
+
+/* The room in bytes that @out requires to apply @patch to a source of
+ * @src_len bytes, from the patch alone: the declared target for UPS and
+ * BPS, the sum of the windows for xdelta, and for IPS the furthest point
+ * of the source or any record.  The target itself may be shorter (an IPS
+ * that truncates).  Returns false when the patch is malformed at the
+ * header level, or (xdelta) HAVE_XDELTA is not set. */
+bool patch_stream_target_room(enum patch_stream_format fmt,
+      const uint8_t *patch, size_t patch_len, size_t src_len, size_t *room);
+
+/* Apply @patch to the whole of @src, writing the target into @out, which
+ * has room for @out_room bytes.  We write over every byte of a UPS or BPS
+ * target.  For IPS we copy the source and write the records into it.  On
+ * success *out_len is the target's length, at most @out_room.  On failure
+ * @out contains whatever we wrote before the patch failed, for the caller
+ * to discard. */
+bool patch_stream_apply_into(enum patch_stream_format fmt,
+      const uint8_t *patch, size_t patch_len,
+      const uint8_t *src, size_t src_len,
+      uint8_t *out, size_t out_room, size_t *out_len);
+
 RETRO_END_DECLS
 
 #endif

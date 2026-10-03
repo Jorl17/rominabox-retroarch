@@ -92,6 +92,21 @@ bool vcdiff_decode(const uint8_t *patch, size_t patch_len,
       const uint8_t *src, size_t src_len,
       uint8_t **out, size_t *out_len);
 
+/* The length of the target, the sum of the window lengths, which we read
+ * from the window headers without decoding the windows.  False for a file
+ * header we refuse.  A window we cannot walk ends the sum early, and we
+ * then refuse that patch in the decode. */
+bool vcdiff_target_size(const uint8_t *patch, size_t patch_len,
+      size_t *size);
+
+/* As vcdiff_decode, but write the target into @out, @out_room bytes that
+ * the caller sized with vcdiff_target_size, which we never reallocate or
+ * free here.  We refuse a target that would not fit.  On success
+ * *out_len is its length. */
+bool vcdiff_decode_into(const uint8_t *patch, size_t patch_len,
+      const uint8_t *src, size_t src_len,
+      uint8_t *out, size_t out_room, size_t *out_len);
+
 RETRO_END_DECLS
 
 #endif
