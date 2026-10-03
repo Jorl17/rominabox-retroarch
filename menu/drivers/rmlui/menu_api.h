@@ -13,6 +13,7 @@ void rib_menu_context_destroy(void *menu);
 void rib_menu_context_reset(void *menu);
 void rib_menu_toggle(void *menu, bool on);
 bool rib_menu_consume_toggle(void *menu);
+void rib_menu_update(void *menu);
 void rib_menu_frame(void *menu, int width, int height);
 int rib_menu_key(void *menu, enum rib_key key);
 #ifdef __cplusplus

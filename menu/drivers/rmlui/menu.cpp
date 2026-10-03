@@ -492,7 +492,6 @@ static bool initialize(Menu *menu, const char *assets, int width, int height)
 void rib_menu_frame(void *data, int width, int height)
 {
    Menu *menu = (Menu*)data;
-   rib_pointer pointer;
 
    if (!menu)
       return;
@@ -540,6 +539,21 @@ void rib_menu_frame(void *data, int width, int height)
       }
       menu->overlays.update(menu->script.wants_frames());
    }
+
+   menu->view.render(width, height);
+}
+
+/* Run queued actions, from the player or the script, between frames in the
+ * RetroArch loop, never while we draw the menu in the video driver. Applying a
+ * shader, for example, gives the GL context back to a hardware core, and the
+ * rest of a frame drawn after that never reaches the window. */
+void rib_menu_update(void *data)
+{
+   Menu *menu = (Menu*)data;
+   rib_pointer pointer;
+
+   if (!menu || !menu->initialized || !rib_host_menu_open())
+      return;
 
    pointer = rib_host_pointer();
    {
@@ -605,7 +619,6 @@ void rib_menu_frame(void *data, int width, int height)
    menu->controls.update_binds(pointer.x, pointer.y,
          !menu->script.wants_frames());
    settle_focus(menu);
-   menu->view.render(width, height);
 }
 
 int rib_menu_key(void *data, enum rib_key action)

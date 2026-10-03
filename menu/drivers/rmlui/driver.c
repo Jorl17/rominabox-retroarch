@@ -37,6 +37,16 @@ static void driver_frame(void *data, video_frame_info_t *video)
    if (driver && video)
       rib_menu_frame(driver->menu, (int)VIDEO_SCALE_W(video->dims), (int)VIDEO_SCALE_H(video->dims));
 }
+/* The RetroArch loop, between frames. We do here what the player asked for,
+ * outside the frame of the video driver. */
+static void driver_render(void *data, unsigned dims, bool is_idle)
+{
+   rib_driver *driver = (rib_driver*)data;
+   (void)dims;
+   (void)is_idle;
+   if (driver)
+      rib_menu_update(driver->menu);
+}
 static void driver_reset(void *data, bool threaded)
 {
    (void)threaded;
@@ -86,6 +96,7 @@ static int driver_bind(menu_file_list_cbs_t *cbs, const char *path,
 
 menu_ctx_driver_t menu_ctx_rmlui = {
    .frame = driver_frame,
+   .render = driver_render,
    .init = driver_init,
    .free = driver_free,
    .context_reset = driver_reset,
