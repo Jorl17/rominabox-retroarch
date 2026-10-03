@@ -7609,19 +7609,17 @@ if (!VIDEO_DRIVER_IS_THREADED_INTERNAL(video_st))
 static void video_driver_reinit_context(settings_t *settings, int flags)
 {
    /* RARCH_DRIVER_CTL_UNINIT clears the callback struct so we
-    * need to make sure to keep a copy */
-   struct retro_hw_render_callback hwr_copy;
-   video_driver_state_t *video_st       = &video_driver_st;
-   struct retro_hw_render_callback *hwr =
-      VIDEO_DRIVER_GET_HW_CONTEXT_INTERNAL(video_st);
-   const struct retro_hw_render_context_negotiation_interface *iface =
-      video_st->hw_render_context_negotiation;
-   memcpy(&hwr_copy, hwr, sizeof(hwr_copy));
+    * need to make sure to keep a copy; the restore publishes
+    * hw_context_type again, which the uninit set to NONE. */
+   struct video_hw_request hw_request;
+   video_driver_state_t *video_st = &video_driver_st;
+   memcpy(&hw_request.cb, VIDEO_DRIVER_GET_HW_CONTEXT_INTERNAL(video_st),
+         sizeof(hw_request.cb));
+   hw_request.negotiation         = video_st->hw_render_context_negotiation;
 
    driver_uninit(flags, DRIVER_LIFETIME_RESET);
 
-   memcpy(hwr, &hwr_copy, sizeof(*hwr));
-   video_st->hw_render_context_negotiation = iface;
+   video_driver_hw_request_restore(&hw_request);
 
    drivers_init(settings, flags, DRIVER_LIFETIME_RESET, verbosity_is_enabled());
 }
