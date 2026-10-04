@@ -1,3 +1,26 @@
+<p align="center">
+  <a href="https://www.rominabox.app"><img src=".github/rominabox/logo.png" alt="ROM-in-a-Box" width="128"></a>
+</p>
+
+# ROM-in-a-Box's fork of RetroArch
+
+This is a fork of RetroArch for [ROM-in-a-Box](https://www.rominabox.app) ([repository](https://github.com/Jorl17/rominabox)), which turns any ROM into a standalone app. It contains the following changes (non-exhaustive list):
+
+- An in-game menu drawn with RmlUi (`menu/drivers/rmlui`), with save slots, controls and hotkeys, shaders, RetroAchievements, disc changes, volume and fast forward, in designs that each game declares.
+- One data folder per game for its configuration, saves and caches, so a game never reads another RetroArch installation's settings.
+- Sandboxed games: an AppContainer on Windows, with controllers and rumble relayed through the game's launcher, and the App Sandbox on macOS.
+- QUICK SIGN IN, which shares one RetroAchievements sign-in across every ROM-in-a-Box game.
+- Streaming patches at export, including xdelta patches made with the default options of xdelta3.
+- Fullscreen on Windows presented through DXGI, so HDR stays on, and Alt+Enter for fullscreen on Windows and Linux.
+- Rumble sent to the pad that last pressed a button, when every pad plays as player 1.
+- A smaller build, without the features that ROM-in-a-Box does not use.
+
+ROM-in-a-Box is licensed under the GNU General Public License v3.0 or later. Copyright (C) 2026 João Ricardo Lourenço, for the changes above. RetroArch's own copyright notices are unchanged.
+
+Below is the original, unmodified README of RetroArch, as of the latest sync with upstream.
+
+---
+
 [![Crowdin](https://badges.crowdin.net/retroarch/localized.svg)](https://crowdin.com/project/retroarch)
 
 # RetroArch
