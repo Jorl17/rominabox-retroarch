@@ -51,6 +51,11 @@ bool rib_rmlui_menu_hotkey_key(unsigned code);
  * them while the menu is open or the game waits for the splash, and a key
  * that is down then counts only after it is released and pressed again. */
 void rib_rmlui_play_hotkeys(void);
+/* FAST FORWARD held during play, by the way it works (hotkeys.inc: its
+ * first way is while held, its second from one press to the next): `hold`
+ * or `toggle`, which we pass to the RetroArch fast forward as its hold and
+ * toggle hotkeys. Both are false in a game without fast forward. */
+void rib_rmlui_fast_forward(bool *hold, bool *toggle);
 void rib_rmlui_notify_state_task(const char *path, int slot, bool is_save, bool success);
 static inline bool rib_rmlui_ok_includes_pointer_select(bool is_rmlui)
 {

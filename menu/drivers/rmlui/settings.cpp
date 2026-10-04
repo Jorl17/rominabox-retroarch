@@ -20,7 +20,7 @@ namespace {
 std::string file_text(const SettingDeclaration& setting, float value)
 {
    char text[32];
-   if (setting.kind == SettingKind::Level)
+   if (setting.kind != SettingKind::Switch)
       snprintf(text, sizeof(text), "%.1f", value);
    else
       strlcpy(text, value != 0.0f ? "true" : "false", sizeof(text));
@@ -131,6 +131,14 @@ bool PlayerSettings::handle(const Event& event)
 
 bool PlayerSettings::toggle(const char *control)
 {
+   if (const SettingDeclaration *choice = owning(control, SettingKind::Choice))
+   {
+      const int next = (level_position_of(*choice, value(*choice)) + 1)
+            % (int)choice->values.size();
+      set(*choice, choice->values[next], true);
+      paint();
+      return true;
+   }
    const SettingDeclaration *setting = owning(control, SettingKind::Switch);
    if (!setting)
       return false;

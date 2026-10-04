@@ -47,9 +47,12 @@ private:
    struct Row
    {
       Hotkey hotkey = Hotkey::Menu;
-      std::string add, label;
+      /* `mode` is empty for a hotkey with only one way of working. */
+      std::string add, label, mode;
       std::vector<std::string> chips;
    };
+   /* The design's word for the current way of `hotkey`. */
+   std::string mode_word(Hotkey hotkey) const;
    const Row *row(Hotkey hotkey) const;
    std::string name(Hotkey hotkey) const;
    void start_capture(Hotkey hotkey);

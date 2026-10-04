@@ -63,5 +63,11 @@ void PlayHotkeys::frame(bool playing)
       if (pressed && playing)
          act(hotkey);
    }
+   was_playing = playing;
+}
+
+bool PlayHotkeys::holding(Hotkey hotkey) const
+{
+   return was_playing && bindings.offered(hotkey) && held[static_cast<size_t>(hotkey)];
 }
 }

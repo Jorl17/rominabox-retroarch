@@ -211,6 +211,7 @@ void settings(config_file_t *config, rib::DesignDeclarations& design)
       switch (setting.kind)
       {
          case rib::SettingKind::Level:
+         case rib::SettingKind::Choice:
             setting.values = levels(value(config, rib::keys::SettingValues(id)));
             setting.default_value = std::strtof(start.c_str(), nullptr);
             break;
@@ -220,7 +221,7 @@ void settings(config_file_t *config, rib::DesignDeclarations& design)
             break;
       }
       if (setting.control.empty() || setting.file.empty() || start.empty()
-            || (setting.kind == rib::SettingKind::Level && setting.values.size() < 2))
+            || (setting.kind != rib::SettingKind::Switch && setting.values.size() < 2))
       {
          RARCH_ERR("[RIB] the setting '%s' is declared without its control, "
                "file, default or values; it will not be shown.\n", id.c_str());

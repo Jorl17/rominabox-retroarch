@@ -242,11 +242,13 @@ RIB_ELEMENT(ControlGroupBindingPrefix, "control-group-binding-", Generated, Opti
 RIB_ELEMENT(ControlDirectionPrefix, "control-direction-", Generated, Optional)
 RIB_ELEMENT(AchievementRowPrefix, "achievement-", Generated, Optional)
 RIB_ELEMENT(AccountRowPrefix, "account-", Generated, Optional)
-/* A HOTKEYS row, by the hotkey's id: <prefix><hotkey>, and its +, label
- * and chips, <prefix><hotkey><suffix> and <prefix><hotkey>-<n>. */
+/* A HOTKEYS row, by the hotkey's id: <prefix><hotkey>, and its +, label,
+ * the way it works for a hotkey with ways (hotkeys.inc), and chips,
+ * <prefix><hotkey><suffix> and <prefix><hotkey>-<n>. */
 RIB_ELEMENT(HotkeyPrefix, "hotkey-", Generated, Optional)
 RIB_ELEMENT(AddSuffix, "-add", Generated, Optional)
 RIB_ELEMENT(LabelSuffix, "-label", Generated, Optional)
+RIB_ELEMENT(ModeSuffix, "-mode", Generated, Optional)
 /* Ids the exporter builds from a screen's or a row's own id. */
 RIB_ELEMENT(ListSuffix, "-list", Generated, Optional)
 RIB_ELEMENT(StatusSuffix, "-status", Generated, Optional)

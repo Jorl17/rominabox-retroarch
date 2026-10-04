@@ -60,6 +60,14 @@ void Hotkeys::bind()
                RIB_RMLUI_ACTION_HOTKEY_REMOVE, hotkey_id(row.hotkey), chip));
          row.chips.push_back(id);
       }
+      const std::string mode = base + document_contract::ModeSuffix;
+      Rml::Element *way = bindings.modes(row.hotkey).empty() ? nullptr : root->GetElementById(mode);
+      if (way)
+      {
+         listen(way, intents, hovered,
+               Event::hotkey(RIB_RMLUI_ACTION_HOTKEY_MODE, hotkey_id(row.hotkey)));
+         row.mode = mode;
+      }
       rows.push_back(row);
    }
    if (rows.empty())
@@ -95,11 +103,30 @@ std::string Hotkeys::name(Hotkey hotkey) const
    return text;
 }
 
+std::string Hotkeys::mode_word(Hotkey hotkey) const
+{
+   const std::vector<std::string> modes = bindings.modes(hotkey);
+   if (modes.empty())
+      return std::string();
+   const std::string& mode = modes[bindings.mode(hotkey)];
+   Word word;
+   return word_named(std::string("hotkey-mode-") + mode, word) ? say(word) : mode;
+}
+
 void Hotkeys::refresh()
 {
    for (const Row& shown : rows)
    {
       const std::vector<HotkeyBinding>& list = bindings.of(shown.hotkey);
+      /* A hotkey that the game does not have: we disable its row and every
+       * part of it, and the design sets whether that is visible. */
+      const bool offered = bindings.offered(shown.hotkey);
+      document.set_disabled(row_id(shown.hotkey).c_str(), !offered);
+      if (!shown.mode.empty())
+      {
+         document.set_element_text(shown.mode.c_str(), mode_word(shown.hotkey).c_str());
+         document.set_disabled(shown.mode.c_str(), !offered);
+      }
       for (size_t chip = 0; chip < shown.chips.size(); ++chip)
       {
          const char *id = shown.chips[chip].c_str();
@@ -114,7 +141,7 @@ void Hotkeys::refresh()
          document.set_class(id, document_contract::ChipPad,
                list[chip].kind == HotkeyBinding::Kind::Pad);
       }
-      document.set_disabled(shown.add.c_str(), list.size() >= shown.chips.size());
+      document.set_disabled(shown.add.c_str(), !offered || list.size() >= shown.chips.size());
       document.set_class(shown.add.c_str(), document_contract::Capturing,
             capture.active && capture.hotkey == shown.hotkey);
    }
@@ -275,6 +302,7 @@ bool Hotkeys::handle(const Event& event)
    Hotkey hotkey = Hotkey::Menu;
    const bool mine = event.kind == RIB_RMLUI_ACTION_HOTKEY_ADD
          || event.kind == RIB_RMLUI_ACTION_HOTKEY_REMOVE
+         || event.kind == RIB_RMLUI_ACTION_HOTKEY_MODE
          || event.kind == RIB_RMLUI_ACTION_HOTKEYS_RESET;
    /* While we capture a binding, the player cannot press anything else. */
    if (capture.active)
@@ -288,6 +316,14 @@ bool Hotkeys::handle(const Event& event)
    {
       if (event.kind == RIB_RMLUI_ACTION_HOTKEY_ADD)
          start_capture(hotkey);
+      else if (event.kind == RIB_RMLUI_ACTION_HOTKEY_MODE)
+      {
+         const bool saved = bindings.next_mode(hotkey);
+         status.set_hotkeys(saved ? say(Word::HotkeyModeSaved,
+               {{"control", name(hotkey)}, {"mode", mode_word(hotkey)}}).c_str()
+               : say(Word::BindingSaveFailed).c_str());
+         refresh();
+      }
       else
          remove(hotkey, event.slot);
    }

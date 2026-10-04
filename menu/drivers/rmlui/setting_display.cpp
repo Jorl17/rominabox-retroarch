@@ -81,10 +81,20 @@ void paint_setting(Rml::Element *root, const SettingDeclaration& setting, float 
                level_fraction_at(setting, level_position_of(setting, value)));
       return;
    }
+   Rml::Element *state = root->GetElementById(setting.control + document_contract::StateSuffix);
+   if (setting.kind == SettingKind::Choice)
+   {
+      /* The word for its position, <id>-<n> from 1, or the value when no
+       * word is declared in the player. */
+      const int position = level_position_of(setting, value);
+      Word word;
+      write_text(state, word_named(setting.id + "-" + std::to_string(position + 1), word)
+            ? say(word) : std::to_string(setting.values[position]));
+      return;
+   }
    const bool on = switch_on(setting, value);
    if (control)
       control->SetClass(document_contract::On, on);
-   write_text(root->GetElementById(setting.control + document_contract::StateSuffix),
-         say(on ? Word::SwitchOn : Word::SwitchOff));
+   write_text(state, say(on ? Word::SwitchOn : Word::SwitchOff));
 }
 }

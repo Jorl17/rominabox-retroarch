@@ -111,9 +111,19 @@ public:
    Change add(Hotkey hotkey, const HotkeyBinding& binding, const std::vector<size_t>& room,
          const std::vector<GameInput>& game);
    Change remove(Hotkey hotkey, size_t index);
-   /* Go back to the bindings of the author and delete the file of the player.
-    * Returns false when we could not delete the file. */
+   /* Restore the author's bindings and ways, and delete the player's file.
+    * Return false when we could not delete the file. */
    bool reset();
+
+   /* Whether the game has `hotkey`. A hotkey that the game does not have
+    * has no bindings and does nothing. */
+   bool offered(Hotkey hotkey) const;
+   /* The ways `hotkey` can work, as declared in hotkeys.inc. Most have none. */
+   std::vector<std::string> modes(Hotkey hotkey) const;
+   /* The current way, by its index in `modes`. */
+   size_t mode(Hotkey hotkey) const;
+   /* Switch to the next way. Return whether the player's file has the change. */
+   bool next_mode(Hotkey hotkey);
 
    /* Each frame, for the RetroArch input code: whether a binding of `hotkey`
     * is pressed. A shared input counts only for the first hotkey of its pair.
@@ -131,6 +141,11 @@ public:
    void until_released(const HotkeyBinding& binding);
 
 private:
+   /* The author's ways, and the hotkeys the game does not have, read from
+    * the defaults at `defaults`. */
+   void read_ways_and_absent(const char *defaults);
+   /* The way set in `config` for `hotkey`, or -1 when there is none. */
+   size_t read_way(struct config_file *config, Hotkey hotkey) const;
    bool save() const;
    bool keeps(Hotkey hotkey, const std::vector<HotkeyBinding>& list, Outcome *refusal) const;
    bool lawful(const std::vector<HotkeyBinding> (&lists)[kHotkeyCount]) const;
@@ -141,6 +156,9 @@ private:
    mutable std::vector<unsigned> unreleased_keys, unreleased_pads;
    std::vector<HotkeyBinding> lists[kHotkeyCount];
    std::vector<HotkeyBinding> authored[kHotkeyCount];
+   size_t ways[kHotkeyCount] = {};
+   size_t authored_ways[kHotkeyCount] = {};
+   bool absent[kHotkeyCount] = {};
    std::map<std::string, std::string> pad_words;
    std::string player_path;
 };

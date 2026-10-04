@@ -24,10 +24,12 @@ enum rib_rmlui_action
    RIB_RMLUI_ACTION_ACCOUNT,
    /* A button on a list screen, passed to the list for that screen. */
    RIB_RMLUI_ACTION_LIST_ACTION,
-   /* HOTKEYS: capture a binding for the hotkey `id`; remove its
-    * binding in chip `slot`; put back the game's own; end a capture. */
+   /* HOTKEYS: capture a binding for the hotkey `id`, remove its binding in
+    * chip `slot`, switch the way it works, restore the game's own bindings,
+    * or end a capture. */
    RIB_RMLUI_ACTION_HOTKEY_ADD,
    RIB_RMLUI_ACTION_HOTKEY_REMOVE,
+   RIB_RMLUI_ACTION_HOTKEY_MODE,
    RIB_RMLUI_ACTION_HOTKEYS_RESET,
    RIB_RMLUI_ACTION_HOTKEYS_CANCEL,
    /* UNINSTALL or RESET, confirmed: we forget the game and close it. */

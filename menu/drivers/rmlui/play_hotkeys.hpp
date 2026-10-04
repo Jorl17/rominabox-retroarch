@@ -22,6 +22,9 @@ public:
     * only after release and a new press. We report a finished save or load
     * from a hotkey whether or not the game is playing. */
    void frame(bool playing);
+   /* Whether `hotkey` was held during play in the last frame, which we read
+    * for a hotkey that works only while it is held. */
+   bool holding(Hotkey hotkey) const;
 
 private:
    void act(Hotkey hotkey);
@@ -30,7 +33,9 @@ private:
    const HotkeyBindings& bindings;
    Slots& slots;
    Overlays& overlays;
-   /* Which hotkeys the player pressed in the previous frame. */
+   /* For each hotkey, whether it was held in the frame before, and whether
+    * the game was running then. */
    bool held[kHotkeyCount] = {};
+   bool was_playing = false;
 };
 }

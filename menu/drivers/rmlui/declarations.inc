@@ -101,6 +101,12 @@ RIB_FILE(HotkeysDefaults, "hotkeys-defaults.cfg")
 RIB_DATA_FILE(Hotkeys, "hotkeys.cfg")
 RIB_KEYS(HotkeyList, "hotkey_")
 RIB_KEYS(PadWord, "pad_word_")
+/* The hotkeys a game does not have, by id, separated by spaces: their rows
+ * are disabled and they act for nothing. */
+RIB_KEY(HotkeysAbsent, "hotkeys_absent")
+/* A hotkey's way, one of those hotkeys.inc declares for it: the author's in
+ * the defaults, the player's in the game's data. */
+RIB_KEYS(HotkeyMode, "hotkey_mode_")
 
 /* shaders.cfg: the filters a game bundles, in order, and each one's preset. */
 RIB_FILE(Shaders, "shaders.cfg")

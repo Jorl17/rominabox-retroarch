@@ -204,6 +204,17 @@ void rib_rmlui_play_hotkeys(void)
             && !active_menu->overlays.holding_game());
 }
 
+void rib_rmlui_fast_forward(bool *hold, bool *toggle)
+{
+   *hold = *toggle = false;
+   if (!active_menu || !active_menu->play_hotkeys.holding(rib::Hotkey::FastForward))
+      return;
+   if (active_menu->hotkeys.read().mode(rib::Hotkey::FastForward) == 0)
+      *hold = true;
+   else
+      *toggle = true;
+}
+
 static rib::ListOwner *showing_list(Menu *menu)
 {
    const rib::ScreenRole role = menu->screens.current_role();

@@ -6723,6 +6723,17 @@ static enum runloop_state_enum runloop_check_state(
          BIT256_SET(current_bits, RARCH_MENU_TOGGLE);
       pad_menu_was_held             = pad_menu_held;
       rib_rmlui_play_hotkeys();
+      /* We pass FAST FORWARD to the RetroArch fast forward as the hotkey it
+       * works as, so its frame limit, muting and pause rule apply. */
+      {
+         bool fast_hold   = false;
+         bool fast_toggle = false;
+         rib_rmlui_fast_forward(&fast_hold, &fast_toggle);
+         if (fast_hold)
+            BIT256_SET(current_bits, RARCH_FAST_FORWARD_HOLD_KEY);
+         if (fast_toggle)
+            BIT256_SET(current_bits, RARCH_FAST_FORWARD_KEY);
+      }
    }
    else
 #endif

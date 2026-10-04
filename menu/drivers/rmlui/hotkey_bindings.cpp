@@ -34,6 +34,17 @@ const Hotkey all[] = {
 #include "hotkeys.inc"
 };
 
+struct Ways
+{
+   Hotkey hotkey;
+   const char *names[2];
+};
+
+const Ways ways_declared[] = {
+#define RIB_HOTKEY_MODES(name, first, second) {Hotkey::name, {first, second}},
+#include "hotkeys.inc"
+};
+
 struct Sharing
 {
    Hotkey first, second;
@@ -201,6 +212,9 @@ void HotkeyBindings::load(const char *assets, const char *data)
    }
    for (size_t index = 0; index < kHotkeyCount; ++index)
       lists[index] = authored[index];
+   read_ways_and_absent(defaults.c_str());
+   for (size_t index = 0; index < kHotkeyCount; ++index)
+      ways[index] = authored_ways[index];
    if (player_path.empty() || !path_is_valid(player_path.c_str()))
       return;
    config_file_t *config = config_file_new_from_path_to_string(player_path.c_str());
@@ -214,6 +228,13 @@ void HotkeyBindings::load(const char *assets, const char *data)
          any = true;
       else
          chosen[at(hotkey)] = authored[at(hotkey)];
+      /* For a hotkey that the game does not have, we keep no binding from
+       * an earlier export. */
+      if (absent[at(hotkey)])
+         chosen[at(hotkey)].clear();
+      const size_t way = read_way(config, hotkey);
+      if (way != (size_t)-1)
+         ways[at(hotkey)] = way;
    }
    config_file_free(config);
    if (!any)
@@ -386,10 +407,79 @@ HotkeyBindings::Change HotkeyBindings::remove(Hotkey hotkey, size_t index)
    return change;
 }
 
+void HotkeyBindings::read_ways_and_absent(const char *defaults)
+{
+   for (size_t index = 0; index < kHotkeyCount; ++index)
+   {
+      authored_ways[index] = 0;
+      absent[index] = false;
+   }
+   config_file_t *config = config_file_new_from_path_to_string(defaults);
+   if (!config)
+      return;
+   for (Hotkey hotkey : all)
+   {
+      const size_t way = read_way(config, hotkey);
+      if (way != (size_t)-1)
+         authored_ways[at(hotkey)] = way;
+   }
+   if (const struct config_entry_list *entry = config_get_entry(config, keys::HotkeysAbsent))
+      for (const std::string& id : split(entry->value ? entry->value : "", " "))
+      {
+         Hotkey hotkey;
+         if (hotkey_named(id, hotkey))
+            absent[at(hotkey)] = true;
+      }
+   config_file_free(config);
+}
+
+size_t HotkeyBindings::read_way(struct config_file *config, Hotkey hotkey) const
+{
+   const struct config_entry_list *entry =
+         config_get_entry(config, keys::HotkeyMode(hotkey_id(hotkey)).c_str());
+   if (!entry || !entry->value)
+      return (size_t)-1;
+   const std::vector<std::string> named = modes(hotkey);
+   for (size_t way = 0; way < named.size(); ++way)
+      if (named[way] == entry->value)
+         return way;
+   return (size_t)-1;
+}
+
+bool HotkeyBindings::offered(Hotkey hotkey) const
+{
+   return !absent[at(hotkey)];
+}
+
+std::vector<std::string> HotkeyBindings::modes(Hotkey hotkey) const
+{
+   for (const Ways& declared_ways : ways_declared)
+      if (declared_ways.hotkey == hotkey)
+         return {declared_ways.names[0], declared_ways.names[1]};
+   return {};
+}
+
+size_t HotkeyBindings::mode(Hotkey hotkey) const
+{
+   return ways[at(hotkey)];
+}
+
+bool HotkeyBindings::next_mode(Hotkey hotkey)
+{
+   const size_t count = modes(hotkey).size();
+   if (count == 0)
+      return true;
+   ways[at(hotkey)] = (ways[at(hotkey)] + 1) % count;
+   return save();
+}
+
 bool HotkeyBindings::reset()
 {
    for (size_t index = 0; index < kHotkeyCount; ++index)
+   {
       lists[index] = authored[index];
+      ways[index] = authored_ways[index];
+   }
    return player_path.empty() || !path_is_valid(player_path.c_str())
          || filestream_delete(player_path.c_str()) == 0;
 }
@@ -407,6 +497,10 @@ bool HotkeyBindings::save() const
       for (const HotkeyBinding& binding : lists[at(hotkey)])
          list += (list.empty() ? "" : " ") + binding.text();
       config_set_string(config, keys::HotkeyList(hotkey_id(hotkey)).c_str(), list.c_str());
+      const std::vector<std::string> named = modes(hotkey);
+      if (!named.empty())
+         config_set_string(config, keys::HotkeyMode(hotkey_id(hotkey)).c_str(),
+               named[ways[at(hotkey)]].c_str());
    }
    const bool saved = rib_write_menu_config(config, player_path.c_str());
    config_file_free(config);

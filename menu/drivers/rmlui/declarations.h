@@ -71,8 +71,9 @@ struct SettingDeclaration
    std::string id, control, file;
    rib_setting_key key = RIB_SETTING_KEY_COUNT;
    SettingKind kind = SettingKind::Level;
-   /* A level: the key's value at each of its positions, from the slider's
-    * low end to its high end. */
+   /* A level: the value of the key at each position, from the low end of the
+    * slider to the high end. A choice: its positions, in the order in which
+    * a press moves through them. */
    std::vector<float> values;
    /* A switch: whether on is the key's false. The words for it are in the
     * menu (Word::SwitchOn, Word::SwitchOff). */

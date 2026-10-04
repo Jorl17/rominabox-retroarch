@@ -293,11 +293,26 @@ static void rib_host_apply_InputRumbleEnable(settings_t *settings, float value)
    configuration_set_bool(settings, settings->bools.input_rumble_enable, value != 0.0f);
 }
 
+static float rib_host_read_FastforwardRatio(settings_t *settings)
+{
+   return settings->floats.fastforward_ratio;
+}
+
+/* A new speed applies at once to a fast forward that is already running,
+ * because RetroArch reads the ratio when it sets the frame limit. */
+static void rib_host_apply_FastforwardRatio(settings_t *settings, float value)
+{
+   configuration_set_float(settings, settings->floats.fastforward_ratio, value);
+   command_event(CMD_EVENT_SET_FRAME_LIMIT, NULL);
+}
+
 /* Whether each key applies to the running game. Every game has a volume and
  * a window, but we can rumble a pad only when the core uses the rumble
  * interface. */
 static bool rib_host_used_AudioVolume(void) { return true; }
 static bool rib_host_used_PauseNonactive(void) { return true; }
+/* We declare the fast forward speed in an export only for a game with it. */
+static bool rib_host_used_FastforwardRatio(void) { return true; }
 static bool rib_host_used_InputRumbleEnable(void)
 {
    return runloop_state_get_ptr()->system.supports_rumble;

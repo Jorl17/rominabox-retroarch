@@ -19,6 +19,10 @@
  *    plays holds no key the game itself reads and no pad button it reads
  *    alone, or a press would do both. A chord of several buttons, and
  *    Home, are not checked.
+ * RIB_HOTKEY_MODES(name, "first", "second")
+ *    A hotkey that works one of two ways, which the player chooses on its
+ *    row; the author's choice is where it starts. Each way's word is the
+ *    player's: hotkey-mode-<way> (words.inc).
  * RIB_HOTKEYS_SHARE(first, second)
  *    Two hotkeys that do the same inside the menu. An input may be bound to
  *    both, and there it acts once, as `first`. Every other pair holds an
@@ -41,6 +45,9 @@
 /* A reader defines the declarations it reads; the others read as nothing. */
 #ifndef RIB_HOTKEY
 #define RIB_HOTKEY(name, id, keeps, acts)
+#endif
+#ifndef RIB_HOTKEY_MODES
+#define RIB_HOTKEY_MODES(name, first, second)
 #endif
 #ifndef RIB_HOTKEYS_SHARE
 #define RIB_HOTKEYS_SHARE(first, second)
@@ -78,6 +85,9 @@ RIB_HOTKEY(NextSlot, "next-slot", Nothing, InGame)
  * forward on. */
 RIB_HOTKEY(FastForward, "fast-forward", Nothing, InGame)
 
+/* Fast forward runs while held, or from one press to the next. */
+RIB_HOTKEY_MODES(FastForward, "hold", "toggle")
+
 RIB_HOTKEYS_SHARE(Menu, Back)
 
 RIB_HOTKEY_BINDING(Key, "key:")
@@ -87,6 +97,7 @@ RIB_HOTKEY_PAD_HOME("home", "menu_toggle", "Home")
 RIB_HOTKEY_CAPTURE_CANCEL("escape")
 
 #undef RIB_HOTKEY
+#undef RIB_HOTKEY_MODES
 #undef RIB_HOTKEYS_SHARE
 #undef RIB_HOTKEY_BINDING
 #undef RIB_HOTKEY_PAD_CHORD

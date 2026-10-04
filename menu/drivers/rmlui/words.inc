@@ -38,6 +38,11 @@ RIB_WORD(BindingUnusable, "binding-unusable", "USE A KEY OR A PAD BUTTON")
 /* A hotkey that acts while the game plays refused what the game reads:
  * {control} is the game's control, as CONTROLS shows it. */
 RIB_WORD(GameInput, "game-input", "THE GAME USES THAT FOR {control}")
+/* The ways a hotkey with ways works (hotkeys.inc), on its row, and what a
+ * change of way says. */
+RIB_WORD(HotkeyModeHold, "hotkey-mode-hold", "HOLD")
+RIB_WORD(HotkeyModeToggle, "hotkey-mode-toggle", "TOGGLE")
+RIB_WORD(HotkeyModeSaved, "hotkey-mode-saved", "{control}: {mode}")
 
 /* The save slots and what saving and loading say. */
 RIB_WORD(Slot, "slot", "SLOT {slot}")
@@ -71,8 +76,12 @@ RIB_WORD(DiscMark, "disc-mark", "IN")
 RIB_WORD(Volume, "volume", "VOLUME")
 RIB_WORD(PlayInBackground, "play-in-background", "PLAY IN BACKGROUND")
 RIB_WORD(Rumble, "rumble", "RUMBLE")
+RIB_WORD(FastForwardSpeed, "fast-forward-speed", "FAST FORWARD")
 RIB_WORD(LevelLow, "level-low", "LOW")
 RIB_WORD(LevelHigh, "level-high", "HIGH")
+RIB_WORD(FastForwardSpeed1, "fast-forward-speed-1", "2X")
+RIB_WORD(FastForwardSpeed2, "fast-forward-speed-2", "4X")
+RIB_WORD(FastForwardSpeed3, "fast-forward-speed-3", "MAX")
 RIB_WORD(SwitchOn, "switch-on", "ON")
 RIB_WORD(SwitchOff, "switch-off", "OFF")
 

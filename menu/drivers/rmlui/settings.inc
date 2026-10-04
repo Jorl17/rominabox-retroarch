@@ -41,6 +41,9 @@ RIB_SETTING_POSITIONS(FastforwardRatio, "2.0 4.0 0.0")
 RIB_SETTING_KIND(Level, "level")
 /* On or off. */
 RIB_SETTING_KIND(Switch, "switch")
+/* One of its positions, an Options entry a press moves to the next, the
+ * last back to the first; each position's word is <id>-<n> (words.inc). */
+RIB_SETTING_KIND(Choice, "choice")
 
 #undef RIB_SETTING_KEY
 #undef RIB_SETTING_KIND
