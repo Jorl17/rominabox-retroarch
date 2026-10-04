@@ -433,7 +433,7 @@ void HotkeyBindings::read_ways_and_absent(const char *defaults)
    config_file_free(config);
 }
 
-size_t HotkeyBindings::read_way(struct config_file *config, Hotkey hotkey) const
+size_t HotkeyBindings::read_way(::config_file *config, Hotkey hotkey) const
 {
    const struct config_entry_list *entry =
          config_get_entry(config, keys::HotkeyMode(hotkey_id(hotkey)).c_str());

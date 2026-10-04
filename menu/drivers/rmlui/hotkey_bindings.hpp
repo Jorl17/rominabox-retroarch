@@ -5,6 +5,9 @@
 #include <string>
 #include <vector>
 
+/* libretro-common's config file (file/config_file.h). */
+struct config_file;
+
 namespace rib {
 /* The hotkeys, as declared in hotkeys.inc. */
 enum class Hotkey
@@ -145,7 +148,7 @@ private:
     * the defaults at `defaults`. */
    void read_ways_and_absent(const char *defaults);
    /* The way set in `config` for `hotkey`, or -1 when there is none. */
-   size_t read_way(struct config_file *config, Hotkey hotkey) const;
+   size_t read_way(::config_file *config, Hotkey hotkey) const;
    bool save() const;
    bool keeps(Hotkey hotkey, const std::vector<HotkeyBinding>& list, Outcome *refusal) const;
    bool lawful(const std::vector<HotkeyBinding> (&lists)[kHotkeyCount]) const;
