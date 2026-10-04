@@ -73,6 +73,10 @@ RIB_HOTKEY(QuickLoad, "quick-load", Nothing, InGame)
 RIB_HOTKEY(PreviousSlot, "previous-slot", Nothing, InGame)
 /* Selects the slot after the selected one, the first after the last. */
 RIB_HOTKEY(NextSlot, "next-slot", Nothing, InGame)
+/* Runs the game fast while it is held, or from one press to the next, as
+ * the player chooses; offered only in a game whose author turned fast
+ * forward on. */
+RIB_HOTKEY(FastForward, "fast-forward", Nothing, InGame)
 
 RIB_HOTKEYS_SHARE(Menu, Back)
 
