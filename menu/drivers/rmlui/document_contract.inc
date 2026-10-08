@@ -60,6 +60,9 @@ RIB_ROLE(Accounts, "accounts")
 RIB_ROLE(Hotkeys, "hotkeys")
 /* UNINSTALL on Windows, RESET on a Mac: asks, then forgets the game. */
 RIB_ROLE(Forget, "forget")
+/* RESTART, where we ask the player before we start the game again from the
+ * beginning. */
+RIB_ROLE(Restart, "restart")
 
 /* Every document. */
 RIB_ELEMENT(Body, "body", Shared, Required)
@@ -206,6 +209,12 @@ RIB_CLASS(TextKey, "text-key", Achievements, Optional)
 RIB_ELEMENT(ForgetConfirm, "forget-confirm", Forget, Required)
 /* Its button that keeps the game and goes back. */
 RIB_ELEMENT(ForgetBack, "forget-back", Forget, Required)
+/* The button on the restart screen that the player presses to start the game
+ * again from the beginning. We then close the menu. */
+RIB_ELEMENT(RestartConfirm, "restart-confirm", Restart, Required)
+/* The button on that screen that the player presses to keep playing and go
+ * back. */
+RIB_ELEMENT(RestartBack, "restart-back", Restart, Required)
 
 /* Generated list screens (shaders, achievements, the disc list). */
 RIB_CLASS(List, "list", Menu, Optional)

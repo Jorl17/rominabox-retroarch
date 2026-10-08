@@ -398,6 +398,11 @@ static void perform_action(Menu *menu, const rib::Event& event)
          rib::play_action_sound(event.kind);
          rib_host_forget();
          break;
+      case RIB_RMLUI_ACTION_RESTART:
+         rib::play_action_sound(event.kind);
+         rib_host_restart();
+         rib_host_resume();
+         break;
       default:
          break;
    }

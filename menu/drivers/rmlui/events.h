@@ -33,7 +33,10 @@ enum rib_rmlui_action
    RIB_RMLUI_ACTION_HOTKEYS_RESET,
    RIB_RMLUI_ACTION_HOTKEYS_CANCEL,
    /* UNINSTALL or RESET, confirmed: we forget the game and close it. */
-   RIB_RMLUI_ACTION_FORGET
+   RIB_RMLUI_ACTION_FORGET,
+   /* The player confirmed RESTART. We start the game again from the
+    * beginning and close the menu. */
+   RIB_RMLUI_ACTION_RESTART
 };
 
 #ifdef __cplusplus

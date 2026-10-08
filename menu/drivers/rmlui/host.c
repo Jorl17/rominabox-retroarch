@@ -236,6 +236,7 @@ void rib_host_show_pointer(bool menu_open)
       video_st->poke->show_mouse(video_st->data, menu_open);
 }
 void rib_host_quit(void) { command_event(CMD_EVENT_QUIT, NULL); }
+void rib_host_restart(void) { command_event(CMD_EVENT_RESET, NULL); }
 
 void rib_host_forget(void)
 {
