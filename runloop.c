@@ -161,6 +161,7 @@ bool android_get_vfs_authorized_locations(
 #ifdef HAVE_RMLUI
 #include "menu/drivers/rmlui_bridge.h"
 #include "menu/drivers/rmlui/host.h"
+#include "menu/drivers/rmlui/video.h"
 #endif
 #endif
 
@@ -7189,7 +7190,12 @@ static enum runloop_state_enum runloop_check_state(
       {
          startup_overlays_begun = true;
          if (string_is_equal(settings->arrays.menu_driver, "rmlui"))
+         {
             rib_rmlui_begin_overlays();
+            /* With the game's shader loaded, we add the pass for the
+             * player's brightness and contrast when they are away from 1.0. */
+            rib_video_start();
+         }
       }
 #endif
       if (!startup_overlay_checked && !core_type_is_dummy && core_is_running)

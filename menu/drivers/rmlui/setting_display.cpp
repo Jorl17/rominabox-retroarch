@@ -67,6 +67,18 @@ void draw_slider(Rml::Element *slider, float fraction, SliderPainted& painted)
    painted.left = left;
 }
 
+std::string level_readout(const SettingDeclaration& level, float value)
+{
+   switch (level.key)
+   {
+#define RIB_SETTING_PERCENT(name) \
+      case RIB_SETTING_##name: return std::to_string((long)std::lround(value * 100.0f)) + "%";
+#include "settings.inc"
+      default:
+         return std::string();
+   }
+}
+
 void paint_setting(Rml::Element *root, const SettingDeclaration& setting, float value,
       bool used, SliderPainter& sliders)
 {
@@ -76,9 +88,10 @@ void paint_setting(Rml::Element *root, const SettingDeclaration& setting, float 
    disable(control, !used);
    if (setting.kind == SettingKind::Level)
    {
+      const int position = level_position_of(setting, value);
       if (control && control->IsClassSet(document_contract::Slider))
-         sliders.paint_slider(control,
-               level_fraction_at(setting, level_position_of(setting, value)));
+         sliders.paint_slider(control, level_fraction_at(setting, position),
+               level_readout(setting, setting.values.empty() ? value : setting.values[position]));
       return;
    }
    Rml::Element *state = root->GetElementById(setting.control + document_contract::StateSuffix);

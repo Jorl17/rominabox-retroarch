@@ -16,12 +16,12 @@
 namespace rib {
 namespace {
 /* A value as we write it in the file of the setting, for RetroArch to read
- * back: a level to one decimal, and a switch as true or false. */
+ * back: a level to two decimals, and a switch as true or false. */
 std::string file_text(const SettingDeclaration& setting, float value)
 {
    char text[32];
    if (setting.kind != SettingKind::Switch)
-      snprintf(text, sizeof(text), "%.1f", value);
+      snprintf(text, sizeof(text), "%.2f", value);
    else
       strlcpy(text, value != 0.0f ? "true" : "false", sizeof(text));
    return text;
@@ -60,9 +60,9 @@ void PlayerSettings::attach()
          continue;
       parts.set_slider_step(setting.control.c_str(), level_fraction_at(setting, 1));
       /* We move a level between positions, from a file or a hotkey, to the
-       * nearest one and store it there. The file has one decimal, so a level
-       * from it is at a position when it matches to one decimal, and we do not
-       * write a level that is already at a position. */
+       * nearest one and store it there. The file has two decimals, so a level
+       * from it is at a position when it matches to two decimals, and we do
+       * not write a level that is already at a position. */
       const float current = value(setting);
       const float nearest = setting.values[level_position_of(setting, current)];
       if (file_text(setting, nearest) != file_text(setting, current))

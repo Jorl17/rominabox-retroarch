@@ -3,6 +3,7 @@
 #include "declarations.h"
 
 #include <RmlUi/Core.h>
+#include <string>
 
 namespace rib {
 /* How we draw a player setting, in the menu and in the offscreen preview of
@@ -19,6 +20,11 @@ int level_position_of(const SettingDeclaration& level, float value);
 int level_position_at(const SettingDeclaration& level, float fraction);
 float level_fraction_at(const SettingDeclaration& level, int position);
 
+/* The readout of a level at `value`, which is a percentage for a level
+ * declared as one in settings.inc (RIB_SETTING_PERCENT), and empty for any
+ * other. */
+std::string level_readout(const SettingDeclaration& level, float value);
+
 /* Whether a switch is on at `value`, a value of the key that may mean off
  * when the switch shows on (`inverted`). */
 bool switch_on(const SettingDeclaration& setting, float value);
@@ -30,7 +36,9 @@ class SliderPainter
 {
 public:
    virtual ~SliderPainter() = default;
-   virtual void paint_slider(Rml::Element *slider, float fraction) = 0;
+   /* Set the slider at `fraction` and its readout to `readout`, which is
+    * empty for a level we show without a number. */
+   virtual void paint_slider(Rml::Element *slider, float fraction, const std::string& readout) = 0;
 };
 
 /* The last values we set for the fill and thumb of a slider, in pixels, so

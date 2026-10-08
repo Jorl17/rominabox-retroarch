@@ -116,9 +116,9 @@ void Parts::draw(Rml::Element *slider, float fraction, const char *readout)
       write_text(find_class(slider, document_contract::SliderReadout), readout);
 }
 
-void Parts::paint_slider(Rml::Element *slider, float fraction)
+void Parts::paint_slider(Rml::Element *slider, float fraction, const std::string& readout)
 {
-   draw(slider, fraction, "");
+   draw(slider, fraction, readout.c_str());
 }
 
 void Parts::remember_slider(const std::string& id, float fraction)

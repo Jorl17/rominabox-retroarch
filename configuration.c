@@ -3558,6 +3558,11 @@ static struct config_float_setting *populate_settings_float(
 
    SETTING_FLOAT("crt_video_refresh_rate",       &settings->floats.crt_video_refresh_rate, true, DEFAULT_CRT_REFRESH_RATE, false);
 
+#ifdef HAVE_RMLUI
+   SETTING_FLOAT("rib_video_brightness",         &settings->floats.rib_video_brightness, true, 1.0f, false);
+   SETTING_FLOAT("rib_video_contrast",           &settings->floats.rib_video_contrast, true, 1.0f, false);
+#endif
+
 #ifdef HAVE_OVERLAY
    SETTING_FLOAT("input_osk_overlay_opacity",             &settings->floats.input_osk_overlay_opacity, true, DEFAULT_INPUT_OVERLAY_OPACITY, false);
 #endif

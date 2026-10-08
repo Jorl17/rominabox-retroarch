@@ -127,6 +127,8 @@ struct rib_shader_catalog
 {
    rib_shader_declaration entries[RIB_SHADER_MAX];
    int count = 0;
+   /* The preset of our brightness and contrast pass, in a game with VIDEO. */
+   std::string video_pass;
 };
 
 /* Controls and controller variants in the exported declaration order. We

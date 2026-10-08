@@ -16,8 +16,8 @@ class Document;
 class Parts : public SliderPainter
 {
 public:
-   /* Put the slider of a setting at `fraction` and clear its readout. */
-   void paint_slider(Rml::Element *slider, float fraction) override;
+   /* Put the slider of a setting at `fraction` and write its readout. */
+   void paint_slider(Rml::Element *slider, float fraction, const std::string& readout) override;
    Parts(Document& document, EventQueue& events) : document(document), events(events) {}
 
    /* The toggle part, and any other element we mark `switch` in composition,

@@ -4,6 +4,7 @@
 #include "words.hpp"
 #include "../rmlui_shader_mark.h"
 #include "../../../verbosity.h"
+#include <file/file_path.h>
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
 #include <cstdio>
@@ -15,6 +16,15 @@ void Shaders::load(const char *asset_directory, const char *data_directory)
    rib_load_shaders(asset_directory, &catalog);
    assets = asset_directory ? asset_directory : "";
    data = data_directory ? data_directory : "";
+   /* We write the game's shader with the pass after it in the language of
+    * the pass, which we tell by the extension of its preset. */
+   std::string pass, written;
+   if (!catalog.video_pass.empty() && !assets.empty() && !data.empty())
+   {
+      pass = assets + "/" + catalog.video_pass;
+      written = data + "/" + files::VideoShader + "." + path_get_extension(pass.c_str());
+   }
+   rib_host_video_pass(pass.c_str(), written.c_str());
 }
 
 void Shaders::show_running() const

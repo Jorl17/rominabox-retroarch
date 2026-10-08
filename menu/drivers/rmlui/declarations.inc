@@ -45,6 +45,9 @@ RIB_FILE(ControlsDefaults, "controls-defaults.cfg")
  * slot the player last chose, which the next launch starts on. */
 RIB_DATA_FILE(Controls, "controls.cfg")
 RIB_DATA_FILE(ShaderChoice, "shader-choice")
+/* The game's shader with our brightness and contrast pass after it, with the
+ * extension of the pass's preset (video.c). */
+RIB_DATA_FILE(VideoShader, "video-shader")
 RIB_DATA_FILE(SlotChoice, "slot-choice")
 
 /* The controls files, beside RetroArch's own input_player1_ bindings: the pad
@@ -112,6 +115,8 @@ RIB_KEYS(HotkeyMode, "hotkey_mode_")
 RIB_FILE(Shaders, "shaders.cfg")
 RIB_KEY(ShaderIds, "shader_ids")
 RIB_KEYS(ShaderPreset, "shader_preset_")
+/* The preset of our brightness and contrast pass, in a game with VIDEO. */
+RIB_KEY(VideoPass, "video_pass")
 
 #undef RIB_FILE
 #undef RIB_FILES

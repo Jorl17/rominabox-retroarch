@@ -605,6 +605,13 @@ typedef struct settings
 
       float slowmotion_ratio;
       float fastforward_ratio;
+#ifdef HAVE_RMLUI
+      /* ROM-in-a-Box: the light of the game's picture, as a multiplier, and
+       * its contrast around mid-grey, which the player sets on VIDEO. We
+       * apply both in a pass after the game's shader (rmlui/video.c). */
+      float rib_video_brightness;
+      float rib_video_contrast;
+#endif
       float input_analog_deadzone;
       float input_axis_threshold;
       float input_analog_sensitivity;

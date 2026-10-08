@@ -129,6 +129,11 @@ void rib_host_cancel_sound(void);
 const char *rib_host_current_shader(void);
 /* Check rib_host_has_settings() before selecting, since this uses settings. */
 void rib_host_apply_shader(const char *id, const char *path);
+/* Our pass after the game's shader, for the brightness and contrast on VIDEO
+ * (video.c), as the preset of the pass in the game, empty in a game without
+ * VIDEO, and the file in the game's data where we write the game's shader with
+ * the pass after it. */
+void rib_host_video_pass(const char *pass, const char *written);
 
 #ifdef __cplusplus
 }

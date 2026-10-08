@@ -1,5 +1,6 @@
 #include "host.h"
 #include "files.h"
+#include "video.h"
 #include "bind_lines.h"
 #include "pad_inputs.h"
 #include "../../menu_input.h"
@@ -332,6 +333,28 @@ static void rib_host_apply_InputRumbleEnable(settings_t *settings, float value)
    configuration_set_bool(settings, settings->bools.input_rumble_enable, value != 0.0f);
 }
 
+static float rib_host_read_VideoBrightness(settings_t *settings)
+{
+   return settings->floats.rib_video_brightness;
+}
+
+static void rib_host_apply_VideoBrightness(settings_t *settings, float value)
+{
+   configuration_set_float(settings, settings->floats.rib_video_brightness, value);
+   rib_video_update();
+}
+
+static float rib_host_read_VideoContrast(settings_t *settings)
+{
+   return settings->floats.rib_video_contrast;
+}
+
+static void rib_host_apply_VideoContrast(settings_t *settings, float value)
+{
+   configuration_set_float(settings, settings->floats.rib_video_contrast, value);
+   rib_video_update();
+}
+
 static float rib_host_read_FastforwardRatio(settings_t *settings)
 {
    return settings->floats.fastforward_ratio;
@@ -352,6 +375,9 @@ static bool rib_host_used_AudioVolume(void) { return true; }
 static bool rib_host_used_PauseNonactive(void) { return true; }
 /* We declare the fast forward speed in an export only for a game with it. */
 static bool rib_host_used_FastforwardRatio(void) { return true; }
+/* Every game has a picture. */
+static bool rib_host_used_VideoBrightness(void) { return true; }
+static bool rib_host_used_VideoContrast(void) { return true; }
 static bool rib_host_used_InputRumbleEnable(void)
 {
    return runloop_state_get_ptr()->system.supports_rumble;
@@ -459,19 +485,12 @@ void rib_host_cancel_sound(void)
 #endif
 }
 
-const char *rib_host_current_shader(void) { return video_shader_get_current_shader_preset(); }
+const char *rib_host_current_shader(void) { return rib_video_chosen(); }
 
 void rib_host_apply_shader(const char *id, const char *path)
 {
-   settings_t *settings = config_get_ptr();
-   bool applied;
-   configuration_set_bool(settings, settings->bools.video_shader_enable, path[0] != '\0');
-   if (path[0])
-      applied = video_shader_apply_shader(settings, video_shader_parse_type(path), path, false);
-   else
-      applied = video_shader_apply_shader(settings, RARCH_SHADER_NONE, NULL, false);
-   RARCH_LOG("[RIB] shader '%s' %s: %s\n", id,
-         applied ? "applied" : "not applied", path[0] ? path : "unfiltered");
+   RARCH_LOG("[RIB] the player chose the shader '%s'.\n", id);
+   rib_video_choose(path);
 }
 
 void rib_host_load_bind(config_file_t *config, const char *id, unsigned index)
