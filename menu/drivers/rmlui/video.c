@@ -12,6 +12,7 @@
  * shader. */
 #include "video.h"
 #include "host.h"
+#include "video_split.h"
 #include "../../../configuration.h"
 #include "../../../gfx/video_driver.h"
 #include "../../../gfx/video_shader_parse.h"
@@ -26,11 +27,30 @@ static char written_preset[PATH_MAX_LENGTH];
 static char chosen_preset[PATH_MAX_LENGTH];
 static bool chosen_known;
 static bool running_with_pass;
+static struct rib_video_control controls[32];
+static unsigned control_count;
 
 void rib_host_video_pass(const char *pass, const char *written)
 {
    strlcpy(pass_preset, pass ? pass : "", sizeof(pass_preset));
    strlcpy(written_preset, written ? written : "", sizeof(written_preset));
+   control_count = 0;
+}
+
+void rib_host_shader_brightness(const char *preset, const char *control)
+{
+   if (control_count < sizeof(controls) / sizeof(controls[0])
+         && rib_video_control_read(&controls[control_count], preset, control))
+      control_count++;
+}
+
+/* The brightness the player chose, split for the chosen shader
+ * (rib_video_split_brightness). */
+static struct rib_video_split rib_video_split(void)
+{
+   float brightness = 1.0f;
+   rib_host_setting(RIB_SETTING_VideoBrightness, &brightness);
+   return rib_video_split_brightness(controls, control_count, chosen_preset, brightness);
 }
 
 /* Whether a setting is away from 1.0, so that we change the picture with the pass. */
@@ -46,17 +66,21 @@ static bool rib_video_pass_needed(void)
    return false;
 }
 
-/* Give the parameters of our pass in `shader` the values of their settings. */
-static void rib_video_set_values(struct video_shader *shader)
+/* Give the parameters of our pass in `shader` the values of their settings,
+ * with the brightness left for the pass in `split`, and give the brightness
+ * parameter of the chosen shader its value in `split`. */
+static void rib_video_set_values(struct video_shader *shader, const struct rib_video_split *split)
 {
    unsigned index;
    float value;
    for (index = 0; index < shader->num_parameters; index++)
    {
-#define RIB_SETTING_PARAMETER(name, parameter) \
-      if (string_is_equal(shader->parameters[index].id, parameter) \
-            && rib_host_setting(RIB_SETTING_##name, &value)) \
-         shader->parameters[index].current = value;
+      struct video_shader_parameter *each = &shader->parameters[index];
+      if (split->parameter && string_is_equal(each->id, split->parameter))
+         each->current = split->value;
+#define RIB_SETTING_PARAMETER(name, declared) \
+      else if (string_is_equal(each->id, declared) && rib_host_setting(RIB_SETTING_##name, &value)) \
+         each->current = RIB_SETTING_##name == RIB_SETTING_VideoBrightness ? split->pass : value;
 #include "settings.inc"
    }
 }
@@ -75,6 +99,7 @@ static bool rib_video_write(void)
    struct video_shader *pass   = (struct video_shader*)calloc(1, sizeof(*pass));
    struct video_shader_parameter *kept = NULL;
    unsigned kept_count = 0, index, other;
+   struct rib_video_split split;
    bool written = false;
 
    if (!shader || !pass)
@@ -111,7 +136,8 @@ static bool rib_video_write(void)
       for (other = 0; other < kept_count; other++)
          if (string_is_equal(shader->parameters[index].id, kept[other].id))
             shader->parameters[index].current = kept[other].current;
-   rib_video_set_values(shader);
+   split   = rib_video_split();
+   rib_video_set_values(shader, &split);
    written = video_shader_write_preset(written_preset, shader, false);
 
 done:
@@ -176,5 +202,8 @@ void rib_video_update(void)
       return;
    rib_video_write();
    if (video_shader_driver_get_current_shader(&running) && running.data)
-      rib_video_set_values(running.data);
+   {
+      const struct rib_video_split split = rib_video_split();
+      rib_video_set_values(running.data, &split);
+   }
 }

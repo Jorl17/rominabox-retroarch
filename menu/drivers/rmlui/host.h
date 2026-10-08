@@ -134,6 +134,11 @@ void rib_host_apply_shader(const char *id, const char *path);
  * VIDEO, and the file in the game's data where we write the game's shader with
  * the pass after it. */
 void rib_host_video_pass(const char *pass, const char *written);
+/* The brightness parameter of a bundled shader, as we give it in shaders.cfg
+ * for the preset `preset`, which is the parameter, then light:value at each
+ * value. We call this after rib_host_video_pass, in which we forget the
+ * earlier ones. */
+void rib_host_shader_brightness(const char *preset, const char *control);
 
 #ifdef __cplusplus
 }

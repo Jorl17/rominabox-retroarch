@@ -326,6 +326,7 @@ void rib_load_shaders(const char *asset_directory, rib_shader_catalog *catalog)
       rib_shader_declaration& shader = catalog->entries[catalog->count++];
       shader.id = id;
       shader.preset = value(config.get(), rib::keys::ShaderPreset(id));
+      shader.brightness = value(config.get(), rib::keys::ShaderBrightness(id));
    }
    catalog->video_pass = value(config.get(), rib::keys::VideoPass);
 }

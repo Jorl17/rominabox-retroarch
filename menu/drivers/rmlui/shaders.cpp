@@ -25,6 +25,10 @@ void Shaders::load(const char *asset_directory, const char *data_directory)
       written = data + "/" + files::VideoShader + "." + path_get_extension(pass.c_str());
    }
    rib_host_video_pass(pass.c_str(), written.c_str());
+   for (int index = 0; index < catalog.count; ++index)
+      if (!catalog.entries[index].brightness.empty())
+         rib_host_shader_brightness(catalog.entries[index].preset.c_str(),
+               catalog.entries[index].brightness.c_str());
 }
 
 void Shaders::show_running() const

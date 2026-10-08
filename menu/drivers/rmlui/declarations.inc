@@ -115,6 +115,9 @@ RIB_KEYS(HotkeyMode, "hotkey_mode_")
 RIB_FILE(Shaders, "shaders.cfg")
 RIB_KEY(ShaderIds, "shader_ids")
 RIB_KEYS(ShaderPreset, "shader_preset_")
+/* For a shader with a brightness parameter, the parameter and the light at
+ * each of its values as light:value, from 1.0 up. */
+RIB_KEYS(ShaderBrightness, "shader_brightness_")
 /* The preset of our brightness and contrast pass, in a game with VIDEO. */
 RIB_KEY(VideoPass, "video_pass")
 

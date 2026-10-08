@@ -121,6 +121,8 @@ struct rib_shader_declaration
 {
    std::string id;
    std::string preset;
+   /* Its brightness parameter and the light at each value, or empty. */
+   std::string brightness;
 };
 
 struct rib_shader_catalog
