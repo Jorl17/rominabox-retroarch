@@ -127,6 +127,17 @@ void Hotkeys::refresh()
          document.set_element_text(shown.mode.c_str(), mode_word(shown.hotkey).c_str());
          document.set_disabled(shown.mode.c_str(), !offered);
       }
+      /* The fullscreen chord, in the words for the platform of the player. */
+      if (hotkey_has_chord(shown.hotkey))
+      {
+#if defined(__APPLE__)
+         const Word chord = Word::FullscreenChordMac;
+#else
+         const Word chord = Word::FullscreenChord;
+#endif
+         document.set_element_text((row_id(shown.hotkey) + document_contract::ChordSuffix).c_str(),
+               say(chord).c_str(), document_contract::HotkeyWords);
+      }
       for (size_t chip = 0; chip < shown.chips.size(); ++chip)
       {
          const char *id = shown.chips[chip].c_str();

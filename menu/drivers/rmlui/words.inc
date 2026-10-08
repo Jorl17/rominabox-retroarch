@@ -43,6 +43,10 @@ RIB_WORD(GameInput, "game-input", "THE GAME USES THAT FOR {control}")
 RIB_WORD(HotkeyModeHold, "hotkey-mode-hold", "HOLD")
 RIB_WORD(HotkeyModeToggle, "hotkey-mode-toggle", "TOGGLE")
 RIB_WORD(HotkeyModeSaved, "hotkey-mode-saved", "{control}: {mode}")
+/* The fullscreen chord, first on the row of a hotkey that has it
+ * (hotkeys.inc), in a game for Windows and in a game for a Mac. */
+RIB_WORD(FullscreenChord, "fullscreen-chord", "ALT+ENTER")
+RIB_WORD(FullscreenChordMac, "fullscreen-chord-mac", "OPTION+RETURN")
 
 /* The save slots and what saving and loading say. */
 RIB_WORD(Slot, "slot", "SLOT {slot}")

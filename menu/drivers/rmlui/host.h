@@ -93,7 +93,10 @@ bool rib_host_save_state(void);
 bool rib_host_load_state(void);
 void rib_host_open_menu(void);
 void rib_host_resume(void);
-/* Switch between fullscreen and a window, as the player does with Alt+Enter. */
+/* Switch between fullscreen and a window. On a Mac we use the system's full
+ * screen, which the player also reaches with the window's green button, and
+ * elsewhere the RetroArch command. We call this for Alt+Enter (Option+Return
+ * on a Mac) and for FULLSCREEN. */
 void rib_host_toggle_fullscreen(void);
 /* We show the pointer while the menu is open and hide it while a fullscreen
  * game runs, as RetroArch does. In a window we always show it. */

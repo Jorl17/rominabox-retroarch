@@ -226,7 +226,19 @@ bool rib_host_save_state(void) { return command_event(CMD_EVENT_SAVE_STATE, NULL
 bool rib_host_load_state(void) { return command_event(CMD_EVENT_LOAD_STATE, NULL); }
 void rib_host_open_menu(void) { if (!rib_host_menu_open()) command_event(CMD_EVENT_MENU_TOGGLE, NULL); }
 void rib_host_resume(void) { command_event(CMD_EVENT_MENU_TOGGLE, NULL); }
-void rib_host_toggle_fullscreen(void) { command_event(CMD_EVENT_FULLSCREEN_TOGGLE, NULL); }
+#if defined(HAVE_COCOA)
+/* In ui_cocoa.m. */
+void cocoa_toggle_full_screen(void);
+#endif
+
+void rib_host_toggle_fullscreen(void)
+{
+#if defined(HAVE_COCOA)
+   cocoa_toggle_full_screen();
+#else
+   command_event(CMD_EVENT_FULLSCREEN_TOGGLE, NULL);
+#endif
+}
 void rib_host_show_pointer(bool menu_open)
 {
    video_driver_state_t *video_st = video_state_get_ptr();

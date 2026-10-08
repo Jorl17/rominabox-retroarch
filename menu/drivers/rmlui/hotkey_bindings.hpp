@@ -171,6 +171,9 @@ private:
  * during play, or both. */
 enum class Acts { InMenu, InGame, Both };
 Acts hotkey_acts(Hotkey hotkey);
+/* Whether the player can also use the fullscreen chord of the platform for
+ * `hotkey` (hotkeys.inc, RIB_HOTKEY_CHORD). */
+bool hotkey_has_chord(Hotkey hotkey);
 
 /* Whether two hotkeys may share an input, as declared in hotkeys.inc. A
  * shared input triggers `first`. */

@@ -41,7 +41,12 @@
  *    positions' words are the builder's (controls.json padPositions), which
  *    the exporter writes beside the bindings.
  * RIB_HOTKEY_CAPTURE_CANCEL("key")
- *    The key that ends a capture unchanged, which a capture never takes. */
+ *    The key that ends a capture unchanged, which a capture never takes.
+ * RIB_HOTKEY_CHORD(name)
+ *    A hotkey that the player can also use with the fullscreen chord of the
+ *    platform, Alt+Enter, or Option+Return on a Mac. We show the chord first on
+ *    its row, in the words fullscreen-chord and fullscreen-chord-mac
+ *    (words.inc), and the player cannot remove it. */
 /* A reader defines the declarations it reads; the others read as nothing. */
 #ifndef RIB_HOTKEY
 #define RIB_HOTKEY(name, id, keeps, acts)
@@ -64,6 +69,9 @@
 #ifndef RIB_HOTKEY_CAPTURE_CANCEL
 #define RIB_HOTKEY_CAPTURE_CANCEL(key)
 #endif
+#ifndef RIB_HOTKEY_CHORD
+#define RIB_HOTKEY_CHORD(name)
+#endif
 
 /* Opens the menu while the game runs, and inside it goes back, or closes
  * it from the pause screen. */
@@ -84,6 +92,9 @@ RIB_HOTKEY(NextSlot, "next-slot", Nothing, InGame)
  * the player chooses; offered only in a game whose author turned fast
  * forward on. */
 RIB_HOTKEY(FastForward, "fast-forward", Nothing, InGame)
+/* With FULLSCREEN the player switches the game's window into fullscreen and
+ * back, during play and in the menu. */
+RIB_HOTKEY(Fullscreen, "fullscreen", Nothing, Both)
 
 /* Fast forward runs while held, or from one press to the next. */
 RIB_HOTKEY_MODES(FastForward, "hold", "toggle")
@@ -95,6 +106,7 @@ RIB_HOTKEY_BINDING(Pad, "pad:")
 RIB_HOTKEY_PAD_CHORD("+")
 RIB_HOTKEY_PAD_HOME("home", "menu_toggle", "Home")
 RIB_HOTKEY_CAPTURE_CANCEL("escape")
+RIB_HOTKEY_CHORD(Fullscreen)
 
 #undef RIB_HOTKEY
 #undef RIB_HOTKEY_MODES
@@ -103,3 +115,4 @@ RIB_HOTKEY_CAPTURE_CANCEL("escape")
 #undef RIB_HOTKEY_PAD_CHORD
 #undef RIB_HOTKEY_PAD_HOME
 #undef RIB_HOTKEY_CAPTURE_CANCEL
+#undef RIB_HOTKEY_CHORD

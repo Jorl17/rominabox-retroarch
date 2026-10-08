@@ -55,6 +55,11 @@ const Sharing sharing[] = {
 #include "hotkeys.inc"
 };
 
+const Hotkey chorded[] = {
+#define RIB_HOTKEY_CHORD(name) Hotkey::name,
+#include "hotkeys.inc"
+};
+
 #define RIB_HOTKEY_BINDING(name, prefix) const std::string name##_prefix = prefix;
 #define RIB_HOTKEY_PAD_CHORD(separator) const std::string chord = separator;
 #define RIB_HOTKEY_CAPTURE_CANCEL(key) const char cancel_key[] = key;
@@ -139,6 +144,11 @@ bool hotkey_named(const std::string& id, Hotkey& hotkey)
 }
 
 Acts hotkey_acts(Hotkey hotkey) { return declared[at(hotkey)].acts; }
+
+bool hotkey_has_chord(Hotkey hotkey)
+{
+   return std::find(std::begin(chorded), std::end(chorded), hotkey) != std::end(chorded);
+}
 
 bool hotkeys_share(Hotkey one, Hotkey other, Hotkey *first)
 {

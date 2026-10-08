@@ -202,9 +202,13 @@ bool rib_rmlui_menu_hotkey_key(unsigned code)
 
 void rib_rmlui_play_hotkeys(void)
 {
-   if (active_menu)
-      active_menu->play_hotkeys.frame(!rib_host_menu_open()
-            && !active_menu->overlays.holding_game());
+   using Doing = rib::PlayHotkeys::Doing;
+   if (!active_menu)
+      return;
+   active_menu->play_hotkeys.frame(capturing(active_menu) ? Doing::Capturing
+         : rib_rmlui_typing() ? Doing::Typing
+         : rib_host_menu_open() || active_menu->overlays.holding_game() ? Doing::Waiting
+         : Doing::Playing);
 }
 
 void rib_rmlui_fast_forward(bool *hold, bool *toggle)

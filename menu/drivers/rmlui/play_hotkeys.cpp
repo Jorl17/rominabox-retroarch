@@ -1,5 +1,6 @@
 #include "play_hotkeys.hpp"
 
+#include "host.h"
 #include "overlays.hpp"
 #include "slots.hpp"
 #include <string>
@@ -29,6 +30,9 @@ void PlayHotkeys::act(Hotkey hotkey)
          else
             slots.request(Slots::Transfer::Load, Slots::Asker::Hotkey);
          break;
+      case Hotkey::Fullscreen:
+         rib_host_toggle_fullscreen();
+         break;
       case Hotkey::PreviousSlot:
       case Hotkey::NextSlot:
       {
@@ -42,8 +46,9 @@ void PlayHotkeys::act(Hotkey hotkey)
    }
 }
 
-void PlayHotkeys::frame(bool playing)
+void PlayHotkeys::frame(Doing doing)
 {
+   const bool playing = doing == Doing::Playing;
    Slots::Finished finished;
    if (slots.take_finished(finished) && finished.asker == Slots::Asker::Hotkey)
    {
@@ -55,12 +60,15 @@ void PlayHotkeys::frame(bool playing)
    for (size_t index = 0; index < kHotkeyCount; ++index)
    {
       const Hotkey hotkey = hotkeys[index];
-      if (hotkey_acts(hotkey) != Acts::InGame)
+      if (hotkey_acts(hotkey) == Acts::InMenu)
          continue;
-      const bool now = bindings.held(hotkey, true);
-      const bool pressed = now && !held[index];
-      held[index] = now;
-      if (pressed && playing)
+      /* While the player types, we note the keys held but act only on a pad. */
+      const bool pressed = bindings.held(hotkey, doing != Doing::Typing) && !held[index];
+      held[index] = bindings.held(hotkey, true);
+      /* The player also uses MENU in the menu, and we open and close the
+       * menu for it elsewhere. */
+      if (pressed && doing != Doing::Capturing
+            && (playing || hotkey_acts(hotkey) == Acts::Both))
          act(hotkey);
    }
    was_playing = playing;

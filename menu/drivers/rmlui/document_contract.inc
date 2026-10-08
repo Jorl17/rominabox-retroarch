@@ -258,6 +258,8 @@ RIB_ELEMENT(HotkeyPrefix, "hotkey-", Generated, Optional)
 RIB_ELEMENT(AddSuffix, "-add", Generated, Optional)
 RIB_ELEMENT(LabelSuffix, "-label", Generated, Optional)
 RIB_ELEMENT(ModeSuffix, "-mode", Generated, Optional)
+/* The fullscreen chord on the row of a hotkey with the chord (hotkeys.inc). */
+RIB_ELEMENT(ChordSuffix, "-chord", Generated, Optional)
 /* Ids the exporter builds from a screen's or a row's own id. */
 RIB_ELEMENT(ListSuffix, "-list", Generated, Optional)
 RIB_ELEMENT(StatusSuffix, "-status", Generated, Optional)

@@ -20,7 +20,7 @@ void alt_enter_reset(void)
 
 void alt_enter_note(unsigned code, int down, unsigned modifiers)
 {
-   if (!ALT_ENTER_TOGGLES || !is_return(code))
+   if (!is_return(code))
       return;
    if (!down)
    {
@@ -31,7 +31,8 @@ void alt_enter_note(unsigned code, int down, unsigned modifiers)
    /* A repeat while the chord is held is not another press. */
    if ((modifiers & ALT_ENTER_ALT) && !(return_down && alt_held))
       press_pending = 1;
-   /* The modifier is in the Return event. */
+   /* The modifier is in the Return event. On macOS it is not in the event
+    * of the Alt key, where flagsChanged contains the AppKit bitfield. */
    return_down = 1;
    alt_held = (modifiers & ALT_ENTER_ALT) ? 1 : 0;
 }

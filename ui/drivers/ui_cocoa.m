@@ -964,11 +964,6 @@ static ui_application_t ui_application_cocoa = {
  * -applicationDidFinishLaunching: under the same test. */
 - (BOOL)hasNativeFullScreen
 {
-   /* An exported game goes full screen in the borderless window below,
-    * on the Space it is on and without the system's animation, as its
-    * player always has. */
-   if (rib_session_title())
-      return NO;
    return NSAppKitVersionNumber >= 1138.0
       && [self.window respondsToSelector:@selector(toggleFullScreen:)];
 }
@@ -1918,6 +1913,22 @@ int main(int argc, char *argv[])
       [NSApp run];
    RARCH_AUTORELEASEPOOL_END
    return 0;
+}
+
+/* ROM-in-a-Box: we put the game's window into the system's full screen or
+ * take it out, as the player does with the window's green button. We call
+ * this for Option+Return and for the FULLSCREEN hotkey
+ * (rib_host_toggle_fullscreen). In an automated run the window is hidden, and
+ * we leave it as it is. */
+void cocoa_toggle_full_screen(void)
+{
+   if (rib_session_window_hidden())
+      return;
+   dispatch_async(dispatch_get_main_queue(), ^{
+      NSWindow *window = ((RetroArch_OSX*)apple_platform).window;
+      if ([window respondsToSelector:@selector(toggleFullScreen:)])
+         ((void (*)(id, SEL, id))objc_msgSend)(window, @selector(toggleFullScreen:), nil);
+   });
 }
 
 static void ui_companion_cocoa_deinit(void *data)

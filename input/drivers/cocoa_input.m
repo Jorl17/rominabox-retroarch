@@ -25,6 +25,7 @@
 #endif
 
 #include "../input_keymaps.h"
+#include "../alt_enter_fullscreen.h"
 
 #include "cocoa_input.h"
 
@@ -375,6 +376,11 @@ void apple_input_keyboard_event(bool down,
       unsigned retro_key = input_keymaps_translate_keysym_to_rk(code);
       input_keyboard_event(down, retro_key,
             character, (enum retro_mod)mod, device);
+      /* We clear the state we set above, so that the player does not also
+       * press Start with Option+Return. */
+      if ((retro_key == ALT_ENTER_RETURN || retro_key == ALT_ENTER_KP_RETURN)
+            && alt_enter_masks_return())
+         apple_key_state[code] = false;
    }
 }
 #else
@@ -403,6 +409,11 @@ void apple_input_keyboard_event(bool down,
       unsigned retro_key = input_keymaps_translate_keysym_to_rk(code);
       input_keyboard_event(down, retro_key,
             character, (enum retro_mod)mod, device);
+      /* We clear the state we set above, so that the player does not also
+       * press Start with Option+Return. */
+      if ((retro_key == ALT_ENTER_RETURN || retro_key == ALT_ENTER_KP_RETURN)
+            && alt_enter_masks_return())
+         apple_key_state[code] = false;
    }
 }
 #endif

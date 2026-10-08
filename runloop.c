@@ -160,6 +160,7 @@ bool android_get_vfs_authorized_locations(
 #include "menu/menu_input.h"
 #ifdef HAVE_RMLUI
 #include "menu/drivers/rmlui_bridge.h"
+#include "menu/drivers/rmlui/host.h"
 #endif
 #endif
 
@@ -7808,9 +7809,13 @@ static enum runloop_state_enum runloop_check_state(
    /* Check fullscreen hotkey */
    HOTKEY_CHECK(RARCH_FULLSCREEN_TOGGLE_KEY, CMD_EVENT_FULLSCREEN_TOGGLE, true, NULL);
    /* Alt+Enter is not a config bind. f is a gameplay key, so we export
-    * input_toggle_fullscreen as nul. */
+    * input_toggle_fullscreen as nul. We toggle as for the FULLSCREEN hotkey. */
    if (alt_enter_fullscreen_due())
+#ifdef HAVE_RMLUI
+      rib_host_toggle_fullscreen();
+#else
       command_event(CMD_EVENT_FULLSCREEN_TOGGLE, NULL);
+#endif
 
    /* Check turbo toggle hotkey */
    HOTKEY_CHECK(RARCH_TURBO_FIRE_TOGGLE, CMD_EVENT_TURBO_FIRE_TOGGLE, true, NULL);
