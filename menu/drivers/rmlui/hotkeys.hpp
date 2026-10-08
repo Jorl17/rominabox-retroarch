@@ -41,6 +41,9 @@ public:
    void poll_capture();
    void cancel_capture();
    bool capturing() const { return capture.active; }
+   /* We call this when any capture ends, on CONTROLS or here
+    * (HotkeyBindings::ignore_pressed_until_released). */
+   void ignore_pressed_until_released() { bindings.ignore_pressed_until_released(); }
    void refresh();
 
 private:

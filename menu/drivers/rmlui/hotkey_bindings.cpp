@@ -517,17 +517,21 @@ bool HotkeyBindings::counts_for(Hotkey hotkey, const HotkeyBinding& binding) con
    return true;
 }
 
-void HotkeyBindings::until_released(const HotkeyBinding& binding)
+void HotkeyBindings::ignore_pressed_until_released()
 {
-   if (is_key(binding))
-   {
-      if (rib_host_key_down(binding.code))
-         unreleased_keys.push_back(binding.code);
-      return;
-   }
-   for (unsigned bind : binding.binds)
-      if (rib_host_pad_down(bind))
-         unreleased_pads.push_back(bind);
+   for (const std::vector<HotkeyBinding>& list : lists)
+      for (const HotkeyBinding& binding : list)
+      {
+         if (is_key(binding))
+         {
+            if (rib_host_key_down(binding.code))
+               unreleased_keys.push_back(binding.code);
+            continue;
+         }
+         for (unsigned bind : binding.binds)
+            if (rib_host_pad_down(bind))
+               unreleased_pads.push_back(bind);
+      }
 }
 
 bool HotkeyBindings::waiting(const HotkeyBinding& binding) const

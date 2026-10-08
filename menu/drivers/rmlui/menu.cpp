@@ -62,6 +62,9 @@ struct Menu
          view.intents, view.hovered, capture_pointer, controls};
    rib::PlayHotkeys play_hotkeys{hotkeys.read(), view.slots, overlays};
    bool pointer_pressed;
+   /* Whether a capture on CONTROLS or HOTKEYS was in progress at the end of
+    * the previous frame. */
+   bool was_capturing = false;
    rib::Slots& slots = view.slots;
    rib::Navigation navigation{focus, screens, controls,
          view.document, view.lists, view.parts};
@@ -626,6 +629,12 @@ void rib_menu_update(void *data)
 
    menu->controls.poll_capture();
    menu->hotkeys.poll_capture();
+   /* When a capture has ended since the previous frame, for any reason, the
+    * player can still be pressing an input bound to a hotkey. We ignore those
+    * inputs until they are released. */
+   if (menu->was_capturing && !capturing(menu))
+      menu->hotkeys.ignore_pressed_until_released();
+   menu->was_capturing = capturing(menu);
    menu->slots.follow();
    menu->controls.update_binds(pointer.x, pointer.y,
          !menu->script.wants_frames());

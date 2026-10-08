@@ -227,9 +227,6 @@ void Hotkeys::poll_capture()
          rib_host_captured_input(text, sizeof(text));
          HotkeyBinding binding;
          const bool read = *text && read_hotkey_binding(text, binding);
-         /* It may now be bound to a hotkey, so we ignore it until released. */
-         if (read)
-            bindings.until_released(binding);
          if (!read)
             end_capture(say(Word::BindingUnusable));
          else if (cancels_capture(binding))

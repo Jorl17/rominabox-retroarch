@@ -138,10 +138,11 @@ public:
    std::vector<unsigned> menu_pad_binds() const;
    /* Whether the key `code` is bound to a hotkey for use in the menu. */
    bool menu_key(unsigned code) const;
-   /* Ignore the inputs of `binding` that are pressed now until each is
-    * released. The player is still pressing the input that ended a capture,
-    * and it would otherwise trigger what we just bound it to. */
-   void until_released(const HotkeyBinding& binding);
+   /* Ignore every input bound to a hotkey that is pressed now, until it is
+    * released. When a capture ends, the player can still be pressing the
+    * input we captured, or the button the player pressed to cancel the
+    * capture, and we would otherwise take it as a new press. */
+   void ignore_pressed_until_released();
 
 private:
    /* The author's ways, and the hotkeys the game does not have, read from
