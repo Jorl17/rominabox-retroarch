@@ -178,13 +178,39 @@ bool rib_host_slot_occupied(int slot)
    return rib_host_state_path(slot, path, sizeof(path)) && path_is_valid(path);
 }
 
-void rib_host_thumbnail(int slot, char *out, size_t length)
+/* The file of the picture of `slot`, whether it exists or not. It is the
+ * file we write after a save of that slot. */
+static void rib_picture_path(int slot, char *out, size_t length)
 {
    runloop_state_t *state = runloop_state_get_ptr();
+   out[0] = '\0';
    if (state && state->name.savestate[0])
       gfx_savestate_thumbnail_get_path(out, length, state->name.savestate, slot);
+}
+
+void rib_host_thumbnail(int slot, char *out, size_t length)
+{
+   rib_picture_path(slot, out, length);
    if (!path_is_valid(out))
       out[0] = '\0';
+}
+
+bool rib_host_copy_picture(int from, int to)
+{
+   char source[PATH_MAX_LENGTH];
+   char target[PATH_MAX_LENGTH];
+   void *bytes  = NULL;
+   int64_t size = 0;
+   bool copied;
+   rib_picture_path(from, source, sizeof(source));
+   rib_picture_path(to, target, sizeof(target));
+   if (!*source || !*target || !filestream_read_file(source, &bytes, &size))
+      return false;
+   copied = filestream_write_file(target, bytes, size);
+   free(bytes);
+   if (!copied)
+      RARCH_ERR("[RIB] could not copy the picture of slot %d to %s.\n", from, target);
+   return copied;
 }
 
 float rib_host_game_aspect(void) { return video_driver_get_core_aspect(); }

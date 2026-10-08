@@ -66,7 +66,12 @@ public:
    /* Handle SAVE, LOAD and the choice of a slot, one transfer at a time. There
     * is nothing to load from an empty slot. False for anything else. */
    bool handle(const Event& event);
-   void notify_task(const char *path, int slot, bool is_save, bool success);
+   /* Follow a finished save or load. For a save right after a load from the
+    * menu, we copy the picture of the loaded slot to the saved one, and
+    * return true. Then we must not take a picture of the game for it. */
+   bool notify_task(const char *path, int slot, bool is_save, bool success);
+   /* See loaded_without_frames. */
+   void forget_load() { loaded_without_frames = 0; }
    void paint() const;
    /* The slot the player chose last, which we keep in the data folder `data`
     * of the game, or the first. We keep each later choice there too. */
@@ -131,6 +136,11 @@ private:
    int selected_slot = 1;
    /* Where we keep the chosen slot, or empty when there is no data folder. */
    std::string choice_path;
+   /* The slot the player loaded from the menu, when we have run no frame of
+    * the game since, or 0. While the menu is open we run no frame, so the
+    * last frame is not a frame of the loaded state, and on the Mega Drive it
+    * is black. */
+   int loaded_without_frames = 0;
    SlotState slots[kSlotCount];
 };
 }

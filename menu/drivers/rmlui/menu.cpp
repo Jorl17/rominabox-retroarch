@@ -257,11 +257,10 @@ static void apply_design(Menu *menu, const rib::DesignDeclarations& design, cons
    menu->controls.configure_binds(design.binds);
 }
 
-void rib_rmlui_notify_state_task(const char *path, int slot,
+bool rib_rmlui_notify_state_task(const char *path, int slot,
       bool is_save, bool success)
 {
-   if (active_menu)
-      active_menu->slots.notify_task(path, slot, is_save, success);
+   return active_menu && active_menu->slots.notify_task(path, slot, is_save, success);
 }
 
 /* The open dialog, if any, that the player cannot leave with the arrows. */
@@ -332,6 +331,10 @@ static void reset_interaction(Menu *menu, bool opening)
 
 void rib_menu_toggle(void *userdata, bool on)
 {
+   /* When the menu opens or closes, we have run or will run frames of the
+    * game, so the frame we take a picture of is the game as it is now. */
+   if (userdata)
+      ((Menu*)userdata)->slots.forget_load();
    reset_interaction((Menu*)userdata, on);
    rib_host_show_pointer(on);
 }

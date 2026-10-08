@@ -69,18 +69,28 @@ void Slots::request(Transfer kind, Asker asker)
       notify_task(transfer.path.c_str(), transfer.slot, save, false);
 }
 
-void Slots::notify_task(const char *path, int slot, bool is_save, bool success)
+bool Slots::notify_task(const char *path, int slot, bool is_save, bool success)
 {
    if (!state_task_matches(transfer.pending,
          transfer.kind == Transfer::Save, transfer.path.c_str(), transfer.slot,
-         path, slot, is_save)) return;
+         path, slot, is_save)) return false;
    transfer.pending = false;
    finished = {true, {transfer.kind, transfer.asker, transfer.slot, success}};
-   /* Read the slots after the task. The picture of a save comes after the
-    * state, so we follow that slot until its new picture arrives, in place of
-    * the picture of the previous save, if any. */
+   if (success && !is_save && transfer.asker == Asker::Menu)
+      loaded_without_frames = transfer.slot;
+   /* For a save right after a load from the menu, we give the saved slot the
+    * picture of the loaded slot. When the player saved over the loaded slot,
+    * it already has that picture. */
+   const bool pictured = success && is_save && valid_slot(transfer.slot)
+         && valid_slot(loaded_without_frames) && has_thumbnail(loaded_without_frames)
+         && (loaded_without_frames == transfer.slot
+               || rib_host_copy_picture(loaded_without_frames, transfer.slot));
+   /* Read the slots after the task. We take the picture of a save after we
+    * write the state, so unless we gave the slot its picture here, we follow
+    * that slot until its new picture is there, in place of the picture of the
+    * previous save, if any. */
    refresh();
-   if (success && is_save && valid_slot(transfer.slot))
+   if (success && is_save && valid_slot(transfer.slot) && !pictured)
       awaiting = {transfer.slot, rib_host_time_us() + kPictureWaitUs,
             shown_picture(transfer.slot)};
    if (success)
@@ -88,6 +98,7 @@ void Slots::notify_task(const char *path, int slot, bool is_save, bool success)
             {{"slot", std::to_string(transfer.slot)}}).c_str());
    else
       status.set_main(say(is_save ? Word::SaveFailed : Word::LoadFailed).c_str());
+   return pictured;
 }
 
 bool Slots::take_finished(Finished& out)

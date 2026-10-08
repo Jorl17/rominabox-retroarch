@@ -56,7 +56,10 @@ void rib_rmlui_play_hotkeys(void);
  * or `toggle`, which we pass to the RetroArch fast forward as its hold and
  * toggle hotkeys. Both are false in a game without fast forward. */
 void rib_rmlui_fast_forward(bool *hold, bool *toggle);
-void rib_rmlui_notify_state_task(const char *path, int slot, bool is_save, bool success);
+/* We report each save and load of a state to the menu when it finishes. For
+ * a save, we return true when we gave the slot its picture in the menu, and
+ * then we take no picture of the game for it. */
+bool rib_rmlui_notify_state_task(const char *path, int slot, bool is_save, bool success);
 static inline bool rib_rmlui_ok_includes_pointer_select(bool is_rmlui)
 {
    return !is_rmlui;

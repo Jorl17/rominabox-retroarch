@@ -1645,6 +1645,7 @@ static void save_state_cb(retro_task_t *task,
       void *user_data, const char *error)
 {
    save_task_state_t *state   = save_task_take_cb_state(task, task_data);
+   bool pictured              = false;
 
    /* Out of the core whichever way this callback exits. */
    save_state_task_pending    = false;
@@ -1652,13 +1653,13 @@ static void save_state_cb(retro_task_t *task,
       return;
 #ifdef HAVE_RMLUI
    if (!(state->flags & (SAVE_TASK_FLAG_AUTOSAVE | SAVE_TASK_FLAG_UNDO_SAVE)))
-      rib_rmlui_notify_state_task(state->path, state->state_slot,
+      pictured = rib_rmlui_notify_state_task(state->path, state->state_slot,
             true, error == NULL);
 #endif
 #ifdef HAVE_SCREENSHOTS
    {
       char               *path   = strdup(state->path);
-      if (state->flags & SAVE_TASK_FLAG_THUMBNAIL_ENABLE)
+      if ((state->flags & SAVE_TASK_FLAG_THUMBNAIL_ENABLE) && !pictured)
          take_screenshot(config_get_ptr()->paths.directory_screenshot,
                path, true,
                state->flags & SAVE_TASK_FLAG_HAS_VALID_FB, false, true);

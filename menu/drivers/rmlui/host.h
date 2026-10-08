@@ -84,6 +84,9 @@ bool rib_host_state_path(int slot, char *out, size_t length);
 bool rib_host_slot_occupied(int slot);
 /* Pass an empty output buffer. We leave it empty when there is no thumbnail. */
 void rib_host_thumbnail(int slot, char *out, size_t length);
+/* Copy the picture of slot `from` to slot `to`. Returns false when slot
+ * `from` has no picture or we could not copy it. */
+bool rib_host_copy_picture(int from, int to);
 float rib_host_game_aspect(void);
 void rib_host_select_state_slot(int slot);
 bool rib_host_save_state(void);
