@@ -28,6 +28,7 @@
 #include "settings.hpp"
 #include "controls.hpp"
 #include "hotkeys.hpp"
+#include "paging.hpp"
 #include "play_hotkeys.hpp"
 #include "slots.hpp"
 #include "view.hpp"
@@ -510,6 +511,10 @@ static bool initialize(Menu *menu, const char *assets, int width, int height)
    }
    menu->controls.refresh();
    menu->settings.attach();
+   /* We split the lists into pages when the document loaded, before we showed
+    * or hid the rows of each feature. We split them again now, so a list on a
+    * screen we have not shown yet has the right number of pages. */
+   rib::paging::resplit(menu->view.document.root());
    rib::load_level_cue(assets);
    RARCH_LOG("[RmlUi] Loaded menu from %s.\n", assets);
    return true;
