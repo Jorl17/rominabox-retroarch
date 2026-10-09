@@ -18,8 +18,8 @@ RIB_WORD(CancelHint, "cancel-hint", "[ESC]  CANCEL")
 RIB_WORD(DataExported, "data-exported", "DATA EXPORTED")
 RIB_WORD(DataExportFailed, "data-export-failed", "EXPORT FAILED")
 RIB_WORD(DataImportFailed, "data-import-failed", "IMPORT FAILED")
-RIB_WORD(DataImportSame, "data-import-same", "THIS REPLACES THE SAVES, STATES, SCREENSHOTS AND SETTINGS OF THIS GAME. THE GAME THEN RESTARTS.")
-RIB_WORD(DataImportOther, "data-import-other", "THIS DATA IS FROM {game}. IT REPLACES THE SAVES, STATES, SCREENSHOTS AND SETTINGS OF THIS GAME. THE GAME THEN RESTARTS.")
+RIB_WORD(DataImportSame, "data-import-same", "THIS REPLACES THE SAVES, STATES AND SETTINGS OF THIS GAME. THE GAME THEN RESTARTS.")
+RIB_WORD(DataImportOther, "data-import-other", "THIS DATA IS FROM {game}. IT REPLACES THE SAVES, STATES AND SETTINGS OF THIS GAME. THE GAME THEN RESTARTS.")
 
 /* The pad screen's statuses. */
 RIB_WORD(CaptureCountdown, "capture-countdown", "{control}: PRESS AN INPUT ({seconds})")
