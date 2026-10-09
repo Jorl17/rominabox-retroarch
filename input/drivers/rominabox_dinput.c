@@ -839,6 +839,30 @@ static bool relay_open(void)
    return true;
 }
 
+rib_data_answer rib_pad_relay_game_data(int what, char *title, size_t title_size,
+      char *sentence, size_t sentence_size)
+{
+   rib_data_answer answer = RIB_DATA_FAILED;
+   if (!relay_open() || relay_gone)
+   {
+      snprintf(sentence, sentence_size, "The game's launcher is not there to ask.");
+      return RIB_DATA_FAILED;
+   }
+   EnterCriticalSection(&relay_lock);
+   relay->ask.what = (rib_pad_relay_asking)what;
+   /* The launcher's dialog may then come in front of the game's window. */
+   AllowSetForegroundWindow(ASFW_ANY);
+   SetEvent(relay_request);
+   if (WaitForSingleObject(relay_reply, INFINITE) == WAIT_OBJECT_0)
+   {
+      answer = (rib_data_answer)relay->data.answer;
+      snprintf(title, title_size, "%.*s", (int)sizeof(relay->data.title), relay->data.title);
+      snprintf(sentence, sentence_size, "%.*s", (int)sizeof(relay->data.sentence), relay->data.sentence);
+   }
+   LeaveCriticalSection(&relay_lock);
+   return answer;
+}
+
 LPDIRECTINPUT8 rib_dinput_for_game(LPDIRECTINPUT8 real)
 {
    relay_input *input;

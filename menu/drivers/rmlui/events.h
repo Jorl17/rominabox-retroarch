@@ -36,7 +36,13 @@ enum rib_rmlui_action
    RIB_RMLUI_ACTION_FORGET,
    /* The player confirmed RESTART. We start the game again from the
     * beginning and close the menu. */
-   RIB_RMLUI_ACTION_RESTART
+   RIB_RMLUI_ACTION_RESTART,
+   /* DATA: export the game's data, choose a zip to import, import it and
+    * restart, or keep the game's own data. */
+   RIB_RMLUI_ACTION_DATA_EXPORT,
+   RIB_RMLUI_ACTION_DATA_IMPORT,
+   RIB_RMLUI_ACTION_DATA_IMPORT_CONFIRM,
+   RIB_RMLUI_ACTION_DATA_IMPORT_CANCEL
 };
 
 #ifdef __cplusplus

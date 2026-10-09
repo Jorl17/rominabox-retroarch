@@ -27,6 +27,7 @@
 #include "saved_accounts.hpp"
 #include "settings.hpp"
 #include "controls.hpp"
+#include "game_data.hpp"
 #include "hotkeys.hpp"
 #include "paging.hpp"
 #include "play_hotkeys.hpp"
@@ -50,6 +51,7 @@ struct Menu
    rib::Shaders shaders{view.lists};
    rib::Discs discs{view.document, view.lists};
    rib::SavedAccounts accounts{view.document, view.lists, view.intents};
+   rib::GameData game_data{view.document, view.status};
    /* The list of each screen that has one. We pass a chosen row to the list of
     * the screen showing, which we find by the declared role of the screen. */
    rib::ListOwner *const owners[3] = {&discs, &shaders, &accounts};
@@ -240,6 +242,7 @@ static void screen_shown(Menu *menu)
    menu->controls.screen_shown(role == rib::ScreenRole::Controls);
    menu->hotkeys.screen_shown(role == rib::ScreenRole::Hotkeys);
    menu->achievements.screen_shown(role == rib::ScreenRole::Achievements);
+   menu->game_data.screen_shown(role == rib::ScreenRole::Data);
    /* We measure the slider from the box of the track. While the panel is
     * hidden its width is zero, so painting leaves the thumb at its position in
     * the stylesheet, at the low end. Paint again now that we show the screen. */
@@ -271,7 +274,13 @@ bool rib_rmlui_notify_state_task(const char *path, int slot,
 /* The open dialog, if any, that the player cannot leave with the arrows. */
 static Rml::Element *open_dialog(Menu *menu)
 {
-   if (!menu->achievements.modal() || !menu->view.document.root())
+   if (!menu->view.document.root())
+      return nullptr;
+   if (menu->game_data.modal())
+      if (auto *dialog = menu->view.document.root()->GetElementById(rib::document_contract::DataImportDialog))
+         if (!rib::hidden(dialog))
+            return dialog;
+   if (!menu->achievements.modal())
       return nullptr;
    for (const char *id : {rib::document_contract::AchievementsConfirmation,
          rib::document_contract::AchievementsStartup})
@@ -347,7 +356,7 @@ void rib_menu_toggle(void *userdata, bool on)
 bool rib_menu_consume_toggle(void *userdata)
 {
    Menu *menu = (Menu*)userdata;
-   return menu && (menu->achievements.modal() || capturing(menu)
+   return menu && (menu->achievements.modal() || menu->game_data.modal() || capturing(menu)
          || !menu->screens.showing(rib::ScreenRole::Pause));
 }
 
@@ -357,7 +366,7 @@ bool rib_menu_consume_toggle(void *userdata)
  * screens and leave the menu. */
 static void perform_action(Menu *menu, const rib::Event& event)
 {
-   if (!menu || menu->achievements.handle(event) || menu->hotkeys.handle(event)
+   if (!menu || menu->game_data.handle(event) || menu->achievements.handle(event) || menu->hotkeys.handle(event)
          || menu->controls.handle(event)
          || menu->slots.handle(event) || menu->settings.handle(event))
       return;
@@ -666,7 +675,7 @@ int rib_menu_key(void *data, enum rib_key action)
    auto *menu = static_cast<Menu*>(data);
    if (menu)
    {
-      if (!menu->achievements.key(action))
+      if (!menu->achievements.key(action) && !menu->game_data.key(action))
       {
          const auto event = menu->navigation.key(action);
          if (event.kind != RIB_RMLUI_ACTION_NONE)

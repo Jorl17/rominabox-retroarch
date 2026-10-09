@@ -46,10 +46,16 @@ void Status::set_hotkeys(const char *text)
    show(hotkeys, document_contract::HotkeysStatus, text);
 }
 
+void Status::set_data(const char *text)
+{
+   show(data, document_contract::DataStatus, text);
+}
+
 void Status::expire()
 {
    expire(main, document_contract::Status);
    expire(controls, document_contract::ControlsStatus);
    expire(hotkeys, document_contract::HotkeysStatus);
+   expire(data, document_contract::DataStatus);
 }
 }

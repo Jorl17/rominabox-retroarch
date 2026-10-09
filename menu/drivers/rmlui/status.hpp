@@ -11,8 +11,9 @@ class Document;
  * the first time. */
 void paint_status_line(Rml::Element *line, const std::string& text);
 
-/* The main status line and the lines on the CONTROLS and HOTKEYS screens. We
- * show a message for five seconds, then put back the text from the design. */
+/* The main status line and the lines on the CONTROLS, HOTKEYS and DATA
+ * screens. We show a message for five seconds, then put back the text from
+ * the design. */
 class Status
 {
 public:
@@ -20,6 +21,7 @@ public:
    void set_main(const char *text);
    void set_controls(const char *text);
    void set_hotkeys(const char *text);
+   void set_data(const char *text);
    void expire();
    const std::string& main_text() const { return main.text; }
 
@@ -28,6 +30,6 @@ private:
    void show(Message& message, const char *id, const char *text);
    void expire(Message& message, const char *id);
    Document& document;
-   Message main, controls, hotkeys;
+   Message main, controls, hotkeys, data;
 };
 }

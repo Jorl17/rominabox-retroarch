@@ -984,17 +984,20 @@ ifeq ($(HAVE_MENU), 1)
              menu/drivers/rmlui/overlays.o menu/drivers/rmlui/script.o menu/drivers/rmlui/script_report.o \
              menu/drivers/rmlui/shaders.o menu/drivers/rmlui/discs.o menu/drivers/rmlui/saved_accounts.o menu/drivers/rmlui/settings.o menu/drivers/rmlui/controls.o \
              menu/drivers/rmlui/hotkey_bindings.o menu/drivers/rmlui/hotkeys.o menu/drivers/rmlui/play_hotkeys.o menu/drivers/rmlui/pad_inputs.o \
+             menu/drivers/rmlui/game_data.o \
              menu/drivers/rmlui/render/rmlui_gl.o menu/drivers/rmlui/render/rmlui_gl3.o \
              menu/drivers/third_party/lodepng.o
-      # The menu's text input: the platform's own text service, or none.
+      # The menu's text input and DATA's file panels: the platform's own, or
+      # none.
       ifeq ($(HAVE_COCOA), 1)
-         OBJ += menu/drivers/rmlui/text_input_macos.o
+         OBJ += menu/drivers/rmlui/text_input_macos.o menu/drivers/rmlui/game_data_macos.o
+         LIBS += -framework UniformTypeIdentifiers
       else
          ifneq ($(findstring Win32,$(OS)),)
-            OBJ += menu/drivers/rmlui/text_input_windows.o
+            OBJ += menu/drivers/rmlui/text_input_windows.o menu/drivers/rmlui/game_data_windows.o
             LIBS += -limm32
          else
-            OBJ += menu/drivers/rmlui/text_input_none.o
+            OBJ += menu/drivers/rmlui/text_input_none.o menu/drivers/rmlui/game_data_none.o
          endif
       endif
       ifneq ($(HAVE_CHEEVOS), 1)
@@ -2528,6 +2531,29 @@ endif
 
 
 
+# ROM-in-a-Box's own C sources, which are not RetroArch code: the shared
+# accounts store and the zips of a game's data. The player's build script
+# hands them over in their folders, with the file layer they are built on
+# as this platform has it, and miniz at the top, where we compile it only
+# through gamedata/zip_library.c. Every C file in the folders is compiled
+# here, with RetroArch's own flags and macOS minimum. Cleaning compiles
+# nothing, so it needs no sources.
+ifneq ($(MAKECMDGOALS),clean)
+   ifeq ($(RIB_SOURCES_DIR),)
+      $(error the player needs RIB_SOURCES_DIR, the ROM-in-a-Box sources the player build script prepares)
+   endif
+   RIB_SOURCES := $(wildcard $(RIB_SOURCES_DIR)/*/*.c $(RIB_SOURCES_DIR)/*/*/*.c)
+   ifeq ($(RIB_SOURCES),)
+      $(error RIB_SOURCES_DIR, $(RIB_SOURCES_DIR), holds no ROM-in-a-Box sources)
+   endif
+   OBJ += $(RIB_SOURCES:.c=.o)
+endif
+INCLUDE_DIRS += -I$(RIB_SOURCES_DIR) -I$(RIB_SOURCES_DIR)/accounts -I$(RIB_SOURCES_DIR)/gamedata -I$(RIB_SOURCES_DIR)/launcher
+# The store seals account tokens with DPAPI on Windows.
+ifneq ($(findstring Win32,$(OS)),)
+   LIBS += -lcrypt32
+endif
+
 # Things that depend on network availability
 
 ifeq ($(HAVE_NETWORKING), 1)
@@ -2610,26 +2636,6 @@ ifeq ($(HAVE_NETWORKING), 1)
    ifeq ($(HAVE_CHEEVOS), 1)
       DEFINES += -DHAVE_CHEEVOS -DRC_CLIENT_SUPPORTS_HASH
       INCLUDE_DIRS += -Ideps/rcheevos/include
-      # ROM-in-a-Box's shared accounts store, which is not RetroArch code. The
-      # player's build script hands over its sources, with the file layer they
-      # are built on as this platform has it; every C file it hands over is
-      # compiled here, with RetroArch's own flags and macOS minimum.
-      # Cleaning compiles nothing, so it needs no store.
-      ifneq ($(MAKECMDGOALS),clean)
-         ifeq ($(RIB_ACCOUNTS_DIR),)
-            $(error HAVE_CHEEVOS needs RIB_ACCOUNTS_DIR, the ROM-in-a-Box accounts store the player build script prepares)
-         endif
-         RIB_ACCOUNTS_SOURCES := $(wildcard $(RIB_ACCOUNTS_DIR)/*/*.c $(RIB_ACCOUNTS_DIR)/*/*/*.c)
-         ifeq ($(RIB_ACCOUNTS_SOURCES),)
-            $(error RIB_ACCOUNTS_DIR, $(RIB_ACCOUNTS_DIR), holds no accounts store sources)
-         endif
-         OBJ += $(RIB_ACCOUNTS_SOURCES:.c=.o)
-      endif
-      INCLUDE_DIRS += -I$(RIB_ACCOUNTS_DIR)/accounts -I$(RIB_ACCOUNTS_DIR)/launcher
-      # The store seals account tokens with DPAPI on Windows.
-      ifneq ($(findstring Win32,$(OS)),)
-         LIBS += -lcrypt32
-      endif
 
       # rc_compat carries native recursive mutexes for the consoles
       # that build threaded (GEKKO, 3DS, WiiU, Vita), so only a

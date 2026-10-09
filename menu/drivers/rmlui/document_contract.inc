@@ -63,6 +63,9 @@ RIB_ROLE(Forget, "forget")
 /* RESTART, where we ask the player before we start the game again from the
  * beginning. */
 RIB_ROLE(Restart, "restart")
+/* DATA: the game's data exported to a zip, or imported from one after
+ * asking. */
+RIB_ROLE(Data, "data")
 
 /* Every document. */
 RIB_ELEMENT(Body, "body", Shared, Required)
@@ -203,6 +206,17 @@ RIB_ELEMENT(AchievementsSkipStartup, "achievements-skip-startup", Achievements, 
 RIB_ELEMENT(TextKeyboard, "text-keyboard", Achievements, Optional)
 RIB_ELEMENT(TextKeyboardGrid, "text-keyboard-grid", Achievements, Optional)
 RIB_CLASS(TextKey, "text-key", Achievements, Optional)
+
+/* DATA's buttons, its status line, and the dialog where we ask before an
+ * import: the words we write in it and its two buttons. When we cannot
+ * import the zip, we write why and disable DATA-IMPORT-CONFIRM. */
+RIB_ELEMENT(DataExport, "data-export", Data, Required)
+RIB_ELEMENT(DataImport, "data-import", Data, Required)
+RIB_ELEMENT(DataStatus, "data-status", Data, Required)
+RIB_ELEMENT(DataImportDialog, "data-import-dialog", Data, Required)
+RIB_ELEMENT(DataImportMessage, "data-import-message", Data, Required)
+RIB_ELEMENT(DataImportConfirm, "data-import-confirm", Data, Required)
+RIB_ELEMENT(DataImportCancel, "data-import-cancel", Data, Required)
 
 /* The forget screen's button that forgets the game and closes it: its data
  * gone, and on Windows its unpacked files, once it has closed. */

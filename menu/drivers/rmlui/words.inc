@@ -13,6 +13,14 @@
  * are its design.json "screens" entry's. */
 RIB_WORD(CancelHint, "cancel-hint", "[ESC]  CANCEL")
 
+/* DATA's statuses, and the words in its dialog before an import. {game}
+ * is the title of the game the zip's data is from. */
+RIB_WORD(DataExported, "data-exported", "DATA EXPORTED")
+RIB_WORD(DataExportFailed, "data-export-failed", "EXPORT FAILED")
+RIB_WORD(DataImportFailed, "data-import-failed", "IMPORT FAILED")
+RIB_WORD(DataImportSame, "data-import-same", "THIS REPLACES THE SAVES, STATES, SCREENSHOTS AND SETTINGS OF THIS GAME. THE GAME THEN RESTARTS.")
+RIB_WORD(DataImportOther, "data-import-other", "THIS DATA IS FROM {game}. IT REPLACES THE SAVES, STATES, SCREENSHOTS AND SETTINGS OF THIS GAME. THE GAME THEN RESTARTS.")
+
 /* The pad screen's statuses. */
 RIB_WORD(CaptureCountdown, "capture-countdown", "{control}: PRESS AN INPUT ({seconds})")
 RIB_WORD(CaptureFailed, "capture-failed", "CAPTURE COULD NOT START")

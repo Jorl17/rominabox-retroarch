@@ -7,10 +7,19 @@
 #ifndef RIB_DINPUT_H
 #define RIB_DINPUT_H
 
+#include <stddef.h>
 #include <dinput.h>
+
+#include "../../rominabox_game_data.h"
 
 /* `real` wrapped in the stand-in when we relay the controllers through the
  * launcher, or `real` itself otherwise. */
 LPDIRECTINPUT8 rib_dinput_for_game(LPDIRECTINPUT8 real);
+
+/* Ask the launcher, outside the sandbox, to do `what` for the game's data
+ * (RIB_PAD_RELAY_EXPORT_DATA and those after it), and wait for its answer,
+ * however long the player spends in its file dialog. */
+rib_data_answer rib_pad_relay_game_data(int what, char *title, size_t title_size,
+      char *sentence, size_t sentence_size);
 
 #endif
