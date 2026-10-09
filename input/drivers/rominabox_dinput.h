@@ -10,7 +10,11 @@
 #include <stddef.h>
 #include <dinput.h>
 
+#include <retro_common_api.h>
+
 #include "../../rominabox_game_data.h"
+
+RETRO_BEGIN_DECLS
 
 /* `real` wrapped in the stand-in when we relay the controllers through the
  * launcher, or `real` itself otherwise. */
@@ -21,5 +25,7 @@ LPDIRECTINPUT8 rib_dinput_for_game(LPDIRECTINPUT8 real);
  * however long the player spends in its file dialog. */
 rib_data_answer rib_pad_relay_game_data(int what, char *title, size_t title_size,
       char *sentence, size_t sentence_size);
+
+RETRO_END_DECLS
 
 #endif
