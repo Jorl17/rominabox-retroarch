@@ -600,6 +600,7 @@ void rib_menu_update(void *data)
    if (!menu || !menu->initialized || !rib_host_menu_open())
       return;
 
+   rib_host_rumble_frame();
    pointer = rib_host_pointer();
    {
       bool pointer_pressed =

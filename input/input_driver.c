@@ -6488,6 +6488,21 @@ void input_driver_stop_rumble(void)
    }
 }
 
+bool input_driver_rumble_user(unsigned user, uint16_t strength)
+{
+   settings_t *settings = config_get_ptr();
+   unsigned port        = input_rumble_port(&input_driver_st, settings, user);
+   unsigned joy_idx;
+   bool strong, weak;
+
+   if (port >= MAX_USERS)
+      return false;
+   joy_idx = settings->uints.input_joypad_index[port];
+   strong  = input_driver_set_rumble(user, joy_idx, RETRO_RUMBLE_STRONG, strength);
+   weak    = input_driver_set_rumble(user, joy_idx, RETRO_RUMBLE_WEAK, strength);
+   return strong || weak;
+}
+
 /* The joypad driver is going away: nothing stored is for the next
  * one, and its answers are not the next one's either. */
 static void input_rumble_forget(void)

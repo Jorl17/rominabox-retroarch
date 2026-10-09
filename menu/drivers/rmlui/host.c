@@ -328,9 +328,25 @@ static float rib_host_read_InputRumbleEnable(settings_t *settings)
    return settings->bools.input_rumble_enable ? 1.0f : 0.0f;
 }
 
+/* When the player switches rumble on, the pad answers with a short rumble,
+ * which rib_host_rumble_frame() ends. */
+#define RIB_RUMBLE_ANSWER_USEC 250000
+static retro_time_t rib_rumble_answer_ends;
+
 static void rib_host_apply_InputRumbleEnable(settings_t *settings, float value)
 {
    configuration_set_bool(settings, settings->bools.input_rumble_enable, value != 0.0f);
+   if (value != 0.0f && input_driver_rumble_user(0, 0xC000))
+      rib_rumble_answer_ends = cpu_features_get_time_usec() + RIB_RUMBLE_ANSWER_USEC;
+}
+
+void rib_host_rumble_frame(void)
+{
+   if (rib_rumble_answer_ends && cpu_features_get_time_usec() >= rib_rumble_answer_ends)
+   {
+      rib_rumble_answer_ends = 0;
+      input_driver_stop_rumble();
+   }
 }
 
 static float rib_host_read_VideoBrightness(settings_t *settings)

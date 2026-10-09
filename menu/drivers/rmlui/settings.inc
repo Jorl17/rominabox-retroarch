@@ -49,14 +49,15 @@ RIB_SETTING_KEY(InputRumbleEnable, "input_rumble_enable")
  * computer can (RetroArch's 0). */
 RIB_SETTING_KEY(FastforwardRatio, "fastforward_ratio")
 RIB_SETTING_POSITIONS(FastforwardRatio, "2.0 4.0 0.0")
-/* The light of the game's picture, as a multiplier, from half to double in
- * steps of about a quarter of a stop, and its contrast around mid-grey. */
+/* The light of the game's picture, as a multiplier, from half to double,
+ * in steps of 5% up to 100% and of 10% above, so 100% is in the middle; and
+ * its contrast around mid-grey, from half to one and a half, in steps of 5%. */
 RIB_SETTING_KEY(VideoBrightness, "rib_video_brightness")
-RIB_SETTING_POSITIONS(VideoBrightness, "0.5 0.6 0.7 0.85 1.0 1.2 1.4 1.7 2.0")
+RIB_SETTING_POSITIONS(VideoBrightness, "0.5 0.55 0.6 0.65 0.7 0.75 0.8 0.85 0.9 0.95 1.0 1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 1.9 2.0")
 RIB_SETTING_PERCENT(VideoBrightness)
 RIB_SETTING_PARAMETER(VideoBrightness, "RIB_BRIGHTNESS")
 RIB_SETTING_KEY(VideoContrast, "rib_video_contrast")
-RIB_SETTING_POSITIONS(VideoContrast, "0.67 0.74 0.82 0.9 1.0 1.11 1.22 1.36 1.5")
+RIB_SETTING_POSITIONS(VideoContrast, "0.5 0.55 0.6 0.65 0.7 0.75 0.8 0.85 0.9 0.95 1.0 1.05 1.1 1.15 1.2 1.25 1.3 1.35 1.4 1.45 1.5")
 RIB_SETTING_PERCENT(VideoContrast)
 RIB_SETTING_PARAMETER(VideoContrast, "RIB_CONTRAST")
 

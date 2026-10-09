@@ -98,6 +98,8 @@ void rib_host_resume(void);
  * elsewhere the RetroArch command. We call this for Alt+Enter (Option+Return
  * on a Mac) and for FULLSCREEN. */
 void rib_host_toggle_fullscreen(void);
+/* Once a frame of the menu: end the rumble that answers RUMBLE switched on. */
+void rib_host_rumble_frame(void);
 /* We show the pointer while the menu is open and hide it while a fullscreen
  * game runs, as RetroArch does. In a window we always show it. */
 void rib_host_show_pointer(bool menu_open);

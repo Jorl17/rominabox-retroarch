@@ -1310,6 +1310,11 @@ void input_driver_flush_rumble(void);
 /* Stop every motor now and drop what was waiting to be written. */
 void input_driver_stop_rumble(void);
 
+/* Rumble both motors of the pad that has the rumble of `user` at
+ * `strength`, now, outside the core's frames, as the menu does to answer a
+ * player who switches rumble on. input_driver_stop_rumble() stops it. */
+bool input_driver_rumble_user(unsigned user, uint16_t strength);
+
 bool input_set_rumble_gain(unsigned gain);
 
 float input_get_sensor_state(unsigned port, unsigned id);
