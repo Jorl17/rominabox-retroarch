@@ -6244,6 +6244,14 @@ unsigned menu_event(
             ok_trigger = ok_trigger_release;
       }
 
+#ifdef HAVE_RMLUI
+      /* ROM-in-a-Box's menu acts when OK is released, as a click does, so a
+       * design can show the button held down until then. A release after
+       * moving or pressing back while OK was down is dropped below. */
+      if (is_rmlui)
+         ok_trigger = ok_trigger_release;
+#endif
+
       /* Prevent holding down left/right with boolean settings */
       if (switch_current)
       {

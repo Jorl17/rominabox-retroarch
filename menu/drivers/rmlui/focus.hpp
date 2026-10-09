@@ -44,6 +44,8 @@ public:
    void attach()
    {
       painted = nullptr;
+      pressed = nullptr;
+      held = false;
       region = nullptr;
       outside.clear();
       memory.clear();
@@ -151,6 +153,23 @@ public:
       }
       name(focused);
    }
+   /* Mark the focused leaf `pressed` while CONFIRM is held: from the press,
+    * until the release or until the focus moves on. */
+   void press(bool holding)
+   {
+      Rml::Element *focused = current();
+      if (holding && !held && focused)
+      {
+         focused->SetClass(document_contract::Pressed, true);
+         pressed = focused->GetObserverPtr();
+      }
+      if (pressed && (!holding || pressed.get() != focused))
+      {
+         pressed->SetClass(document_contract::Pressed, false);
+         pressed = nullptr;
+      }
+      held = holding;
+   }
    /* Keep the arrows inside `inside` until a call with nullptr. We mark every
     * element next to it, and next to each of its ancestors, `nav-outside`,
     * which is unfocusable in navigation.rcss. */
@@ -237,7 +256,8 @@ private:
    }
    const Document& owner;
    Rml::ElementDocument *document() const { return owner.root(); }
-   Rml::ObserverPtr<Rml::Element> painted, region;
+   Rml::ObserverPtr<Rml::Element> painted, pressed, region;
+   bool held = false;
    std::vector<Rml::ObserverPtr<Rml::Element>> outside;
    std::map<std::string, std::string> memory;
 };

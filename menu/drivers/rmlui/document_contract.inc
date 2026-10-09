@@ -291,6 +291,8 @@ RIB_CLASS(Occupied, "occupied", State, Optional)
 RIB_CLASS(Empty, "empty", State, Optional)
 RIB_CLASS(On, "on", State, Optional)
 RIB_CLASS(Dragging, "dragging", State, Optional)
+/* The stop the player holds CONFIRM down on, as :active is for a click. */
+RIB_CLASS(Pressed, "pressed", State, Optional)
 RIB_CLASS(Capturing, "capturing", State, Optional)
 RIB_CLASS(Showing, "showing", State, Optional)
 RIB_CLASS(Leaving, "leaving", State, Optional)

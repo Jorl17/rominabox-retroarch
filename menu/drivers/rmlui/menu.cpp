@@ -301,6 +301,8 @@ static void settle_focus(Menu *menu)
       if (!menu->focus.stop(focused))
          menu->navigation.enter();
    menu->focus.paint();
+   menu->focus.press(!capturing(menu)
+         && menu->hotkeys.read().held(rib::Hotkey::Confirm, !rib_rmlui_typing()));
 }
 
 /* Read what we show of the running game when the menu opens. That is the
