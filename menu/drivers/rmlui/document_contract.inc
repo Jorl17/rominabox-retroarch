@@ -212,6 +212,7 @@ RIB_CLASS(TextKey, "text-key", Achievements, Optional)
  * import the zip, we write why and disable DATA-IMPORT-CONFIRM. */
 RIB_ELEMENT(DataExport, "data-export", Data, Required)
 RIB_ELEMENT(DataImport, "data-import", Data, Required)
+RIB_ELEMENT(DataBack, "data-back", Data, Required)
 RIB_ELEMENT(DataStatus, "data-status", Data, Required)
 RIB_ELEMENT(DataImportDialog, "data-import-dialog", Data, Required)
 RIB_ELEMENT(DataImportMessage, "data-import-message", Data, Required)

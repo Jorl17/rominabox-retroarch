@@ -66,6 +66,7 @@ void View::wire_document()
       {document_contract::ControlsBack, RIB_RMLUI_ACTION_CONTROLS_BACK, true},
       {document_contract::ForgetBack, RIB_RMLUI_ACTION_CONTROLS_BACK, true},
       {document_contract::RestartBack, RIB_RMLUI_ACTION_CONTROLS_BACK, true},
+      {document_contract::DataBack, RIB_RMLUI_ACTION_CONTROLS_BACK, true},
       {document_contract::ControlsReset, RIB_RMLUI_ACTION_CONTROLS_RESET, false},
       {document_contract::ControlsCancel, RIB_RMLUI_ACTION_CONTROLS_CANCEL, false}
    };
