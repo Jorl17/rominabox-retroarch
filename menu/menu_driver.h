@@ -835,8 +835,11 @@ enum menu_rib_bind_result
 bool menu_input_rib_bind_start(unsigned bind_index, unsigned timeout_seconds);
 /* The same capture into `output`, a bind in none of the RetroArch tables, as
  * on MENU CONTROLS for one of the menu actions. We clear it first, and
- * afterwards it contains the one input captured. */
-bool menu_input_rib_capture_start(struct retro_keybind *output, unsigned timeout_seconds);
+ * afterwards it contains the one input captured. With `accepts_pad`, we
+ * capture only the pad inputs for which it returns true. */
+bool menu_input_rib_capture_start(struct retro_keybind *output,
+      bool (*accepts_pad)(uint16_t joykey, uint32_t joyaxis),
+      unsigned timeout_seconds);
 enum menu_rib_bind_result menu_input_rib_bind_poll(
       retro_time_t current_time, float *seconds_remaining, bool accept_input);
 void menu_input_rib_bind_cancel(void);

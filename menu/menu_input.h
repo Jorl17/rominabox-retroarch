@@ -175,6 +175,8 @@ struct menu_bind_state
 
    struct retro_keybind *output;
    struct retro_keybind buffer;
+   /* When set, we capture only a pad input for which it returns true. */
+   bool (*accepts_pad)(uint16_t joykey, uint32_t joyaxis);
 
    struct menu_bind_state_port state[MAX_USERS];
    struct menu_bind_axis_state axis_state[MAX_USERS];

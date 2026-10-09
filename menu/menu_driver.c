@@ -1820,6 +1820,13 @@ static bool menu_input_key_bind_poll_find_hold(
    return false;
 }
 
+static bool menu_input_key_bind_accepts_pad(
+      const struct menu_bind_state *state,
+      uint16_t joykey, uint32_t joyaxis)
+{
+   return !state->accepts_pad || state->accepts_pad(joykey, joyaxis);
+}
+
 static bool menu_input_key_bind_poll_find_trigger_pad(
       struct menu_bind_state *state,
       struct menu_bind_state *new_state,
@@ -1868,7 +1875,8 @@ static bool menu_input_key_bind_poll_find_trigger_pad(
 
    for (b = 0; b < MENU_MAX_BUTTONS; b++)
    {
-      bool found = n->buttons[b] && !o->buttons[b];
+      bool found = n->buttons[b] && !o->buttons[b]
+            && menu_input_key_bind_accepts_pad(new_state, b, AXIS_NONE);
 
       if (!found)
          continue;
@@ -1888,7 +1896,9 @@ static bool menu_input_key_bind_poll_find_trigger_pad(
 
       if (     (abs(n->axes[a]) >= 20000)
             && (locked_distance >= 20000)
-            && (rested_distance >= 20000))
+            && (rested_distance >= 20000)
+            && menu_input_key_bind_accepts_pad(new_state, NO_BTN,
+                  (n->axes[a] > 0) ? AXIS_POS(a) : AXIS_NEG(a)))
       {
          /* Take care of case where axis rests on +/- 0x7fff
           * (e.g. 360 controller on Linux) */
@@ -1919,7 +1929,8 @@ static bool menu_input_key_bind_poll_find_trigger_pad(
       else if (trigged & HAT_RIGHT_MASK)
          sane_trigger = HAT_RIGHT_MASK;
 
-      if (sane_trigger)
+      if (sane_trigger && menu_input_key_bind_accepts_pad(new_state,
+               HAT_MAP(h, sane_trigger), AXIS_NONE))
       {
          output->joykey = HAT_MAP(h, sane_trigger);
          output->joyaxis = AXIS_NONE;
@@ -5141,6 +5152,7 @@ bool menu_input_key_bind_set_mode(
    index_offset                        = setting->index_offset;
    binds->port                         = settings->uints.input_joypad_index[
       index_offset];
+   binds->accepts_pad                  = NULL;
 
    menu_input_key_bind_poll_bind_get_rested_axes(
          joypad,
@@ -5415,9 +5427,12 @@ MENU_NOINLINE static bool menu_input_key_bind_iterate(
 }
 
 /* `bind_index` is the bind we describe the capture as. `output`, when set,
- * is where we write the capture instead of that bind. */
+ * is where we write the capture instead of that bind. With `accepts_pad`, we
+ * capture only the pad inputs for which it returns true. */
 static bool menu_input_rib_capture_into(unsigned bind_index,
-      struct retro_keybind *output, unsigned timeout_seconds)
+      struct retro_keybind *output,
+      bool (*accepts_pad)(uint16_t joykey, uint32_t joyaxis),
+      unsigned timeout_seconds)
 {
    uint64_t current_usec;
    input_driver_state_t *input_st = input_state_get_ptr();
@@ -5443,6 +5458,7 @@ static bool menu_input_rib_capture_into(unsigned bind_index,
    binds->last                  = binds->begin;
    binds->output                = output ? output : &input_config_binds[0][bind_index];
    binds->buffer                = *binds->output;
+   binds->accepts_pad           = accepts_pad;
    binds->user                  = 0;
    binds->port                  = settings->uints.input_joypad_index[0];
 
@@ -5478,10 +5494,12 @@ static bool menu_input_rib_capture_into(unsigned bind_index,
 
 bool menu_input_rib_bind_start(unsigned bind_index, unsigned timeout_seconds)
 {
-   return menu_input_rib_capture_into(bind_index, NULL, timeout_seconds);
+   return menu_input_rib_capture_into(bind_index, NULL, NULL, timeout_seconds);
 }
 
-bool menu_input_rib_capture_start(struct retro_keybind *output, unsigned timeout_seconds)
+bool menu_input_rib_capture_start(struct retro_keybind *output,
+      bool (*accepts_pad)(uint16_t joykey, uint32_t joyaxis),
+      unsigned timeout_seconds)
 {
    if (!output)
       return false;
@@ -5490,7 +5508,8 @@ bool menu_input_rib_capture_start(struct retro_keybind *output, unsigned timeout
    output->joyaxis = AXIS_NONE;
    output->mbutton = NO_BTN;
    /* We describe it as the menu toggle, the meta bind closest to its purpose. */
-   return menu_input_rib_capture_into(RARCH_MENU_TOGGLE, output, timeout_seconds);
+   return menu_input_rib_capture_into(RARCH_MENU_TOGGLE, output, accepts_pad,
+         timeout_seconds);
 }
 
 enum menu_rib_bind_result menu_input_rib_bind_poll(
