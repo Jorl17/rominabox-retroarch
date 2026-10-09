@@ -25,6 +25,10 @@ static inline int alt_enter_is_chord(unsigned code, unsigned modifiers)
 }
 
 void alt_enter_reset(void);
+/* A press of `code` that the system says is no repeat. On macOS the key-up
+ * of Return can be lost while the window moves into or out of full screen,
+ * and without it the next press would pass for a repeat. */
+void alt_enter_fresh_press(unsigned code);
 void alt_enter_note(unsigned code, int down, unsigned modifiers);
 int alt_enter_fullscreen_due(void);
 int alt_enter_masks_return(void);

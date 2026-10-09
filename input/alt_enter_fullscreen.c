@@ -18,6 +18,14 @@ void alt_enter_reset(void)
    press_pending = 0;
 }
 
+void alt_enter_fresh_press(unsigned code)
+{
+   if (!is_return(code))
+      return;
+   return_down = 0;
+   alt_held = 0;
+}
+
 void alt_enter_note(unsigned code, int down, unsigned modifiers)
 {
    if (!is_return(code))
