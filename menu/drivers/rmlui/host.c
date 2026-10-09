@@ -680,7 +680,7 @@ static struct retro_keybind rib_captured_input;
 
 bool rib_host_capture_input_start(unsigned seconds)
 {
-   return menu_input_rib_capture_start(&rib_captured_input, seconds);
+   return rib_pad_input_capture_start(&rib_captured_input, seconds);
 }
 
 void rib_host_captured_input(char *binding, size_t length)

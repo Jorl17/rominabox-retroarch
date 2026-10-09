@@ -3,6 +3,7 @@
 #include "../../../configuration.h"
 #include "../../../input/input_driver.h"
 #include "../../../input/input_types.h"
+#include "../../menu_driver.h"
 #include <string/stdstring.h>
 #include <stdlib.h>
 
@@ -138,4 +139,9 @@ bool rib_pad_input_of(uint16_t joykey, uint32_t joyaxis, unsigned *bind)
       return true;
    }
    return false;
+}
+
+bool rib_pad_input_capture_start(struct retro_keybind *output, unsigned seconds)
+{
+   return menu_input_rib_capture_start(output, seconds);
 }
