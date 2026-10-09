@@ -141,7 +141,16 @@ bool rib_pad_input_of(uint16_t joykey, uint32_t joyaxis, unsigned *bind)
    return false;
 }
 
+static bool is_pad_input(uint16_t joykey, uint32_t joyaxis)
+{
+   unsigned bind;
+   return rib_pad_input_of(joykey, joyaxis, &bind);
+}
+
+/* One position of a pad can be more than one input: through DirectInput,
+ * each trigger of a DualSense is a button and an axis. We skip an input that
+ * is no pad input in the pad's profile, and capture the next. */
 bool rib_pad_input_capture_start(struct retro_keybind *output, unsigned seconds)
 {
-   return menu_input_rib_capture_start(output, seconds);
+   return menu_input_rib_capture_start(output, is_pad_input, seconds);
 }
