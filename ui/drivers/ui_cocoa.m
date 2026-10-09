@@ -55,7 +55,6 @@
 #include "../../gfx/drivers_context/cocoa_quiet_window.h"
 #include "../../input/drivers/cocoa_input.h"
 #include "../../input/alt_enter_fullscreen.h"
-#include "../../input/input_keymaps.h"
 #include "../../input/drivers_keyboard/keyboard_event_apple.h"
 #ifdef HAVE_RMLUI
 #include "../../menu/drivers/rmlui/text_input_macos.h"
@@ -555,7 +554,7 @@ static ui_application_t ui_application_cocoa = {
                mod |=  RETROKMOD_NUMLOCK;
 
             if (event_type == NSEventTypeKeyDown && ![event isARepeat])
-               alt_enter_fresh_press(input_keymaps_translate_keysym_to_rk(keycode));
+               alt_enter_fresh_press(apple_input_retro_key(keycode));
 
             for (i = 1; i < [ch length]; i++)
                apple_input_keyboard_event(event_type == NSEventTypeKeyDown,

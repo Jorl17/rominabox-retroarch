@@ -171,6 +171,12 @@ void apple_input_keyboard_reset(void);
 void apple_input_keyboard_event(bool down,
       unsigned code, uint32_t character, uint32_t mod, unsigned device);
 
+#if !TARGET_OS_IPHONE
+/* The libretro key of the macOS key `code`, as apple_input_keyboard_event
+ * reads it. */
+unsigned apple_input_retro_key(unsigned code);
+#endif
+
 void apple_direct_input_keyboard_event(bool down,
       unsigned code, uint32_t character, uint32_t mod, unsigned device);
 

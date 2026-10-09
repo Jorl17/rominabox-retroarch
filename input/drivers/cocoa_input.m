@@ -54,6 +54,18 @@ static CMMotionManager *motionManager;
 #if TARGET_OS_IPHONE
 #define HIDKEY(X) X
 #else
+/* Taken from https://github.com/depp/keycode,
+ * check keycode.h for license. */
+static const unsigned char MAC_NATIVE_TO_HID[128] = {
+   4, 22,  7,  9, 11, 10, 29, 27,  6, 25,255,  5, 20, 26,  8, 21,
+   28, 23, 30, 31, 32, 33, 35, 34, 46, 38, 36, 45, 37, 39, 48, 18,
+   24, 47, 12, 19, 40, 15, 13, 52, 14, 51, 49, 54, 56, 17, 16, 55,
+   43, 44, 53, 42,255, 41,231,227,225, 57,226,224,229,230,228,255,
+   108, 99,255, 85,255, 87,255, 83,255,255,255, 84, 88,255, 86,109,
+   110,103, 98, 89, 90, 91, 92, 93, 94, 95,111, 96, 97,255,255,255,
+   62, 63, 64, 60, 65, 66,255, 68,255,104,107,105,255, 67,255, 69,
+   255,106,117, 74, 75, 76, 61, 77, 59, 78, 58, 80, 79, 81, 82,255
+};
 #define HIDKEY(X) (X < 128) ? MAC_NATIVE_TO_HID[X] : 0
 #endif
 
@@ -384,21 +396,17 @@ void apple_input_keyboard_event(bool down,
    }
 }
 #else
+unsigned apple_input_retro_key(unsigned code)
+{
+   code = HIDKEY(code);
+   if (code == 0 || code >= MAX_KEYS)
+      return RETROK_UNKNOWN;
+   return input_keymaps_translate_keysym_to_rk(code);
+}
+
 void apple_input_keyboard_event(bool down,
       unsigned code, uint32_t character, uint32_t mod, unsigned device)
 {
-   /* Taken from https://github.com/depp/keycode,
-    * check keycode.h for license. */
-   static const unsigned char MAC_NATIVE_TO_HID[128] = {
-      4, 22,  7,  9, 11, 10, 29, 27,  6, 25,255,  5, 20, 26,  8, 21,
-      28, 23, 30, 31, 32, 33, 35, 34, 46, 38, 36, 45, 37, 39, 48, 18,
-      24, 47, 12, 19, 40, 15, 13, 52, 14, 51, 49, 54, 56, 17, 16, 55,
-      43, 44, 53, 42,255, 41,231,227,225, 57,226,224,229,230,228,255,
-      108, 99,255, 85,255, 87,255, 83,255,255,255, 84, 88,255, 86,109,
-      110,103, 98, 89, 90, 91, 92, 93, 94, 95,111, 96, 97,255,255,255,
-      62, 63, 64, 60, 65, 66,255, 68,255,104,107,105,255, 67,255, 69,
-      255,106,117, 74, 75, 76, 61, 77, 59, 78, 58, 80, 79, 81, 82,255
-   };
    code                  = HIDKEY(code);
    if (code == 0 || code >= MAX_KEYS)
       return;
