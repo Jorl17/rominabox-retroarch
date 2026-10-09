@@ -839,6 +839,16 @@ static bool relay_open(void)
    return true;
 }
 
+/* The window in front when it is this game's, or NULL when it is another
+ * program's. The player has just chosen a menu entry in the game's window. */
+static HWND own_window(void)
+{
+   HWND front    = GetForegroundWindow();
+   DWORD process = 0;
+   GetWindowThreadProcessId(front, &process);
+   return process == GetCurrentProcessId() ? front : NULL;
+}
+
 rib_data_answer rib_pad_relay_game_data(int what, char *title, size_t title_size,
       char *sentence, size_t sentence_size)
 {
@@ -849,7 +859,8 @@ rib_data_answer rib_pad_relay_game_data(int what, char *title, size_t title_size
       return RIB_DATA_FAILED;
    }
    EnterCriticalSection(&relay_lock);
-   relay->ask.what = (rib_pad_relay_asking)what;
+   relay->ask.what   = (rib_pad_relay_asking)what;
+   relay->ask.window = (UINT64)(uintptr_t)own_window();
    /* The launcher's dialog may then come in front of the game's window. */
    AllowSetForegroundWindow(ASFW_ANY);
    SetEvent(relay_request);

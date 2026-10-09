@@ -101,6 +101,9 @@ typedef struct {
    LONG range_min;
    LONG range_max;
    rib_pad_relay_effect effect;
+   /* For a request about the game's data: the game's own window, which the
+    * launcher gives the foreground back to when its file dialog closes. */
+   UINT64 window;
    /* We write this in the launcher: what DirectInput returned and, for
     * MAKE_EFFECT, the slot in `item`. */
    HRESULT answer;
