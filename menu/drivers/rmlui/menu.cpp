@@ -230,6 +230,10 @@ void rib_rmlui_play_hotkeys(void)
       return;
    active_menu->inputs.frame();
    active_menu->overlays.wait_in_background(rib_host_game_waits_in_background());
+   /* An achievement earned while nothing is drawn over the game: we draw
+    * its popup now, and not when the menu next opens. */
+   if (rib_achievements_has_unlocks())
+      rib_host_overlay_frames(true);
    active_menu->play_hotkeys.frame(capturing(active_menu) ? Doing::Capturing
          : rib_rmlui_typing() ? Doing::Typing
          : rib_host_menu_open() || active_menu->overlays.holding_game() ? Doing::Waiting
