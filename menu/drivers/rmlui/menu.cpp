@@ -420,6 +420,8 @@ static void perform_action(Menu *menu, const rib::Event& event)
       case RIB_RMLUI_ACTION_RESTART:
          rib::play_action_sound(event.kind);
          rib_host_restart();
+         /* We close the menu from the pause screen, as Escape does. */
+         menu->navigation.close();
          rib_host_resume();
          break;
       default:
