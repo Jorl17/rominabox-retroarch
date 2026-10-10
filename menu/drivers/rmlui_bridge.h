@@ -56,6 +56,9 @@ void rib_rmlui_play_hotkeys(void);
  * or `toggle`, which we pass to the RetroArch fast forward as its hold and
  * toggle hotkeys. Both are false in a game without fast forward. */
 void rib_rmlui_fast_forward(bool *hold, bool *toggle);
+/* Once the remap of a game is loaded, and with it the ports that play as
+ * player 1, give each of those pads the binds of player 1 from CONTROLS. */
+void rib_rmlui_share_player_one_binds(void);
 /* We report each save and load of a state to the menu when it finishes. For
  * a save, we return true when we gave the slot its picture in the menu, and
  * then we take no picture of the game for it. */

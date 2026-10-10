@@ -215,6 +215,8 @@ void rib_rmlui_play_hotkeys(void)
          : Doing::Playing);
 }
 
+void rib_rmlui_share_player_one_binds(void) { rib_host_share_player_one_binds(); }
+
 void rib_rmlui_fast_forward(bool *hold, bool *toggle)
 {
    *hold = *toggle = false;

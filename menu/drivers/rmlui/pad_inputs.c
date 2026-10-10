@@ -90,7 +90,7 @@ static bool held_by(const input_device_driver_t *joypad, unsigned pad,
  * That is each port below input_max_users that is mapped to player 1 in the
  * remap (input_remap_port_pN), through the joypad index of that port in
  * RetroArch. */
-static void player_one_pads(unsigned *pads)
+static void player_one_ports(unsigned *ports)
 {
    settings_t *settings = config_get_ptr();
    unsigned count       = 0;
@@ -98,13 +98,27 @@ static void player_one_pads(unsigned *pads)
 
    if (settings)
    {
-      const unsigned *ports = settings->uints.input_remap_port_map[0];
-      for (index = 0; index < MAX_USERS && ports[index] < MAX_USERS; ++index)
-      {
-         const unsigned pad = settings->uints.input_joypad_index[ports[index]];
-         if (ports[index] < settings->uints.input_max_users && pad < MAX_USERS)
-            pads[count++] = pad;
-      }
+      const unsigned *mapped = settings->uints.input_remap_port_map[0];
+      for (index = 0; index < MAX_USERS && mapped[index] < MAX_USERS; ++index)
+         if (mapped[index] < settings->uints.input_max_users)
+            ports[count++] = mapped[index];
+   }
+   ports[count] = MAX_USERS;
+}
+
+static void player_one_pads(unsigned *pads)
+{
+   settings_t *settings = config_get_ptr();
+   unsigned ports[MAX_USERS + 1];
+   unsigned count = 0;
+   unsigned index;
+
+   player_one_ports(ports);
+   for (index = 0; settings && ports[index] < MAX_USERS; ++index)
+   {
+      const unsigned pad = settings->uints.input_joypad_index[ports[index]];
+      if (pad < MAX_USERS)
+         pads[count++] = pad;
    }
    pads[count] = MAX_USERS;
 }
@@ -311,13 +325,44 @@ unsigned rib_pad_input_captured_pad(void)
    return menu_input_rib_captured_pad();
 }
 
+void rib_pad_input_effective(unsigned bind, struct retro_keybind *effective)
+{
+   const unsigned pad = first_pad();
+   *effective = input_config_binds[0][bind];
+   if (pad >= MAX_USERS)
+      return;
+   if (effective->joykey == NO_BTN)
+      effective->joykey  = input_autoconf_binds[pad][bind].joykey;
+   if (effective->joyaxis == AXIS_NONE)
+      effective->joyaxis = input_autoconf_binds[pad][bind].joyaxis;
+}
+
+void rib_pad_input_share_player_one_binds(void)
+{
+   unsigned ports[MAX_USERS + 1];
+   unsigned index, bind;
+
+   player_one_ports(ports);
+   for (index = 0; ports[index] < MAX_USERS; ++index)
+   {
+      if (ports[index] == 0)
+         continue;
+      for (bind = 0; bind < RARCH_ANALOG_BIND_LIST_END; ++bind)
+      {
+         input_config_binds[ports[index]][bind].joykey  = input_config_binds[0][bind].joykey;
+         input_config_binds[ports[index]][bind].joyaxis = input_config_binds[0][bind].joyaxis;
+      }
+   }
+}
+
 bool rib_pad_input_binds_conflict(unsigned left, unsigned right)
 {
-   const struct retro_keybind *changed = &input_config_binds[0][left];
-   const struct retro_keybind *candidate = &input_config_binds[0][right];
-   return (RETRO_KEYBIND_KEY(changed) != RETROK_UNKNOWN
-            && RETRO_KEYBIND_KEY(changed) == RETRO_KEYBIND_KEY(candidate)) ||
-          (changed->joykey != NO_BTN && changed->joykey == candidate->joykey) ||
-          (changed->joyaxis != AXIS_NONE && changed->joyaxis == candidate->joyaxis) ||
-          (changed->mbutton != NO_BTN && changed->mbutton == candidate->mbutton);
+   struct retro_keybind changed, candidate;
+   rib_pad_input_effective(left, &changed);
+   rib_pad_input_effective(right, &candidate);
+   return (RETRO_KEYBIND_KEY(&changed) != RETROK_UNKNOWN
+            && RETRO_KEYBIND_KEY(&changed) == RETRO_KEYBIND_KEY(&candidate)) ||
+          (changed.joykey != NO_BTN && changed.joykey == candidate.joykey) ||
+          (changed.joyaxis != AXIS_NONE && changed.joyaxis == candidate.joyaxis) ||
+          (changed.mbutton != NO_BTN && changed.mbutton == candidate.mbutton);
 }

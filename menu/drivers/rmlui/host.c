@@ -586,10 +586,13 @@ bool rib_host_bind_conflicts(unsigned left, unsigned right)
    return rib_pad_input_binds_conflict(left, right);
 }
 
+void rib_host_share_player_one_binds(void) { rib_pad_input_share_player_one_binds(); }
+
 void rib_host_bind_lines(unsigned index, char details[][64], char kinds[][8], int *lines)
 {
-   rib_lines_from_bind(&input_config_binds[0][index], &input_autoconf_binds[0][index],
-         details, kinds, lines);
+   struct retro_keybind effective;
+   rib_pad_input_effective(index, &effective);
+   rib_lines_from_bind(&effective, details, kinds, lines);
 }
 
 bool rib_host_capture_start(unsigned index, unsigned seconds)

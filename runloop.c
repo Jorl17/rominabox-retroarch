@@ -5599,6 +5599,9 @@ bool runloop_event_init_core(
       config_load_remap(dir_input_remapping, &runloop_st->system);
    }
 #endif
+#ifdef HAVE_RMLUI
+   rib_rmlui_share_player_one_binds();
+#endif
 
    video_driver_cached_frame_invalidate();
 

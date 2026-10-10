@@ -30,6 +30,9 @@ void rib_host_clear_bind(unsigned index);
 void rib_host_write_bind(struct config_file *config, const char *id, unsigned index);
 bool rib_host_bind_conflicts(unsigned left, unsigned right);
 void rib_host_bind_lines(unsigned index, char details[][64], char kinds[][8], int *lines);
+/* After a change to the binds of player 1, give every pad that plays as
+ * player 1 the same binds (pad_inputs.h). */
+void rib_host_share_player_one_binds(void);
 enum rib_capture_result { RIB_CAPTURE_PENDING, RIB_CAPTURE_CAPTURED, RIB_CAPTURE_TIMED_OUT };
 bool rib_host_capture_start(unsigned index, unsigned seconds);
 void rib_host_capture_cancel(void);

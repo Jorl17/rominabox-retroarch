@@ -160,6 +160,7 @@ bool Controls::read_defaults(const char *wanted)
       rib_host_load_bind(config, catalog.entries[index].slot.c_str(), catalog.entries[index].bind_index);
    }
    rib_host_restore_keyboard_mapping();
+   rib_host_share_player_one_binds();
    config_file_free(config);
    return true;
 }
@@ -194,6 +195,7 @@ bool Controls::read_player_file()
       rib_host_load_bind(config, catalog.entries[index].slot.c_str(), catalog.entries[index].bind_index);
    }
    rib_host_restore_keyboard_mapping();
+   rib_host_share_player_one_binds();
    config_file_free(config);
    return true;
 }
@@ -230,6 +232,7 @@ bool Controls::save()
    if (path.empty() || !(config = config_file_new_alloc()))
       return false;
 
+   rib_host_share_player_one_binds();
    config_set_string(config, keys::ControlsProfile, profile_id.c_str());
    for (index = 0; index < catalog.count; ++index)
    {

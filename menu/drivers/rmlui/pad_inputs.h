@@ -56,8 +56,17 @@ bool rib_pad_input_capture_start(struct retro_keybind *output, unsigned seconds)
 bool rib_pad_input_bind_start(unsigned index, unsigned seconds);
 /* The joypad index of the pad we last captured from. */
 unsigned rib_pad_input_captured_pad(void);
-/* Whether the binds `left` and `right` of player 1 share an input, on
- * CONTROLS. */
+/* The bind `bind` of player 1 as we read it: the player's own input of each
+ * kind, or else the one in the profile of the first player's pad. */
+void rib_pad_input_effective(unsigned bind, struct retro_keybind *effective);
+/* RetroArch reads each port through the binds for that port. We copy the
+ * pad inputs of the RetroPad and stick binds of player 1, which the player
+ * rebinds on CONTROLS, to the binds of every other port that plays as
+ * player 1, so that every such pad reads the same rebinds. Where a bind has
+ * no pad input of a kind, each pad reads the one in its own profile. */
+void rib_pad_input_share_player_one_binds(void);
+/* Whether the binds `left` and `right` of player 1, as we read them, share an
+ * input, on CONTROLS. */
 bool rib_pad_input_binds_conflict(unsigned left, unsigned right);
 
 #ifdef __cplusplus
