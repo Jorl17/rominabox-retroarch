@@ -365,7 +365,14 @@ void rib_achievements_pump(void)
       {
          rcheevos_rib_complete_game_load(completion.result,
                completion.error, client, (void*)(uintptr_t)generation);
-         if (get_rcheevos_locals()->core_supports &&
+         if (rib_catalog_only_warnings(client))
+         {
+            rib.snapshot.status = RIB_ACHIEVEMENTS_UNAVAILABLE;
+            rib_copy(rib.snapshot.error,
+                  "This version of the game isn't supported by RetroAchievements.",
+                  sizeof(rib.snapshot.error));
+         }
+         else if (get_rcheevos_locals()->core_supports &&
              rc_client_is_game_loaded(client))
          {
             rib.snapshot.status = RIB_ACHIEVEMENTS_ACTIVE;
@@ -416,7 +423,8 @@ void rib_achievements_begin_startup_gate(void)
 bool rib_achievements_startup_ready(void)
 {
    return rib.snapshot.startup_skipped ||
-         rib.snapshot.status == RIB_ACHIEVEMENTS_ACTIVE;
+         rib.snapshot.status == RIB_ACHIEVEMENTS_ACTIVE ||
+         rib.snapshot.status == RIB_ACHIEVEMENTS_UNAVAILABLE;
 }
 
 bool rib_achievements_startup_gate_active(void)

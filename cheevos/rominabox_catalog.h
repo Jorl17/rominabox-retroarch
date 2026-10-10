@@ -14,6 +14,9 @@ void rib_catalog_badge_failed(const char *badge_name);
 void rib_catalog_list_shown(bool shown, rib_achievements_snapshot_t *snapshot);
 void rib_catalog_triggered(const rc_client_achievement_t *achievement);
 void rib_catalog_pump(rc_client_t *client, rib_achievements_snapshot_t *snapshot);
+/* The game has only RetroAchievements' warnings, such as "Unsupported Game
+ * Version", in place of achievements. */
+bool rib_catalog_only_warnings(rc_client_t *client);
 bool rib_catalog_get_row(rc_client_t *client, size_t index,
       rib_achievement_row_t *out);
 bool rib_catalog_take_unlock(rib_achievement_unlock_t *out,

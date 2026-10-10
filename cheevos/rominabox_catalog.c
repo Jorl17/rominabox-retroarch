@@ -236,14 +236,51 @@ static void catalog_request_badge(rib_achievement_row_t *row, int64_t *retry_at,
    *retry_at = cpu_features_get_time_usec() + RIB_BADGE_RETRY_USEC;
 }
 
+/* The number of the player's achievements in `list`, and in `warned` whether
+ * it also has warnings. */
+static size_t catalog_count(const rc_client_achievement_list_t *list,
+      bool *warned)
+{
+   size_t count = 0;
+   uint32_t bucket, item;
+   *warned = false;
+   for (bucket = 0; bucket < list->num_buckets; ++bucket)
+      for (item = 0; item < list->buckets[bucket].num_achievements; ++item)
+      {
+         if (catalog_is_warning(list->buckets[bucket].achievements[item]))
+            *warned = true;
+         else
+            count++;
+      }
+   return count;
+}
+
+bool rib_catalog_only_warnings(rc_client_t *client)
+{
+   rc_client_achievement_list_t *list;
+   bool warned;
+   size_t count;
+   if (!client || !rc_client_is_game_loaded(client))
+      return false;
+   list = rc_client_create_achievement_list(client,
+         RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE,
+         RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_LOCK_STATE);
+   if (!list)
+      return false;
+   count = catalog_count(list, &warned);
+   rc_client_destroy_achievement_list(list);
+   return warned && count == 0;
+}
+
 static void catalog_refresh_rows(rc_client_t *client,
       rib_achievements_snapshot_t *snapshot)
 {
    rc_client_achievement_list_t *list;
    rib_achievement_row_t *rows;
    int64_t *retry_at;
-   size_t count = 0, index = 0, previous;
+   size_t count, index = 0, previous;
    uint32_t bucket, item;
+   bool warned;
    const rc_client_game_t *game;
 
    if (!client || !rc_client_is_game_loaded(client))
@@ -260,10 +297,7 @@ static void catalog_refresh_rows(rc_client_t *client,
    if (!list)
       return;
 
-   for (bucket = 0; bucket < list->num_buckets; ++bucket)
-      for (item = 0; item < list->buckets[bucket].num_achievements; ++item)
-         if (!catalog_is_warning(list->buckets[bucket].achievements[item]))
-            count++;
+   count = catalog_count(list, &warned);
    rows = count ? (rib_achievement_row_t*)calloc(count, sizeof(*rows)) : NULL;
    retry_at = count ? (int64_t*)calloc(count, sizeof(*retry_at)) : NULL;
    if (count && (!rows || !retry_at))
