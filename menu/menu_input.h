@@ -168,6 +168,25 @@ struct menu_bind_axis_state
    int16_t locked_axes[MENU_MAX_AXES];
 };
 
+/* The pads we read in a capture of our menu, by joypad index and ended by
+ * MAX_USERS, and the test of whether an input has a name in the profile of
+ * its pad. */
+struct menu_rib_capture_pads
+{
+   unsigned pads[MAX_USERS + 1];
+   bool (*named)(unsigned pad, uint16_t joykey, uint32_t joyaxis);
+};
+
+/* An input that the player holds during a capture of our menu, with no
+ * name in the profile of its pad. */
+struct menu_rib_unnamed_input
+{
+   bool held;
+   unsigned pad;
+   uint16_t joykey;
+   uint32_t joyaxis;
+};
+
 struct menu_bind_state
 {
    rarch_timer_t timer_timeout;
@@ -175,8 +194,13 @@ struct menu_bind_state
 
    struct retro_keybind *output;
    struct retro_keybind buffer;
-   /* When set, we capture only a pad input for which it returns true. */
-   bool (*accepts_pad)(uint16_t joykey, uint32_t joyaxis);
+   /* For a capture of our menu (menu_input_rib_*): the pads we read, an
+    * input with no name that we keep until the player releases it, and the
+    * pad we captured from. With no `rib.named`, we read only `port`, as
+    * upstream does. */
+   struct menu_rib_capture_pads rib;
+   struct menu_rib_unnamed_input unnamed;
+   unsigned captured_pad;
 
    struct menu_bind_state_port state[MAX_USERS];
    struct menu_bind_axis_state axis_state[MAX_USERS];

@@ -832,14 +832,19 @@ enum menu_rib_bind_result
 };
 
 /* Focused single-bind capture used by the ROM-in-a-Box Controls page. */
-bool menu_input_rib_bind_start(unsigned bind_index, unsigned timeout_seconds);
+bool menu_input_rib_bind_start(unsigned bind_index,
+      const struct menu_rib_capture_pads *pads, unsigned timeout_seconds);
 /* The same capture into `output`, a bind in none of the RetroArch tables, as
  * on MENU CONTROLS for one of the menu actions. We clear it first, and
- * afterwards it contains the one input captured. With `accepts_pad`, we
- * capture only the pad inputs for which it returns true. */
+ * afterwards it contains the one input captured. In both we read `pads`, and
+ * capture an input with a name in the profile of its pad when the player
+ * presses it, and any other when the player releases it, unless the player
+ * presses a named input first. */
 bool menu_input_rib_capture_start(struct retro_keybind *output,
-      bool (*accepts_pad)(uint16_t joykey, uint32_t joyaxis),
+      const struct menu_rib_capture_pads *pads,
       unsigned timeout_seconds);
+/* The joypad index of the pad we last captured from. */
+unsigned menu_input_rib_captured_pad(void);
 enum menu_rib_bind_result menu_input_rib_bind_poll(
       retro_time_t current_time, float *seconds_remaining, bool accept_input);
 void menu_input_rib_bind_cancel(void);

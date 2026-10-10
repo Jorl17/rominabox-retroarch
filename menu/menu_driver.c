@@ -1820,18 +1820,104 @@ static bool menu_input_key_bind_poll_find_hold(
    return false;
 }
 
-static bool menu_input_key_bind_accepts_pad(
-      const struct menu_bind_state *state,
-      uint16_t joykey, uint32_t joyaxis)
+/* Where the axis of a trigger rests, at least this far from the middle,
+ * and how far the player moves the trigger off that end before we take it
+ * for the trigger pressed. */
+#define MENU_RIB_TRIGGER_REST  30000
+#define MENU_RIB_TRIGGER_MOVED 1024
+
+/* The pads we read in a capture: every pad of a capture of our menu, or
+ * else `port`. */
+static unsigned menu_input_key_bind_pads(
+      const struct menu_bind_state *state, unsigned *pads)
 {
-   return !state->accepts_pad || state->accepts_pad(joykey, joyaxis);
+   unsigned count = 0;
+   if (!state->rib.named)
+   {
+      pads[0] = state->port;
+      return 1;
+   }
+   while (count < MAX_USERS && state->rib.pads[count] < MAX_USERS)
+   {
+      pads[count] = state->rib.pads[count];
+      count++;
+   }
+   return count;
 }
 
+static bool menu_input_key_bind_named(
+      const struct menu_bind_state *state,
+      unsigned pad, uint16_t joykey, uint32_t joyaxis)
+{
+   return !state->rib.named || state->rib.named(pad, joykey, joyaxis);
+}
+
+/* We keep an input with no name in the profile of its pad until the player
+ * releases it, and capture it then, unless the player presses a named input
+ * first. */
+static void menu_input_key_bind_hold_unnamed(
+      struct menu_bind_state *state,
+      unsigned pad, uint16_t joykey, uint32_t joyaxis)
+{
+   if (state->unnamed.held)
+      return;
+   state->unnamed.held    = true;
+   state->unnamed.pad     = pad;
+   state->unnamed.joykey  = joykey;
+   state->unnamed.joyaxis = joyaxis;
+}
+
+static bool menu_input_key_bind_unnamed_down(
+      const struct menu_bind_state_port *n,
+      const struct menu_rib_unnamed_input *input)
+{
+   if (input->joyaxis != AXIS_NONE)
+   {
+      if (AXIS_POS_GET(input->joyaxis) < MENU_MAX_AXES)
+         return n->axes[AXIS_POS_GET(input->joyaxis)] >= 20000;
+      return AXIS_NEG_GET(input->joyaxis) < MENU_MAX_AXES
+            && n->axes[AXIS_NEG_GET(input->joyaxis)] <= -20000;
+   }
+   if (GET_HAT_DIR(input->joykey))
+      return GET_HAT(input->joykey) < MENU_MAX_HATS
+            && (n->hats[GET_HAT(input->joykey)] & GET_HAT_DIR(input->joykey));
+   return input->joykey < MENU_MAX_BUTTONS && n->buttons[input->joykey];
+}
+
+/* A trigger can be a button and an axis at once, as on a DualSense through
+ * DirectInput, with a name in its profile for the axis only. While the player
+ * holds a button with no name, we take a named axis that the player moves off
+ * the end it rests at for that same trigger. */
+static bool menu_input_key_bind_trigger_of_unnamed(
+      const struct menu_bind_state *state,
+      const struct menu_bind_state_port *n,
+      unsigned p, uint32_t *joyaxis)
+{
+   unsigned a;
+   for (a = 0; a < MENU_MAX_AXES; a++)
+   {
+      int rest = state->axis_state[p].rested_axes[a];
+      uint32_t away;
+      if (     abs(rest) < MENU_RIB_TRIGGER_REST
+            || abs(n->axes[a] - rest) < MENU_RIB_TRIGGER_MOVED)
+         continue;
+      away = (rest < 0) ? AXIS_POS(a) : AXIS_NEG(a);
+      if (menu_input_key_bind_named(state, p, NO_BTN, away))
+      {
+         *joyaxis = away;
+         return true;
+      }
+   }
+   return false;
+}
+
+/* `capturing` is false while we wait for the player to release the inputs
+ * held at the start, when any new press counts. */
 static bool menu_input_key_bind_poll_find_trigger_pad(
       struct menu_bind_state *state,
       struct menu_bind_state *new_state,
       struct retro_keybind *output,
-      unsigned p)
+      unsigned p, bool capturing)
 {
    unsigned a, b, h;
    const struct menu_bind_state_port *n = (const struct menu_bind_state_port*)
@@ -1875,14 +1961,20 @@ static bool menu_input_key_bind_poll_find_trigger_pad(
 
    for (b = 0; b < MENU_MAX_BUTTONS; b++)
    {
-      bool found = n->buttons[b] && !o->buttons[b]
-            && menu_input_key_bind_accepts_pad(new_state, b, AXIS_NONE);
+      bool found = n->buttons[b] && !o->buttons[b];
 
       if (!found)
          continue;
 
+      if (capturing && !menu_input_key_bind_named(new_state, p, b, AXIS_NONE))
+      {
+         menu_input_key_bind_hold_unnamed(new_state, p, b, AXIS_NONE);
+         continue;
+      }
+
       output->joykey = b;
       output->joyaxis = AXIS_NONE;
+      new_state->captured_pad = p;
       return true;
    }
 
@@ -1896,19 +1988,25 @@ static bool menu_input_key_bind_poll_find_trigger_pad(
 
       if (     (abs(n->axes[a]) >= 20000)
             && (locked_distance >= 20000)
-            && (rested_distance >= 20000)
-            && menu_input_key_bind_accepts_pad(new_state, NO_BTN,
-                  (n->axes[a] > 0) ? AXIS_POS(a) : AXIS_NEG(a)))
+            && (rested_distance >= 20000))
       {
-         /* Take care of case where axis rests on +/- 0x7fff
-          * (e.g. 360 controller on Linux) */
-         output->joyaxis = (n->axes[a] > 0) ? AXIS_POS(a) : AXIS_NEG(a);
-         output->joykey  = NO_BTN;
+         uint32_t joyaxis = (n->axes[a] > 0) ? AXIS_POS(a) : AXIS_NEG(a);
 
-         /* Lock the current axis */
-         new_state->axis_state[p].locked_axes[a] = n->axes[a] > 0
-               ? 0x7fff : -0x7fff;
-         return true;
+         if (capturing && !menu_input_key_bind_named(new_state, p, NO_BTN, joyaxis))
+            menu_input_key_bind_hold_unnamed(new_state, p, NO_BTN, joyaxis);
+         else
+         {
+            /* Take care of case where axis rests on +/- 0x7fff
+             * (e.g. 360 controller on Linux) */
+            output->joyaxis = joyaxis;
+            output->joykey  = NO_BTN;
+
+            /* Lock the current axis */
+            new_state->axis_state[p].locked_axes[a] = n->axes[a] > 0
+                  ? 0x7fff : -0x7fff;
+            new_state->captured_pad = p;
+            return true;
+         }
       }
 
       if (locked_distance >= 20000) /* Unlock the axis. */
@@ -1929,13 +2027,44 @@ static bool menu_input_key_bind_poll_find_trigger_pad(
       else if (trigged & HAT_RIGHT_MASK)
          sane_trigger = HAT_RIGHT_MASK;
 
-      if (sane_trigger && menu_input_key_bind_accepts_pad(new_state,
+      if (!sane_trigger)
+         continue;
+
+      if (capturing && !menu_input_key_bind_named(new_state, p,
                HAT_MAP(h, sane_trigger), AXIS_NONE))
       {
-         output->joykey = HAT_MAP(h, sane_trigger);
-         output->joyaxis = AXIS_NONE;
-         return true;
+         menu_input_key_bind_hold_unnamed(new_state, p,
+               HAT_MAP(h, sane_trigger), AXIS_NONE);
+         continue;
       }
+
+      output->joykey = HAT_MAP(h, sane_trigger);
+      output->joyaxis = AXIS_NONE;
+      new_state->captured_pad = p;
+      return true;
+   }
+
+   if (capturing && new_state->unnamed.held && new_state->unnamed.pad == p)
+   {
+      uint32_t joyaxis = AXIS_NONE;
+
+      if (     new_state->unnamed.joyaxis == AXIS_NONE
+            && menu_input_key_bind_trigger_of_unnamed(new_state, n, p, &joyaxis))
+      {
+         output->joyaxis = joyaxis;
+         output->joykey  = NO_BTN;
+      }
+      else if (!menu_input_key_bind_unnamed_down(n, &new_state->unnamed))
+      {
+         output->joykey  = new_state->unnamed.joykey;
+         output->joyaxis = new_state->unnamed.joyaxis;
+      }
+      else
+         return false;
+
+      new_state->unnamed.held = false;
+      new_state->captured_pad = p;
+      return true;
    }
 
    return false;
@@ -1945,7 +2074,8 @@ static bool menu_input_key_bind_poll_find_trigger(
       unsigned max_users,
       struct menu_bind_state *state,
       struct menu_bind_state *new_state,
-      struct retro_keybind *output)
+      struct retro_keybind *output,
+      bool capturing)
 {
    if (state && new_state)
    {
@@ -1954,7 +2084,7 @@ static bool menu_input_key_bind_poll_find_trigger(
       for (i = 0; i < max_users; i++)
       {
          if (menu_input_key_bind_poll_find_trigger_pad(
-                  state, new_state, output, i))
+                  state, new_state, output, i, capturing))
             return true;
       }
    }
@@ -1968,33 +2098,37 @@ static void menu_input_key_bind_poll_bind_get_rested_axes(
       const input_device_driver_t *sec_joypad,
       struct menu_bind_state *state)
 {
-   unsigned a;
-   unsigned port          = state->port;
+   unsigned a, i;
+   unsigned pads[MAX_USERS];
+   unsigned count = menu_input_key_bind_pads(state, pads);
 
-   if (joypad)
+   for (i = 0; i < count; i++)
    {
-      /* poll only the relevant port */
-      for (a = 0; a < MENU_MAX_AXES; a++)
+      unsigned port = pads[i];
+
+      if (joypad)
       {
-         if (AXIS_POS(a) != AXIS_NONE)
-            state->axis_state[port].rested_axes[a]  =
-               joypad->axis(port, AXIS_POS(a));
-         if (AXIS_NEG(a) != AXIS_NONE)
-            state->axis_state[port].rested_axes[a] +=
-               joypad->axis(port, AXIS_NEG(a));
+         for (a = 0; a < MENU_MAX_AXES; a++)
+         {
+            if (AXIS_POS(a) != AXIS_NONE)
+               state->axis_state[port].rested_axes[a]  =
+                  joypad->axis(port, AXIS_POS(a));
+            if (AXIS_NEG(a) != AXIS_NONE)
+               state->axis_state[port].rested_axes[a] +=
+                  joypad->axis(port, AXIS_NEG(a));
+         }
       }
-   }
 
-   if (sec_joypad)
-   {
-      /* poll only the relevant port */
-      for (a = 0; a < MENU_MAX_AXES; a++)
+      if (sec_joypad)
       {
-         if (AXIS_POS(a) != AXIS_NONE)
-            state->axis_state[port].rested_axes[a]  = sec_joypad->axis(port, AXIS_POS(a));
+         for (a = 0; a < MENU_MAX_AXES; a++)
+         {
+            if (AXIS_POS(a) != AXIS_NONE)
+               state->axis_state[port].rested_axes[a]  = sec_joypad->axis(port, AXIS_POS(a));
 
-         if (AXIS_NEG(a) != AXIS_NONE)
-            state->axis_state[port].rested_axes[a] += sec_joypad->axis(port, AXIS_NEG(a));
+            if (AXIS_NEG(a) != AXIS_NONE)
+               state->axis_state[port].rested_axes[a] += sec_joypad->axis(port, AXIS_NEG(a));
+         }
       }
    }
 }
@@ -3647,6 +3781,8 @@ static void menu_input_key_bind_poll_bind_state(
    rarch_joypad_info_t joypad_info;
    input_driver_t *current_input           = input_st->current_driver;
    unsigned port                           = state->port;
+   unsigned pads[MAX_USERS];
+   unsigned count                          = menu_input_key_bind_pads(state, pads);
    const input_device_driver_t *joypad     = input_st->primary_joypad;
 #ifdef HAVE_MFI
    const input_device_driver_t *sec_joypad = input_st->secondary_joypad;
@@ -3709,16 +3845,18 @@ static void menu_input_key_bind_poll_bind_state(
    {
       if (joypad->poll)
          joypad->poll();
-      menu_input_key_bind_poll_bind_state_internal(
-            joypad, state, port, timed_out);
+      for (b = 0; b < count; b++)
+         menu_input_key_bind_poll_bind_state_internal(
+               joypad, state, pads[b], timed_out);
    }
 
    if (sec_joypad)
    {
       if (sec_joypad->poll)
          sec_joypad->poll();
-      menu_input_key_bind_poll_bind_state_internal(
-            sec_joypad, state, port, timed_out);
+      for (b = 0; b < count; b++)
+         menu_input_key_bind_poll_bind_state_internal(
+               sec_joypad, state, pads[b], timed_out);
    }
 }
 
@@ -5152,7 +5290,8 @@ bool menu_input_key_bind_set_mode(
    index_offset                        = setting->index_offset;
    binds->port                         = settings->uints.input_joypad_index[
       index_offset];
-   binds->accepts_pad                  = NULL;
+   binds->rib.named                    = NULL;
+   binds->unnamed.held                 = false;
 
    menu_input_key_bind_poll_bind_get_rested_axes(
          joypad,
@@ -5283,7 +5422,7 @@ MENU_NOINLINE static bool menu_input_key_bind_iterate(
          {
             if (!menu_input_key_bind_poll_find_trigger(
                   settings->uints.input_max_users,
-                  _binds, &new_binds, &(new_binds.buffer)))
+                  _binds, &new_binds, &(new_binds.buffer), false))
                input_st->flags &= ~INP_FLAG_WAIT_INPUT_RELEASE;
          }
 
@@ -5356,7 +5495,7 @@ MENU_NOINLINE static bool menu_input_key_bind_iterate(
       else if ((new_binds.skip && !_binds->skip)
             || menu_input_key_bind_poll_find_trigger(
                settings->uints.input_max_users,
-               _binds, &new_binds, &(new_binds.buffer)))
+               _binds, &new_binds, &(new_binds.buffer), true))
          complete = true;
 
       if (complete)
@@ -5366,6 +5505,7 @@ MENU_NOINLINE static bool menu_input_key_bind_iterate(
 
          /* Update bind */
          *(new_binds.output)                 = new_binds.buffer;
+         _binds->captured_pad                = new_binds.captured_pad;
 
          /* Update keyboard mapping bits */
          if (RETRO_KEYBIND_KEY(&new_binds.buffer))
@@ -5427,11 +5567,10 @@ MENU_NOINLINE static bool menu_input_key_bind_iterate(
 }
 
 /* `bind_index` is the bind we describe the capture as. `output`, when set,
- * is where we write the capture instead of that bind. With `accepts_pad`, we
- * capture only the pad inputs for which it returns true. */
+ * is where we write the capture instead of that bind. */
 static bool menu_input_rib_capture_into(unsigned bind_index,
       struct retro_keybind *output,
-      bool (*accepts_pad)(uint16_t joykey, uint32_t joyaxis),
+      const struct menu_rib_capture_pads *pads,
       unsigned timeout_seconds)
 {
    uint64_t current_usec;
@@ -5458,9 +5597,11 @@ static bool menu_input_rib_capture_into(unsigned bind_index,
    binds->last                  = binds->begin;
    binds->output                = output ? output : &input_config_binds[0][bind_index];
    binds->buffer                = *binds->output;
-   binds->accepts_pad           = accepts_pad;
    binds->user                  = 0;
    binds->port                  = settings->uints.input_joypad_index[0];
+   binds->rib                   = *pads;
+   binds->unnamed.held          = false;
+   binds->captured_pad          = binds->port;
 
    menu_input_key_bind_poll_bind_get_rested_axes(joypad, sec_joypad, binds);
    menu_input_key_bind_poll_bind_state(input_st,
@@ -5492,23 +5633,29 @@ static bool menu_input_rib_capture_into(unsigned bind_index,
    return true;
 }
 
-bool menu_input_rib_bind_start(unsigned bind_index, unsigned timeout_seconds)
+bool menu_input_rib_bind_start(unsigned bind_index,
+      const struct menu_rib_capture_pads *pads, unsigned timeout_seconds)
 {
-   return menu_input_rib_capture_into(bind_index, NULL, NULL, timeout_seconds);
+   return pads && menu_input_rib_capture_into(bind_index, NULL, pads, timeout_seconds);
+}
+
+unsigned menu_input_rib_captured_pad(void)
+{
+   return menu_driver_state.input_binds.captured_pad;
 }
 
 bool menu_input_rib_capture_start(struct retro_keybind *output,
-      bool (*accepts_pad)(uint16_t joykey, uint32_t joyaxis),
+      const struct menu_rib_capture_pads *pads,
       unsigned timeout_seconds)
 {
-   if (!output)
+   if (!output || !pads)
       return false;
    RETRO_KEYBIND_SET_KEY(output, RETROK_UNKNOWN);
    output->joykey  = NO_BTN;
    output->joyaxis = AXIS_NONE;
    output->mbutton = NO_BTN;
    /* We describe it as the menu toggle, the meta bind closest to its purpose. */
-   return menu_input_rib_capture_into(RARCH_MENU_TOGGLE, output, accepts_pad,
+   return menu_input_rib_capture_into(RARCH_MENU_TOGGLE, output, pads,
          timeout_seconds);
 }
 
