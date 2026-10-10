@@ -360,6 +360,13 @@ void Document::show_fact(const char *fact, const std::string& text)
       write_text(element, text);
 }
 
+void Document::show_input(const char *kind)
+{
+   if (!root() || !kind || root()->GetAttribute<Rml::String>(document_contract::InputAttribute, "") == kind)
+      return;
+   root()->SetAttribute(document_contract::InputAttribute, Rml::String(kind));
+}
+
 void Document::show_game_shape(float aspect)
 {
    const float dp = context ? context->GetDensityIndependentPixelRatio() : 0.0f;

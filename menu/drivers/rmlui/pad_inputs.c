@@ -157,6 +157,55 @@ bool rib_pad_input_down(unsigned bind)
    return down_on_player_one(NULL, bind);
 }
 
+bool rib_pad_input_pressed(unsigned *pad)
+{
+   input_driver_state_t *input_st = input_state_get_ptr();
+   settings_t *settings           = config_get_ptr();
+   unsigned pads[MAX_USERS + 1];
+   unsigned index;
+   unsigned bind;
+
+   if (!input_st || !settings || !pad)
+      return false;
+   player_one_pads(pads);
+   for (index = 0; pads[index] < MAX_USERS; ++index)
+      for (bind = 0; bind < RARCH_BIND_LIST_END; ++bind)
+      {
+         const struct retro_keybind *bound = &input_autoconf_binds[pads[index]][bind];
+         const float threshold             = settings->floats.input_axis_threshold;
+         if (bind >= RARCH_ANALOG_BIND_LIST_END && bind != RARCH_MENU_TOGGLE)
+            continue;
+         if (held_by(input_st->primary_joypad, pads[index], bound, threshold)
+#ifdef HAVE_MFI
+               || held_by(input_st->secondary_joypad, pads[index], bound, threshold)
+#endif
+            )
+         {
+            *pad = pads[index];
+            return true;
+         }
+      }
+   return false;
+}
+
+bool rib_pad_input_connected(unsigned *pad)
+{
+   input_driver_state_t *input_st = input_state_get_ptr();
+   unsigned pads[MAX_USERS + 1];
+   unsigned index;
+
+   if (!input_st || !input_st->primary_joypad || !input_st->primary_joypad->query_pad || !pad)
+      return false;
+   player_one_pads(pads);
+   for (index = 0; pads[index] < MAX_USERS; ++index)
+      if (input_st->primary_joypad->query_pad(pads[index]))
+      {
+         *pad = pads[index];
+         return true;
+      }
+   return false;
+}
+
 bool rib_pad_input_value_down(const char *value)
 {
    struct retro_keybind input;

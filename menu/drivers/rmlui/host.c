@@ -650,6 +650,8 @@ bool rib_host_key_down(unsigned code)
 }
 bool rib_host_pad_input(const char *id, unsigned *bind) { return rib_pad_input_bind(id, bind); }
 bool rib_host_pad_down(unsigned bind) { return rib_pad_input_down(bind); }
+bool rib_host_pad_pressed(unsigned *pad) { return rib_pad_input_pressed(pad); }
+bool rib_host_pad_connected(unsigned *pad) { return rib_pad_input_connected(pad); }
 const char *rib_host_pad_input_id(unsigned bind) { return rib_pad_input_id(bind); }
 bool rib_host_pad_value(const char *value)
 {

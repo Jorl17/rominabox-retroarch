@@ -27,6 +27,12 @@ const char *rib_pad_input_id(unsigned bind);
 /* Whether `bind` is down on any pad assigned to player 1, through its
  * profile. False for a pad whose profile has no button for it. */
 bool rib_pad_input_down(unsigned bind);
+/* A pad that plays as player 1 with a button of its profile, a stick or Home
+ * down, by its joypad index in `pad`. */
+bool rib_pad_input_pressed(unsigned *pad);
+/* The first pad that plays as player 1 and is connected, by its joypad index
+ * in `pad`. */
+bool rib_pad_input_connected(unsigned *pad);
 /* The pad input of a captured button (`joykey`, including the direction of
  * a hat) or axis (`joyaxis`) on the pad of the first player, through its
  * profile. False when it is no position and not the menu button in that

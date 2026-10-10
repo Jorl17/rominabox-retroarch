@@ -30,6 +30,7 @@
 #include "controls.hpp"
 #include "game_data.hpp"
 #include "hotkeys.hpp"
+#include "inputs.hpp"
 #include "paging.hpp"
 #include "play_hotkeys.hpp"
 #include "slots.hpp"
@@ -66,7 +67,10 @@ struct Menu
    rib::Hotkeys hotkeys{view.document, focus, screens, view.status,
          view.intents, view.hovered, capture_pointer, controls, pad_names};
    rib::PlayHotkeys play_hotkeys{hotkeys.read(), view.slots, overlays};
+   rib::Inputs inputs;
    bool pointer_pressed;
+   /* Where the pointer was in the frame before, before the first frame none. */
+   int pointer_x = -1, pointer_y = -1;
    /* Whether a capture on CONTROLS or HOTKEYS was in progress at the end of
     * the previous frame. */
    bool was_capturing = false;
@@ -207,6 +211,12 @@ void rib_rmlui_menu_buttons(uint32_t *buttons, unsigned ok, unsigned cancel)
       *buttons |= 1u << RETRO_DEVICE_ID_JOYPAD_R;
 }
 
+void rib_rmlui_keyboard_used(void)
+{
+   if (active_menu)
+      active_menu->inputs.keyboard();
+}
+
 bool rib_rmlui_menu_hotkey_key(unsigned code)
 {
    return active_menu && active_menu->hotkeys.read().menu_key(code);
@@ -217,6 +227,7 @@ void rib_rmlui_play_hotkeys(void)
    using Doing = rib::PlayHotkeys::Doing;
    if (!active_menu)
       return;
+   active_menu->inputs.frame();
    active_menu->play_hotkeys.frame(capturing(active_menu) ? Doing::Capturing
          : rib_rmlui_typing() ? Doing::Typing
          : rib_host_menu_open() || active_menu->overlays.holding_game() ? Doing::Waiting
@@ -319,6 +330,13 @@ static void settle_focus(Menu *menu)
 /* Read what we show of the running game when the menu opens. That is the
  * aspect ratio of the game, which can change while it runs, and the slots,
  * which a save by hotkey can change. */
+/* The kind of input the player used last, on the document. */
+static void show_input(Menu *menu)
+{
+   menu->view.document.show_input(menu->inputs.kind() == rib::Inputs::Kind::Pad
+         ? rib::document_contract::InputPad : rib::document_contract::InputKeyboard);
+}
+
 static void read_game(Menu *menu)
 {
    menu->view.document.show_game_shape(rib_host_game_aspect());
@@ -443,6 +461,7 @@ void *rib_menu_create(void)
    if (!menu)
       return nullptr;
    menu->navigation.on_shown([menu] { screen_shown(menu); });
+   menu->inputs.on_change([menu] { show_input(menu); });
    menu->navigation.on_capturing([menu] { return capturing(menu); });
    {
       /* We read the input that opens the menu, the slot for hotkey saves and
@@ -565,6 +584,7 @@ void rib_menu_frame(void *data, int width, int height)
       /* We treat a new document as the whole menu until we change that below,
        * also when we build it for a new video driver while the game runs. */
       menu->overlay_mode = false;
+      show_input(menu);
    }
 
    menu->achievements.update();
@@ -616,6 +636,14 @@ void rib_menu_update(void *data)
 
    rib_host_rumble_frame();
    pointer = rib_host_pointer();
+   if (pointer.x != menu->pointer_x || pointer.y != menu->pointer_y
+         || (pointer.pressed && !menu->pointer_pressed))
+   {
+      if (menu->pointer_x >= 0)
+         menu->inputs.keyboard();
+      menu->pointer_x = pointer.x;
+      menu->pointer_y = pointer.y;
+   }
    {
       bool pointer_pressed =
             pointer.pressed;

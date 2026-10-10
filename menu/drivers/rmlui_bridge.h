@@ -47,6 +47,9 @@ void rib_rmlui_menu_buttons(uint32_t *buttons, unsigned ok, unsigned cancel);
  * that hotkey, and none of the keys that count as buttons of the menu pad in
  * RetroArch (an arrow as a direction, in input_driver.c). */
 bool rib_rmlui_menu_hotkey_key(unsigned code);
+/* A key went down, which makes the keyboard the kind of input the player
+ * used last (rmlui/inputs.hpp). */
+void rib_rmlui_keyboard_used(void);
 /* Once a frame: the hotkeys for use while the game plays (QUICK SAVE,
  * QUICK LOAD, PREVIOUS SLOT, NEXT SLOT), each once when pressed. We ignore
  * them while the menu is open or the game waits for the splash, and a key

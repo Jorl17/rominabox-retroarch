@@ -48,6 +48,9 @@ public:
     * marked data-game-shaped, inside the largest size in its stylesheet.
     * No change for proportions already shown, or for none at all. */
    void show_game_shape(float aspect);
+   /* The kind of input the player used last (document_contract.inc,
+    * RIB_INPUT), which we set on the document as data-input. */
+   void show_input(const char *kind);
    void set_shown(const char *id, bool shown);
    void set_disabled(const char *id, bool disabled);
    void set_class(const char *id, const char *name, bool enabled);

@@ -32,6 +32,9 @@
 #ifndef RIB_FACT
 #define RIB_FACT(name, value)
 #endif
+#ifndef RIB_INPUT
+#define RIB_INPUT(name, value)
+#endif
 #ifndef RIB_NOTICE
 #define RIB_NOTICE(name, value, hold_ms)
 #endif
@@ -333,6 +336,13 @@ RIB_ATTRIBUTE(GameShapeAttribute, "data-game-shape", State, Optional)
  * is the design's. One the stylesheet gives no largest size, as lengths,
  * is left alone. */
 RIB_ATTRIBUTE(GameShapedAttribute, "data-game-shaped", Menu, Optional)
+/* The kind of input the player used last, which the player sets on the
+ * document, as data-focus: a key or the mouse is the keyboard, and a button
+ * or a stick of a pad is a pad. Before any input, a pad if one plays as
+ * player 1, or else the keyboard. A design styles anything by it. The kinds: */
+RIB_ATTRIBUTE(InputAttribute, "data-input", State, Optional)
+RIB_INPUT(InputKeyboard, "keyboard")
+RIB_INPUT(InputPad, "pad")
 
 #undef RIB_SLOT_COUNT
 #undef RIB_CANVAS
@@ -341,4 +351,5 @@ RIB_ATTRIBUTE(GameShapedAttribute, "data-game-shaped", Menu, Optional)
 #undef RIB_CLASS
 #undef RIB_ATTRIBUTE
 #undef RIB_FACT
+#undef RIB_INPUT
 #undef RIB_NOTICE

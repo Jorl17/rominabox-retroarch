@@ -49,6 +49,10 @@ bool rib_host_key_down(unsigned code);
 bool rib_host_bind_key(unsigned index, unsigned *code);
 bool rib_host_pad_input(const char *id, unsigned *bind);
 bool rib_host_pad_down(unsigned bind);
+/* A pad that plays as player 1 with a button, a stick or Home down, and the
+ * first such pad that is connected, by joypad index (pad_inputs.h). */
+bool rib_host_pad_pressed(unsigned *pad);
+bool rib_host_pad_connected(unsigned *pad);
 /* Whether `value` is a pad input in the form of RetroArch's config ("13",
  * "h0up", "+3"), and whether that input is down on any pad that plays as
  * player 1. */

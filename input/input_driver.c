@@ -10059,6 +10059,11 @@ void input_keyboard_event(bool down, unsigned code,
     * frame, so otherwise we would miss a down and an up between two
     * samples. */
    held_key_note(code, down);
+#ifdef HAVE_RMLUI
+   /* ROM-in-a-Box: any key down makes the keyboard the input in use. */
+   if (down)
+      rib_rmlui_keyboard_used();
+#endif
    /* Return with Alt is the fullscreen chord. Record it before any return,
     * also before the one for the menu text entry, and do not also pass that
     * Return to the menu or the core, because Enter alone is Start. */
