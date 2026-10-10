@@ -4,6 +4,7 @@
 #include "declarations.h"
 #include "focus.hpp"
 #include "hotkey_bindings.hpp"
+#include "pad_names.hpp"
 #include "screens.hpp"
 #include <retro_miscellaneous.h>
 #include <stddef.h>
@@ -26,9 +27,10 @@ class Controls
 {
 public:
    Controls(Focus& focus, Screens& screens, Document& document, ControlView& control_view,
-         Lists& lists, Status& status, const Event& hovered, CapturePointer& pointer)
+         Lists& lists, Status& status, const Event& hovered, CapturePointer& pointer,
+         const PadNames& names)
       : focus_state(focus), screens(screens), document(document), control_view(control_view),
-        lists(lists), status(status), hovered(hovered), pointer(pointer) {}
+        lists(lists), status(status), hovered(hovered), pointer(pointer), names(names) {}
    int index_of(const char *id) const;
    bool active(int index) const;
    FocusTarget first() const;
@@ -82,6 +84,7 @@ private:
    Status& status;
    const Event& hovered;
    CapturePointer& pointer;
+   const PadNames& names;
    /* Where the author's defaults and scenes are, and the player's file. */
    std::string assets, defaults_path, path;
    /* The pad the game was exported with. */

@@ -2,12 +2,15 @@
 #define RIB_MENU_BIND_LINES_H
 
 #include "host.h"
+#include "pad_inputs.h"
 #include "../../../input/input_driver.h"
 #include "../../../input/input_keymaps.h"
 #include <string/stdstring.h>
 
 /* Format explicit and autoconfigured inputs in the order KEY, PAD, AXIS,
- * MOUSE. Both binds are arguments, and the output is at most 64 lines. */
+ * MOUSE. Both binds are arguments, and the output is at most 64 lines. We
+ * write a key by its name in RetroArch's config, and a PAD or AXIS input in
+ * the form of RetroArch's config (pad_inputs.h), and the menu words both. */
 /* One line for each input in a retro_keybind. We read each field separately,
  * because with a comma inside a name, splitting a joined string would be
  * ambiguous. */
@@ -71,20 +74,10 @@ static inline void rib_lines_from_bind(const struct retro_keybind *bind,
    input_keymaps_translate_rk_to_str(RETRO_KEYBIND_KEY(bind), text, sizeof(text));
    if (text[0] && strcmp(text, "nul") != 0)
       rib_push_bind_line(details, kinds, count, "KEY", text);
-   if (effective->joykey != NO_BTN)
-   {
-      /* We do not show the names of the inputs from the pad (false), so
-       * there is no label. */
-      input_config_get_bind_string_joykey(false, text, "", effective,
-            NULL, sizeof(text));
+   if (rib_pad_input_value(effective->joykey, AXIS_NONE, text, sizeof(text)))
       rib_push_bind_line(details, kinds, count, "PAD", text);
-   }
-   if (effective->joyaxis != AXIS_NONE)
-   {
-      input_config_get_bind_string_joyaxis(false, text, "", effective,
-            NULL, sizeof(text));
+   if (rib_pad_input_value(NO_BTN, effective->joyaxis, text, sizeof(text)))
       rib_push_bind_line(details, kinds, count, "AXIS", text);
-   }
    if (bind->mbutton != NO_BTN)
    {
       rib_mouse_label(bind->mbutton, text, sizeof(text));

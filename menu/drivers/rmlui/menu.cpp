@@ -59,10 +59,11 @@ struct Menu
    rib::Focus& focus = view.focus;
    rib::Screens& screens = view.screens;
    rib::CapturePointer capture_pointer;
+   rib::PadNames pad_names;
    rib::Controls controls{focus, screens, view.document, view.controls,
-         view.lists, view.status, view.hovered, capture_pointer};
+         view.lists, view.status, view.hovered, capture_pointer, pad_names};
    rib::Hotkeys hotkeys{view.document, focus, screens, view.status,
-         view.intents, view.hovered, capture_pointer, controls};
+         view.intents, view.hovered, capture_pointer, controls, pad_names};
    rib::PlayHotkeys play_hotkeys{hotkeys.read(), view.slots, overlays};
    bool pointer_pressed;
    /* Whether a capture on CONTROLS or HOTKEYS was in progress at the end of
@@ -437,6 +438,7 @@ void *rib_menu_create(void)
        * drawn the menu. */
       const rib_environment_value assets = rib_owned(rib_environment(RIB_ENV_RML_ASSETS));
       const rib_environment_value data = rib_owned(rib_data_directory());
+      menu->pad_names.load(assets && *assets ? assets.get() : RIB_RMLUI_DEFAULT_ASSETS);
       menu->hotkeys.load(assets && *assets ? assets.get() : RIB_RMLUI_DEFAULT_ASSETS,
             data.get());
       menu->slots.reset_transfer();

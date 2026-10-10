@@ -4,7 +4,10 @@
 #include "../../../input/input_driver.h"
 #include "../../../input/input_types.h"
 #include "../../menu_driver.h"
+#include <compat/strl.h>
 #include <string/stdstring.h>
+#include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 /* Home, as declared in hotkeys.inc: its id, and the RetroArch bind for the
@@ -159,6 +162,102 @@ bool rib_pad_input_on(unsigned pad, uint16_t joykey, uint32_t joyaxis, unsigned 
       return true;
    }
    return false;
+}
+
+bool rib_pad_input_value(uint16_t joykey, uint32_t joyaxis, char *value, size_t size)
+{
+   const char *direction = "";
+
+   if (!value || !size)
+      return false;
+   if (joyaxis != AXIS_NONE)
+   {
+      if (AXIS_NEG_GET(joyaxis) != AXIS_DIR_NONE)
+         snprintf(value, size, "-%u", (unsigned)AXIS_NEG_GET(joyaxis));
+      else
+         snprintf(value, size, "+%u", (unsigned)AXIS_POS_GET(joyaxis));
+      return true;
+   }
+   if (joykey == NO_BTN)
+      return false;
+   if (!GET_HAT_DIR(joykey))
+   {
+      snprintf(value, size, "%u", (unsigned)joykey);
+      return true;
+   }
+   switch (GET_HAT_DIR(joykey))
+   {
+      case HAT_UP_MASK:    direction = "up";    break;
+      case HAT_DOWN_MASK:  direction = "down";  break;
+      case HAT_LEFT_MASK:  direction = "left";  break;
+      case HAT_RIGHT_MASK: direction = "right"; break;
+      default: break;
+   }
+   snprintf(value, size, "h%u%s", (unsigned)GET_HAT(joykey), direction);
+   return true;
+}
+
+bool rib_pad_input_parse(const char *value, uint16_t *joykey, uint32_t *joyaxis)
+{
+   static const struct { const char *word; uint16_t mask; } directions[] = {
+      {"up", HAT_UP_MASK}, {"down", HAT_DOWN_MASK},
+      {"left", HAT_LEFT_MASK}, {"right", HAT_RIGHT_MASK},
+   };
+   char *end = NULL;
+   unsigned long number;
+   size_t index;
+
+   if (!value || !joykey || !joyaxis)
+      return false;
+   *joykey  = NO_BTN;
+   *joyaxis = AXIS_NONE;
+   if ((value[0] == '+' || value[0] == '-') && isdigit((unsigned char)value[1]))
+   {
+      number = strtoul(value + 1, &end, 10);
+      if (*end || number >= AXIS_DIR_NONE)
+         return false;
+      *joyaxis = value[0] == '+' ? AXIS_POS(number) : AXIS_NEG(number);
+      return true;
+   }
+   if (value[0] == 'h' && isdigit((unsigned char)value[1]))
+   {
+      number = strtoul(value + 1, &end, 10);
+      for (index = 0; index < sizeof(directions) / sizeof(directions[0]); ++index)
+         if (string_is_equal(end, directions[index].word))
+         {
+            *joykey = HAT_MAP(number, directions[index].mask);
+            return true;
+         }
+      return false;
+   }
+   if (!isdigit((unsigned char)value[0]))
+      return false;
+   number = strtoul(value, &end, 10);
+   if (*end || number >= NO_BTN)
+      return false;
+   *joykey = (uint16_t)number;
+   return true;
+}
+
+bool rib_pad_input_name(unsigned bind, char *name, size_t size)
+{
+   const unsigned pad = first_pad();
+   const struct retro_keybind *bound;
+   const struct input_bind_label *label;
+   const char *text = NULL;
+
+   if (!name || !size || pad >= MAX_USERS || bind >= RARCH_BIND_LIST_END)
+      return false;
+   bound = &input_autoconf_binds[pad][bind];
+   label = &input_autoconf_bind_labels[pad][bind];
+   if (bound->joykey != NO_BTN && label->joykey && *label->joykey)
+      text = label->joykey;
+   else if (bound->joyaxis != AXIS_NONE && label->joyaxis && *label->joyaxis)
+      text = label->joyaxis;
+   if (!text)
+      return false;
+   strlcpy(name, text, size);
+   return true;
 }
 
 static bool named_on(unsigned pad, uint16_t joykey, uint32_t joyaxis)

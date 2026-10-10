@@ -536,48 +536,12 @@ void rib_host_load_bind(config_file_t *config, const char *id, unsigned index)
          id, bind);
 }
 
-static void rib_rmlui_save_joy_button(config_file_t *config,
-      const char *key, uint16_t joykey)
+static void rib_rmlui_save_pad_input(config_file_t *config,
+      const char *key, uint16_t joykey, uint32_t joyaxis)
 {
-   char value[32];
-   if (joykey == NO_BTN)
-      config_set_string(config, key, "nul");
-   else if (GET_HAT_DIR(joykey))
-   {
-      const char *direction = "";
-      switch (GET_HAT_DIR(joykey))
-      {
-         case HAT_UP_MASK: direction = "up"; break;
-         case HAT_DOWN_MASK: direction = "down"; break;
-         case HAT_LEFT_MASK: direction = "left"; break;
-         case HAT_RIGHT_MASK: direction = "right"; break;
-         default: break;
-      }
-      snprintf(value, sizeof(value), "h%u%s", GET_HAT(joykey), direction);
-      config_set_string(config, key, value);
-   }
-   else
-      config_set_uint(config, key, joykey);
-}
-
-static void rib_rmlui_save_axis(config_file_t *config,
-      const char *key, uint32_t axis)
-{
-   char value[24];
-   if (axis == AXIS_NONE)
-      config_set_string(config, key, "nul");
-   else if (AXIS_NEG_GET(axis) != AXIS_DIR_NONE)
-   {
-      snprintf(value, sizeof(value), "-%lu",
-            (unsigned long)AXIS_NEG_GET(axis));
-      config_set_string(config, key, value);
-   }
-   else
-   {
-      snprintf(value, sizeof(value), "+%lu",
-            (unsigned long)AXIS_POS_GET(axis));
-      config_set_string(config, key, value);
-   }
+   char value[RIB_PAD_INPUT_VALUE_MAX];
+   config_set_string(config, key,
+         rib_pad_input_value(joykey, joyaxis, value, sizeof(value)) ? value : "nul");
 }
 
 static void rib_rmlui_save_mouse_button(config_file_t *config,
@@ -610,9 +574,9 @@ void rib_host_write_bind(config_file_t *config, const char *id, unsigned index)
    input_keymaps_translate_rk_to_str(RETRO_KEYBIND_KEY(bind), value, sizeof(value));
    config_set_string(config, key, value);
    snprintf(key, sizeof(key), "input_player1_%s_btn", id);
-   rib_rmlui_save_joy_button(config, key, bind->joykey);
+   rib_rmlui_save_pad_input(config, key, bind->joykey, AXIS_NONE);
    snprintf(key, sizeof(key), "input_player1_%s_axis", id);
-   rib_rmlui_save_axis(config, key, bind->joyaxis);
+   rib_rmlui_save_pad_input(config, key, NO_BTN, bind->joyaxis);
    snprintf(key, sizeof(key), "input_player1_%s_mbtn", id);
    rib_rmlui_save_mouse_button(config, key, bind->mbutton);
 }
@@ -689,6 +653,18 @@ bool rib_host_key_down(unsigned code)
 }
 bool rib_host_pad_input(const char *id, unsigned *bind) { return rib_pad_input_bind(id, bind); }
 bool rib_host_pad_down(unsigned bind) { return rib_pad_input_down(bind); }
+const char *rib_host_pad_input_id(unsigned bind) { return rib_pad_input_id(bind); }
+bool rib_host_pad_name(unsigned bind, char *name, size_t size)
+{
+   return rib_pad_input_name(bind, name, size);
+}
+bool rib_host_pad_value_input(const char *value, unsigned *bind)
+{
+   uint16_t joykey;
+   uint32_t joyaxis;
+   return rib_pad_input_parse(value, &joykey, &joyaxis)
+         && rib_pad_input_of(joykey, joyaxis, bind);
+}
 
 /* Where we write a capture for a hotkey. It is none of
  * the RetroArch binds, so no input of the game changes while it runs. */

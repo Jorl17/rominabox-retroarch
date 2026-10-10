@@ -3,6 +3,7 @@
 #include "capture_pointer.hpp"
 #include "events.h"
 #include "hotkey_bindings.hpp"
+#include "pad_names.hpp"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -24,9 +25,10 @@ class Hotkeys
 {
 public:
    Hotkeys(Document& document, Focus& focus, Screens& screens, Status& status,
-         EventQueue& intents, Event& hovered, CapturePointer& pointer, const Controls& controls)
+         EventQueue& intents, Event& hovered, CapturePointer& pointer, const Controls& controls,
+         const PadNames& names)
       : document(document), focus(focus), screens(screens), status(status),
-        intents(intents), hovered(hovered), pointer(pointer), controls(controls) {}
+        intents(intents), hovered(hovered), pointer(pointer), controls(controls), names(names) {}
    /* The bindings, read before any document, because we need them while the
     * game runs, before we have ever drawn the menu. */
    void load(const char *assets, const char *data) { bindings.load(assets, data); }
@@ -72,6 +74,7 @@ private:
    Event& hovered;
    CapturePointer& pointer;
    const Controls& controls;
+   const PadNames& names;
    HotkeyBindings bindings;
    std::vector<Row> rows;
    struct Capture

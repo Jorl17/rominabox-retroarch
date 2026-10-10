@@ -67,14 +67,11 @@ bool cancels_capture(const HotkeyBinding& binding);
 class HotkeyBindings
 {
 public:
-   /* Read the bindings of the author and the words for pad inputs from
-    * `assets`, then those of the player from `data`. When the file of the
-    * player breaks the rules, we use the author bindings and say so. */
+   /* Read the bindings of the author from `assets`, then those of the
+    * player from `data`. When the file of the player breaks the rules, we
+    * use the author bindings and say so. */
    void load(const char *assets, const char *data);
    const std::vector<HotkeyBinding>& of(Hotkey hotkey) const;
-   /* The words we show in the menu for `binding`: the word for a key
-    * (key_words.inc), or the default words for its pad inputs, in order. */
-   std::string words(const HotkeyBinding& binding) const;
 
    enum class Outcome
    {
@@ -163,7 +160,6 @@ private:
    size_t ways[kHotkeyCount] = {};
    size_t authored_ways[kHotkeyCount] = {};
    bool absent[kHotkeyCount] = {};
-   std::map<std::string, std::string> pad_words;
    std::string player_path;
 };
 

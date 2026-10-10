@@ -366,6 +366,8 @@ void Controls::bind_lines(unsigned bind_index, char details[][64], char kinds[][
    for (int line = before; line < *lines; ++line)
       if (std::strcmp(kinds[line], "KEY") == 0)
          strlcpy(details[line], key_word(details[line]).c_str(), sizeof(details[line]));
+      else if (std::strcmp(kinds[line], "PAD") == 0 || std::strcmp(kinds[line], "AXIS") == 0)
+         strlcpy(details[line], names.input(details[line]).c_str(), sizeof(details[line]));
 }
 
 std::string Controls::callout_text(int index) const

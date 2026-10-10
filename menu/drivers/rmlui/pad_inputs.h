@@ -2,6 +2,7 @@
 #define RIB_MENU_PAD_INPUTS_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -23,20 +24,31 @@ const char *rib_pad_input_id(unsigned bind);
 /* Whether `bind` is down on any pad assigned to player 1, through its
  * profile. False for a pad whose profile has no button for it. */
 bool rib_pad_input_down(unsigned bind);
-/* The pad input that a captured button (`joykey`, including the direction of
- * a hat) or axis (`joyaxis`) is on the pad of the first player, through its
- * profile. False when the profile maps it to no position and no menu
- * button. */
+/* The pad input of a captured button (`joykey`, including the direction of
+ * a hat) or axis (`joyaxis`) on the pad of the first player, through its
+ * profile. False when it is no position and not the menu button in that
+ * profile. */
 bool rib_pad_input_of(uint16_t joykey, uint32_t joyaxis, unsigned *bind);
 /* As rib_pad_input_of, through the profile of the pad at joypad index `pad`. */
 bool rib_pad_input_on(unsigned pad, uint16_t joykey, uint32_t joyaxis, unsigned *bind);
+/* A pad input in the form of RetroArch's config: "13" for a button, "h0up"
+ * for a direction of a hat, "+3" or "-3" for an axis. We write it to
+ * `value`, of at least RIB_PAD_INPUT_VALUE_MAX bytes, and return false when
+ * there is no input. */
+#define RIB_PAD_INPUT_VALUE_MAX 16
+bool rib_pad_input_value(uint16_t joykey, uint32_t joyaxis, char *value, size_t size);
+/* The input in `value`, in that form. False for any other text. */
+bool rib_pad_input_parse(const char *value, uint16_t *joykey, uint32_t *joyaxis);
+/* The name of the position or Home `bind` in the profile of the first
+ * player's pad, when the profile has one. */
+bool rib_pad_input_name(unsigned bind, char *name, size_t size);
 /* Start capturing into `output` an input for a hotkey, for `seconds`. */
 struct retro_keybind;
 bool rib_pad_input_capture_start(struct retro_keybind *output, unsigned seconds);
 /* Start capturing an input into the bind `index` of player 1, on CONTROLS,
  * for `seconds`. */
 bool rib_pad_input_bind_start(unsigned index, unsigned seconds);
-/* The joypad index of the pad a finished capture came from. */
+/* The joypad index of the pad we last captured from. */
 unsigned rib_pad_input_captured_pad(void);
 
 #ifdef __cplusplus

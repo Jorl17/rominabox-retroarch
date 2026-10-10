@@ -46,6 +46,14 @@ bool rib_host_key_down(unsigned code);
 bool rib_host_bind_key(unsigned index, unsigned *code);
 bool rib_host_pad_input(const char *id, unsigned *bind);
 bool rib_host_pad_down(unsigned bind);
+/* The id of the position or Home `bind`, as in pad_inputs.h, or NULL. */
+const char *rib_host_pad_input_id(unsigned bind);
+/* The name of the position or Home `bind` in the profile of the first
+ * player's pad, when the profile has one. */
+bool rib_host_pad_name(unsigned bind, char *name, size_t size);
+/* The position or Home, as a bind, of a pad input in the form of RetroArch's
+ * config ("13", "h0up", "+3") on the first player's pad, when it is one. */
+bool rib_host_pad_value_input(const char *value, unsigned *bind);
 /* Capture an input for one of those hotkeys. We use the RetroArch capture,
  * as on the Controls screen, but write into none of the RetroArch binds.
  * Poll and cancel it as any other capture. After a poll that returns

@@ -21,6 +21,16 @@ RIB_WORD(DataImportFailed, "data-import-failed", "IMPORT FAILED")
 RIB_WORD(DataImportSame, "data-import-same", "IMPORTING THIS DATA WILL PERMANENTLY REPLACE YOUR SAVES, STATES AND SETTINGS. THE GAME WILL THEN IMMEDIATELY RESTART.")
 RIB_WORD(DataImportOther, "data-import-other", "THIS DATA IS FROM {game}. IMPORTING IT WILL PERMANENTLY REPLACE YOUR SAVES, STATES AND SETTINGS. THE GAME WILL THEN IMMEDIATELY RESTART.")
 
+/* A pad input that is no position of the standard pad on the first
+ * player's pad, by its number: {number} is the number of a button or a hat,
+ * and {axis} is an axis with its direction, as +3. */
+RIB_WORD(PadButton, "pad-button", "Button {number}")
+RIB_WORD(PadAxis, "pad-axis", "Axis {axis}")
+RIB_WORD(PadHatUp, "pad-hat-up", "Hat {number} up")
+RIB_WORD(PadHatDown, "pad-hat-down", "Hat {number} down")
+RIB_WORD(PadHatLeft, "pad-hat-left", "Hat {number} left")
+RIB_WORD(PadHatRight, "pad-hat-right", "Hat {number} right")
+
 /* The pad screen's statuses. */
 RIB_WORD(CaptureCountdown, "capture-countdown", "{control}: PRESS AN INPUT ({seconds})")
 RIB_WORD(CaptureFailed, "capture-failed", "CAPTURE COULD NOT START")

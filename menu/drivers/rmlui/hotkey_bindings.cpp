@@ -207,17 +207,10 @@ void HotkeyBindings::load(const char *assets, const char *data)
    player_path = data && *data ? std::string(data) + "/" + files::Hotkeys : std::string();
    for (size_t index = 0; index < kHotkeyCount; ++index)
       authored[index].clear();
-   pad_words.clear();
    if (config_file_t *config = config_file_new_from_path_to_string(defaults.c_str()))
    {
       for (Hotkey hotkey : all)
          read_list(config, hotkey, defaults.c_str(), authored[at(hotkey)]);
-      const std::string word = keys::PadWord("");
-      struct config_file_entry entry;
-      for (bool present = config_get_entry_list_head(config, &entry); present;
-            present = config_get_entry_list_next(&entry))
-         if (entry.key && entry.value && !std::strncmp(entry.key, word.c_str(), word.size()))
-            pad_words[entry.key + word.size()] = entry.value;
       config_file_free(config);
    }
    for (size_t index = 0; index < kHotkeyCount; ++index)
@@ -263,20 +256,6 @@ void HotkeyBindings::load(const char *assets, const char *data)
 const std::vector<HotkeyBinding>& HotkeyBindings::of(Hotkey hotkey) const
 {
    return lists[at(hotkey)];
-}
-
-std::string HotkeyBindings::words(const HotkeyBinding& binding) const
-{
-   if (is_key(binding))
-      return key_word(binding.key.c_str());
-   std::string text;
-   for (size_t index = 0; index < binding.pads.size(); ++index)
-   {
-      const auto word = pad_words.find(binding.pads[index]);
-      text += (index ? chord : std::string())
-            + (word != pad_words.end() ? word->second : binding.pads[index]);
-   }
-   return text;
 }
 
 bool HotkeyBindings::keeps(Hotkey hotkey, const std::vector<HotkeyBinding>& list,

@@ -145,7 +145,7 @@ void Hotkeys::refresh()
          document.set_shown(id, used);
          if (!used)
             continue;
-         document.set_element_text(id, bindings.words(list[chip]).c_str(),
+         document.set_element_text(id, names.binding(list[chip]).c_str(),
                document_contract::HotkeyWords);
          document.set_class(id, document_contract::ChipKey,
                list[chip].kind == HotkeyBinding::Kind::Key);
