@@ -6,10 +6,20 @@ namespace rib {
 void Overlays::load(const DesignDeclarations& design)
 {
    if (notification_active()) paint_notification();
+   document.set_class(document_contract::Body, document_contract::PausedInBackground, waiting);
    overlays.clear();
    for (const OverlayDeclaration& declaration : design.overlays)
       overlays.push_back(Overlay{declaration});
    loaded = true;
+}
+
+void Overlays::wait_in_background(bool waits)
+{
+   if (waits == waiting)
+      return;
+   waiting = waits;
+   document.set_class(document_contract::Body, document_contract::PausedInBackground, waiting);
+   rib_host_overlay_frames(drawing());
 }
 
 bool Overlays::holding_game() const

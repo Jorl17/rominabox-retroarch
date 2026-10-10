@@ -39,7 +39,11 @@ public:
    void show_badge(const std::string& badge);
    void clear_notification();
    bool notification_active() const { return notification_until != 0; }
-   bool drawing() const { return running || notification_active(); }
+   /* Whether the game waits, paused, because its window is in the
+    * background. We say so on the body (PausedInBackground), and draw over
+    * the game while it does. */
+   void wait_in_background(bool waits);
+   bool drawing() const { return running || notification_active() || waiting; }
    /* Whether the game must wait, because an overlay that delays it is still
     * on screen, or we have not yet read from the design which ones do. */
    bool holding_game() const;
@@ -62,6 +66,7 @@ private:
    Notification notification;
    int64_t notification_until = 0;
    bool running = false;
+   bool waiting = false;
    bool loaded = false;
    int64_t started_at = 0;
 };

@@ -308,6 +308,10 @@ RIB_CLASS(Capturing, "capturing", State, Optional)
 RIB_CLASS(Showing, "showing", State, Optional)
 RIB_CLASS(Leaving, "leaving", State, Optional)
 RIB_CLASS(Overlay, "overlay", State, Optional)
+/* On the body while the game waits, paused, because its window is in the
+ * background and the player keeps it from playing there. We then draw over
+ * the game, and the design shows what it chooses. */
+RIB_CLASS(PausedInBackground, "paused-in-background", State, Optional)
 /* A list row whose picture is still on its way. */
 RIB_CLASS(BadgeLoading, "badge-loading", State, Optional)
 /* The list that PREVIOUS PAGE and NEXT PAGE turn now: the list of the

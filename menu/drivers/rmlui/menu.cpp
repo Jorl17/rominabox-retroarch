@@ -229,6 +229,7 @@ void rib_rmlui_play_hotkeys(void)
    if (!active_menu)
       return;
    active_menu->inputs.frame();
+   active_menu->overlays.wait_in_background(rib_host_game_waits_in_background());
    active_menu->play_hotkeys.frame(capturing(active_menu) ? Doing::Capturing
          : rib_rmlui_typing() ? Doing::Typing
          : rib_host_menu_open() || active_menu->overlays.holding_game() ? Doing::Waiting

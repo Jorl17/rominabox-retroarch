@@ -43,6 +43,16 @@ bool rib_host_menu_open(void)
  * driver we skip the menu while it is closed, so without this we would never
  * draw an overlay. We use the same switch as for drawing the menu, so there is
  * no code for overlays in the video drivers. */
+bool rib_host_game_waits_in_background(void)
+{
+   settings_t *settings           = config_get_ptr();
+   const uint32_t runloop_flags   = runloop_state_get_ptr()->flags;
+   return settings && settings->bools.pause_nonactive
+         && (runloop_flags & RUNLOOP_FLAG_PAUSED)
+         && !(runloop_flags & RUNLOOP_FLAG_FOCUSED)
+         && !rib_host_menu_open();
+}
+
 void rib_host_overlay_frames(bool on)
 {
    video_driver_state_t *video_st = video_state_get_ptr();

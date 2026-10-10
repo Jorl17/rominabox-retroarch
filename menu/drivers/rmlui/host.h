@@ -100,6 +100,10 @@ void rib_host_script_finished(void);
 bool rib_host_script_press(const char *name);
 bool rib_host_menu_open(void);
 void rib_host_overlay_frames(bool on);
+/* Whether the game waits, paused, because its window is in the background:
+ * the player keeps it from playing there (pause_nonactive), its window has
+ * no focus, and the menu is closed. */
+bool rib_host_game_waits_in_background(void);
 bool rib_host_has_settings(void);
 bool rib_host_bind_index(const char *id, unsigned *resolved);
 void rib_host_restore_keyboard_mapping(void);
