@@ -343,7 +343,7 @@ static bool binding_words(Menu *menu, const std::string& id, std::string& words)
          ? rib::HotkeyBinding::Kind::Pad : rib::HotkeyBinding::Kind::Key;
    const auto chosen = std::find_if(list.begin(), list.end(),
          [&](const rib::HotkeyBinding& binding) { return binding.kind == wanted; });
-   words = menu->pad_names.binding(chosen != list.end() ? *chosen : list.front());
+   words = menu->pad_names.short_binding(chosen != list.end() ? *chosen : list.front());
    return true;
 }
 

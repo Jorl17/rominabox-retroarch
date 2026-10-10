@@ -37,4 +37,7 @@ void use_words(const std::vector<std::pair<Word, std::string>>& given);
 /* The wording for the key with the config name `name` in RetroArch: its
  * word in key_words.inc, or else the name. */
 std::string key_word(const char *name);
+/* The same where the menu has little room: its short word in key_words.inc,
+ * or else its wording. */
+std::string short_key_word(const char *name);
 }

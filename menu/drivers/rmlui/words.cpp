@@ -19,6 +19,13 @@ constexpr size_t count = kWordCount;
 
 const Known key_words[] = {
 #define RIB_KEY_WORD(name, word) {name, word},
+#define RIB_KEY_SHORT(name, word)
+#include "key_words.inc"
+};
+
+const Known short_key_words[] = {
+#define RIB_KEY_WORD(name, word)
+#define RIB_KEY_SHORT(name, word) {name, word},
 #include "key_words.inc"
 };
 
@@ -83,5 +90,13 @@ std::string key_word(const char *name)
       if (std::strcmp(name, key.id) == 0)
          return key.english;
    return name;
+}
+
+std::string short_key_word(const char *name)
+{
+   for (const Known& key : short_key_words)
+      if (std::strcmp(name, key.id) == 0)
+         return key.english;
+   return key_word(name);
 }
 }

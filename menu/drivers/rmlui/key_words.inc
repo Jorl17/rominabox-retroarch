@@ -3,7 +3,11 @@
  * word here is shown by that name. Every word must draw in every design's
  * font; the pixel fonts have no arrows.
  *
- * RIB_KEY_WORD("name", "Word") */
+ * RIB_KEY_WORD("name", "Word")
+ * RIB_KEY_SHORT("name", "Short")
+ *    A shorter word for a key that has a word, where the menu names a
+ *    binding in little room: in a hint and on a badge (data-binding). A key
+ *    with no short word keeps its word there. */
 
 RIB_KEY_WORD("up", "Up")
 RIB_KEY_WORD("down", "Down")
@@ -34,4 +38,9 @@ RIB_KEY_WORD("num7", "7")
 RIB_KEY_WORD("num8", "8")
 RIB_KEY_WORD("num9", "9")
 
+RIB_KEY_SHORT("escape", "Esc")
+RIB_KEY_SHORT("pageup", "Pg Up")
+RIB_KEY_SHORT("pagedown", "Pg Down")
+
 #undef RIB_KEY_WORD
+#undef RIB_KEY_SHORT

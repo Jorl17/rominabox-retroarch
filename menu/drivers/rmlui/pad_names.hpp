@@ -30,8 +30,13 @@ public:
    /* The words for a binding to a hotkey: the word for its key, or the
     * words for its pad inputs joined as a chord. */
    std::string binding(const HotkeyBinding& binding) const;
+   /* The words for a binding where the menu has little room, in a hint or on
+    * a badge: a key by its short word (key_words.inc). */
+   std::string short_binding(const HotkeyBinding& binding) const;
 
 private:
+   /* The words for the pad inputs of `binding`, joined as a chord. */
+   std::string pads(const HotkeyBinding& binding) const;
    std::map<std::string, std::string> standard;
    std::set<std::string> by_place;
    unsigned pad = UINT_MAX;

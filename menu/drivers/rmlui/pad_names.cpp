@@ -84,6 +84,18 @@ std::string PadNames::binding(const HotkeyBinding& binding) const
 {
    if (binding.kind == HotkeyBinding::Kind::Key)
       return key_word(binding.key.c_str());
+   return pads(binding);
+}
+
+std::string PadNames::short_binding(const HotkeyBinding& binding) const
+{
+   if (binding.kind == HotkeyBinding::Kind::Key)
+      return short_key_word(binding.key.c_str());
+   return pads(binding);
+}
+
+std::string PadNames::pads(const HotkeyBinding& binding) const
+{
    std::string text;
    for (size_t index = 0; index < binding.pads.size(); ++index)
    {
