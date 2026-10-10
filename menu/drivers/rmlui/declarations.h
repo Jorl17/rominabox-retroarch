@@ -100,6 +100,9 @@ struct DesignDeclarations
    /* The font files staged next to the document, for drawing the menu. */
    std::vector<std::string> fonts;
    BindsDeclaration binds;
+   /* How long the notice row leaves for before we hide it, which is as long
+    * as the design's animation. */
+   int notice_row_leave_ms = 0;
    /* The words whose wording is in the design. */
    std::vector<std::pair<Word, std::string>> words;
 };

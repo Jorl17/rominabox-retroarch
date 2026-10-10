@@ -65,6 +65,8 @@ private:
    void paint_notification();
    Notification notification;
    int64_t notification_until = 0;
+   /* The design's DesignDeclarations::notice_row_leave_ms. */
+   int notice_row_leave_ms = 0;
    bool running = false;
    bool waiting = false;
    bool loaded = false;

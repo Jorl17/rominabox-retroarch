@@ -291,6 +291,7 @@ DesignDeclarations load_design(const char *asset_directory)
    design.binds.after_ms = number(config.get(), keys::BindsAfter, design.binds.after_ms);
    design.binds.hover_after_ms = number(config.get(), keys::BindsHoverAfter, design.binds.hover_after_ms);
    design.binds.width = number(config.get(), keys::BindsWidth, design.binds.width);
+   design.notice_row_leave_ms = number(config.get(), keys::NoticeRowLeave, 0);
    for (size_t index = 0; index < kWordCount; ++index)
    {
       const Word word = static_cast<Word>(index);

@@ -10,6 +10,7 @@ void Overlays::load(const DesignDeclarations& design)
    overlays.clear();
    for (const OverlayDeclaration& declaration : design.overlays)
       overlays.push_back(Overlay{declaration});
+   notice_row_leave_ms = design.notice_row_leave_ms;
    loaded = true;
 }
 
