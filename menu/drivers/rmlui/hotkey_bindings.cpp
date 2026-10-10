@@ -159,6 +159,14 @@ bool hotkey_has_chord(Hotkey hotkey)
    return std::find(std::begin(chorded), std::end(chorded), hotkey) != std::end(chorded);
 }
 
+/* Whether one of the two acts only in the menu and the other only during
+ * play, so that they never act at the same time. */
+static bool act_apart(Hotkey one, Hotkey other)
+{
+   const Acts a = hotkey_acts(one), b = hotkey_acts(other);
+   return (a == Acts::InMenu && b == Acts::InGame) || (a == Acts::InGame && b == Acts::InMenu);
+}
+
 bool hotkeys_share(Hotkey one, Hotkey other, Hotkey *first)
 {
    for (const Sharing& pair : sharing)
@@ -168,7 +176,11 @@ bool hotkeys_share(Hotkey one, Hotkey other, Hotkey *first)
             *first = pair.first;
          return true;
       }
-   return false;
+   if (!act_apart(one, other))
+      return false;
+   if (first)
+      *first = one;
+   return true;
 }
 
 std::string HotkeyBinding::text() const

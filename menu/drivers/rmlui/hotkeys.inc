@@ -25,8 +25,11 @@
  *    player's: hotkey-mode-<way> (words.inc).
  * RIB_HOTKEYS_SHARE(first, second)
  *    Two hotkeys that do the same inside the menu. An input may be bound to
- *    both, and there it acts once, as `first`. Every other pair holds an
- *    input once: binding it to one takes it from the other.
+ *    both, and there it acts once, as `first`. A hotkey that acts InMenu and
+ *    one that acts InGame may also share an input, since they never act at
+ *    the same time: it does the first in the menu and the second during
+ *    play. Every other pair holds an input once: binding it to one takes it
+ *    from the other.
  * RIB_HOTKEY_BINDING(name, "prefix")
  *    A binding is the prefix of its kind, followed by a key or by the pad
  *    inputs that the player holds together. We write a key by its name in
