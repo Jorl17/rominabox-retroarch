@@ -2,6 +2,5 @@
 
 bool rib_focused_for_pause(bool window_focused, bool game_has_run)
 {
-   (void)game_has_run;
-   return window_focused;
+   return window_focused || !game_has_run;
 }
