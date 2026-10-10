@@ -22,6 +22,7 @@
 #include <memory/mem_stats.h>
 #include "input/input_driver.h"
 #include "input/held_key_policy.h"
+#include "rominabox_background_pause.h"
 #include "input/alt_enter_fullscreen.h"
 #ifdef _WIN32
 #ifdef _XBOX
@@ -8037,7 +8038,8 @@ static enum runloop_state_enum runloop_check_state(
    if (netplay_allow_pause)
 #endif
    if (pause_nonactive)
-      focused                = is_focused;
+      focused                = rib_focused_for_pause(is_focused,
+            !!(runloop_st->flags & RUNLOOP_FLAG_CORE_RUNNING));
 
    /* Check pause hotkey */
    {

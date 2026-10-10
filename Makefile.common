@@ -242,7 +242,7 @@ endif
 
 # ROM-in-a-Box: where a game's folders go, and what the launcher says about
 # the run, which every frontend asks.
-OBJ += rominabox_data_root.o rominabox_session.o
+OBJ += rominabox_data_root.o rominabox_session.o rominabox_background_pause.o
 
 # ROM-in-a-Box: the Windows player reads its arguments, and runs its cores,
 # in UTF-8 (rominabox.manifest).
