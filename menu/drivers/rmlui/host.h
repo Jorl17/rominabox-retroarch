@@ -46,6 +46,11 @@ bool rib_host_key_down(unsigned code);
 bool rib_host_bind_key(unsigned index, unsigned *code);
 bool rib_host_pad_input(const char *id, unsigned *bind);
 bool rib_host_pad_down(unsigned bind);
+/* Whether `value` is a pad input in the form of RetroArch's config ("13",
+ * "h0up", "+3"), and whether that input is down on any pad that plays as
+ * player 1. */
+bool rib_host_pad_value(const char *value);
+bool rib_host_pad_value_down(const char *value);
 /* The id of the position or Home `bind`, as in pad_inputs.h, or NULL. */
 const char *rib_host_pad_input_id(unsigned bind);
 /* The name of the position or Home `bind` in the profile of the first

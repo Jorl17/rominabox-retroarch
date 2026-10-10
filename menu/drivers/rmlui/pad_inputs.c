@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* Home, as declared in hotkeys.inc: its id, and the RetroArch bind for the
  * menu button in the profile of a pad. */
@@ -108,21 +109,22 @@ static void player_one_pads(unsigned *pads)
    pads[count] = MAX_USERS;
 }
 
-bool rib_pad_input_down(unsigned bind)
+/* Whether `input`, or else the bind `bind` in the profile of each pad, is
+ * down on any pad that plays as player 1. */
+static bool down_on_player_one(const struct retro_keybind *input, unsigned bind)
 {
    input_driver_state_t *input_st = input_state_get_ptr();
    settings_t *settings           = config_get_ptr();
    unsigned pads[MAX_USERS + 1];
    unsigned index;
 
-   if (!input_st || !settings || bind >= RARCH_BIND_LIST_END
-         || !rib_pad_input_id(bind))
+   if (!input_st || !settings)
       return false;
    player_one_pads(pads);
    for (index = 0; pads[index] < MAX_USERS; ++index)
    {
       const float threshold = settings->floats.input_axis_threshold;
-      const struct retro_keybind *bound = &input_autoconf_binds[pads[index]][bind];
+      const struct retro_keybind *bound = input ? input : &input_autoconf_binds[pads[index]][bind];
       if (held_by(input_st->primary_joypad, pads[index], bound, threshold)
 #ifdef HAVE_MFI
             || held_by(input_st->secondary_joypad, pads[index], bound, threshold)
@@ -131,6 +133,22 @@ bool rib_pad_input_down(unsigned bind)
          return true;
    }
    return false;
+}
+
+bool rib_pad_input_down(unsigned bind)
+{
+   if (bind >= RARCH_BIND_LIST_END || !rib_pad_input_id(bind))
+      return false;
+   return down_on_player_one(NULL, bind);
+}
+
+bool rib_pad_input_value_down(const char *value)
+{
+   struct retro_keybind input;
+   memset(&input, 0, sizeof(input));
+   if (!rib_pad_input_parse(value, &input.joykey, &input.joyaxis))
+      return false;
+   return down_on_player_one(&input, 0);
 }
 
 bool rib_pad_input_of(uint16_t joykey, uint32_t joyaxis, unsigned *bind)

@@ -654,6 +654,13 @@ bool rib_host_key_down(unsigned code)
 bool rib_host_pad_input(const char *id, unsigned *bind) { return rib_pad_input_bind(id, bind); }
 bool rib_host_pad_down(unsigned bind) { return rib_pad_input_down(bind); }
 const char *rib_host_pad_input_id(unsigned bind) { return rib_pad_input_id(bind); }
+bool rib_host_pad_value(const char *value)
+{
+   uint16_t joykey;
+   uint32_t joyaxis;
+   return rib_pad_input_parse(value, &joykey, &joyaxis);
+}
+bool rib_host_pad_value_down(const char *value) { return rib_pad_input_value_down(value); }
 bool rib_host_pad_name(unsigned bind, char *name, size_t size)
 {
    return rib_pad_input_name(bind, name, size);
@@ -700,6 +707,8 @@ void rib_host_captured_input(char *binding, size_t length)
    rib_host_restore_keyboard_mapping();
    if (rib_pad_input_on(rib_pad_input_captured_pad(), input->joykey, input->joyaxis, &bind))
       snprintf(binding, length, "%s%s", Pad_prefix, rib_pad_input_id(bind));
+   else if (rib_pad_input_value(input->joykey, input->joyaxis, key, sizeof(key)))
+      snprintf(binding, length, "%s%s", Pad_prefix, key);
 }
 
 enum rib_capture_result rib_host_capture_poll(bool allow_pointer, float *remaining)

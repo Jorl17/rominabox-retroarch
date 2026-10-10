@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -28,17 +29,26 @@ const char *hotkey_id(Hotkey hotkey);
 /* Return the hotkey named `id`, or false when there is none. */
 bool hotkey_named(const std::string& id, Hotkey& hotkey);
 
+/* One pad input in a binding to a hotkey (hotkeys.inc): a position of the
+ * standard pad or Home, by its id and with its bind for the host, or an input
+ * with no position, by its form in RetroArch's config and with no bind. */
+struct PadInput
+{
+   std::string id;
+   std::optional<unsigned> bind;
+   bool operator==(const PadInput& other) const { return id == other.id; }
+};
+
 /* One binding to a hotkey: a key, or pad inputs pressed together. */
 struct HotkeyBinding
 {
    enum class Kind { Key, Pad };
    Kind kind = Kind::Key;
-   /* The name of a key in the RetroArch config, or the id of each pad input. */
+   /* The name of a key in the RetroArch config, or each pad input. */
    std::string key;
-   std::vector<std::string> pads;
-   /* For the host: the code of a key, or the bind of each pad input. */
+   std::vector<PadInput> pads;
+   /* For the host: the code of a key. */
    unsigned code = 0;
-   std::vector<unsigned> binds;
    /* The binding in the format of hotkeys.inc. */
    std::string text() const;
    bool operator==(const HotkeyBinding& other) const { return text() == other.text(); }
@@ -154,7 +164,8 @@ private:
    /* Whether the player is still pressing any input of `binding` that we wait
     * for. We stop waiting for the inputs released since the last call. */
    bool waiting(const HotkeyBinding& binding) const;
-   mutable std::vector<unsigned> unreleased_keys, unreleased_pads;
+   mutable std::vector<unsigned> unreleased_keys;
+   mutable std::vector<PadInput> unreleased_pads;
    std::vector<HotkeyBinding> lists[kHotkeyCount];
    std::vector<HotkeyBinding> authored[kHotkeyCount];
    size_t ways[kHotkeyCount] = {};

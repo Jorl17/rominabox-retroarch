@@ -70,7 +70,10 @@ std::string PadNames::binding(const HotkeyBinding& binding) const
       return key_word(binding.key.c_str());
    std::string text;
    for (size_t index = 0; index < binding.pads.size(); ++index)
-      text += (index ? chord : std::string()) + position(binding.pads[index]);
+   {
+      const PadInput& pad = binding.pads[index];
+      text += (index ? chord : std::string()) + (pad.bind ? position(pad.id) : input(pad.id));
+   }
    return text;
 }
 }

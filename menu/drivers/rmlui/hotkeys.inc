@@ -28,11 +28,15 @@
  *    both, and there it acts once, as `first`. Every other pair holds an
  *    input once: binding it to one takes it from the other.
  * RIB_HOTKEY_BINDING(name, "prefix")
- *    A binding is its kind's prefix and what it names: a key by the name
- *    RetroArch's config gives it (input/input_key_names.inc), or the pad
- *    inputs held together, each a position of the standard pad by
- *    RetroArch's bind name for it (input_player1_<name>), joined by the
- *    chord's separator.
+ *    A binding is the prefix of its kind, followed by a key or by the pad
+ *    inputs that the player holds together. We write a key by its name in
+ *    RetroArch's config (input/input_key_names.inc), and join pad inputs with
+ *    the separator of a chord. A pad input is a position of the standard pad
+ *    by the name of its bind in RetroArch (input_player1_<name>), Home, or an
+ *    input with no position, in the form of RetroArch's config: "13" for a
+ *    button, "h0up" for a direction of a hat, "+3" for an axis. The player
+ *    captures the last kind on HOTKEYS. The defaults of an export have
+ *    positions and Home only.
  * RIB_HOTKEY_PAD_CHORD("separator")
  * RIB_HOTKEY_PAD_HOME("id", "bind", "Word")
  *    The one pad input that is no position on the standard pad: each pad's

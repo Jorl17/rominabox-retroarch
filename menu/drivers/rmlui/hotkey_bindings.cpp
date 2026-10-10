@@ -109,6 +109,11 @@ bool read_list(config_file_t *config, Hotkey hotkey, const char *path,
 
 bool is_key(const HotkeyBinding& binding) { return binding.kind == HotkeyBinding::Kind::Key; }
 
+bool down(const PadInput& input)
+{
+   return input.bind ? rib_host_pad_down(*input.bind) : rib_host_pad_value_down(input.id.c_str());
+}
+
 bool holds(const std::vector<HotkeyBinding>& list, const HotkeyBinding& binding)
 {
    return std::find(list.begin(), list.end(), binding) != list.end();
@@ -121,7 +126,7 @@ const GameInput *game_input(const HotkeyBinding& binding, const std::vector<Game
    for (const GameInput& input : game)
    {
       if (is_key(binding) ? input.key && input.key == binding.code
-            : binding.pads.size() == 1 && binding.pads[0] == input.position)
+            : binding.pads.size() == 1 && binding.pads[0].id == input.position)
          return &input;
    }
    return nullptr;
@@ -168,7 +173,7 @@ std::string HotkeyBinding::text() const
       return Key_prefix + key;
    std::string text = Pad_prefix;
    for (size_t index = 0; index < pads.size(); ++index)
-      text += (index ? chord : std::string()) + pads[index];
+      text += (index ? chord : std::string()) + pads[index].id;
    return text;
 }
 
@@ -184,16 +189,19 @@ bool read_hotkey_binding(const std::string& text, HotkeyBinding& binding)
    if (text.compare(0, Pad_prefix.size(), Pad_prefix) != 0)
       return false;
    binding.kind = HotkeyBinding::Kind::Pad;
-   binding.pads = split(text.substr(Pad_prefix.size()), chord);
-   for (const std::string& id : binding.pads)
+   for (const std::string& id : split(text.substr(Pad_prefix.size()), chord))
    {
+      PadInput input{id, std::nullopt};
       unsigned bind = 0;
-      if (!rib_host_pad_input(id.c_str(), &bind)
-            || std::find(binding.binds.begin(), binding.binds.end(), bind) != binding.binds.end())
+      if (rib_host_pad_input(id.c_str(), &bind))
+         input.bind = bind;
+      else if (!rib_host_pad_value(id.c_str()))
          return false;
-      binding.binds.push_back(bind);
+      if (std::find(binding.pads.begin(), binding.pads.end(), input) != binding.pads.end())
+         return false;
+      binding.pads.push_back(input);
    }
-   return !binding.binds.empty();
+   return !binding.pads.empty();
 }
 
 bool cancels_capture(const HotkeyBinding& binding)
@@ -517,9 +525,9 @@ void HotkeyBindings::ignore_pressed_until_released()
                unreleased_keys.push_back(binding.code);
             continue;
          }
-         for (unsigned bind : binding.binds)
-            if (rib_host_pad_down(bind))
-               unreleased_pads.push_back(bind);
+         for (const PadInput& input : binding.pads)
+            if (down(input))
+               unreleased_pads.push_back(input);
       }
 }
 
@@ -528,12 +536,12 @@ bool HotkeyBindings::waiting(const HotkeyBinding& binding) const
    unreleased_keys.erase(std::remove_if(unreleased_keys.begin(), unreleased_keys.end(),
          [](unsigned code) { return !rib_host_key_down(code); }), unreleased_keys.end());
    unreleased_pads.erase(std::remove_if(unreleased_pads.begin(), unreleased_pads.end(),
-         [](unsigned bind) { return !rib_host_pad_down(bind); }), unreleased_pads.end());
+         [](const PadInput& input) { return !down(input); }), unreleased_pads.end());
    if (is_key(binding))
       return std::find(unreleased_keys.begin(), unreleased_keys.end(), binding.code)
             != unreleased_keys.end();
-   return std::any_of(binding.binds.begin(), binding.binds.end(), [this](unsigned bind) {
-      return std::find(unreleased_pads.begin(), unreleased_pads.end(), bind) != unreleased_pads.end();
+   return std::any_of(binding.pads.begin(), binding.pads.end(), [this](const PadInput& input) {
+      return std::find(unreleased_pads.begin(), unreleased_pads.end(), input) != unreleased_pads.end();
    });
 }
 
@@ -549,7 +557,7 @@ bool HotkeyBindings::held(Hotkey hotkey, bool keys) const
             return true;
          continue;
       }
-      if (std::all_of(binding.binds.begin(), binding.binds.end(), rib_host_pad_down))
+      if (std::all_of(binding.pads.begin(), binding.pads.end(), down))
          return true;
    }
    return false;
@@ -580,9 +588,9 @@ std::vector<unsigned> HotkeyBindings::menu_pad_binds() const
    for (Hotkey hotkey : all)
       if (hotkey_acts(hotkey) != Acts::InGame)
          for (const HotkeyBinding& binding : lists[at(hotkey)])
-         for (unsigned bind : binding.binds)
-            if (std::find(binds.begin(), binds.end(), bind) == binds.end())
-               binds.push_back(bind);
+         for (const PadInput& input : binding.pads)
+            if (input.bind && std::find(binds.begin(), binds.end(), *input.bind) == binds.end())
+               binds.push_back(*input.bind);
    return binds;
 }
 }
