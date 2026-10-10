@@ -6622,6 +6622,34 @@ static void runloop_idle_wait(void)
       retro_sleep(10);
 }
 
+#ifdef HAVE_RMLUI
+static bool runloop_startup_overlays_begun;
+#endif
+
+#if defined(HAVE_CHEEVOS) && defined(HAVE_MENU)
+/* Whether the splash has let the game go. Nothing opens over it before. */
+static bool runloop_splash_over(void)
+{
+#ifdef HAVE_RMLUI
+   return runloop_startup_overlays_begun && !rib_rmlui_game_held();
+#else
+   return true;
+#endif
+}
+#endif
+
+#ifdef HAVE_MENU
+/* Whether the launcher starts the game at its menu. */
+static bool runloop_starts_at_menu(void)
+{
+   const char *start_at_menu = getenv(RIB_ENV_START_AT_MENU);
+   return start_at_menu && string_is_equal(start_at_menu, "1");
+}
+
+/* A game that starts at its menu shows it once, before it first runs. */
+static bool runloop_start_menu_shown;
+#endif
+
 static enum runloop_state_enum runloop_check_state(
       input_driver_state_t *input_st,
       audio_driver_state_t *audio_st,
@@ -7175,9 +7203,6 @@ static enum runloop_state_enum runloop_check_state(
    /* Check menu hotkey */
    {
       static bool old_pressed = false;
-      static bool startup_overlay_checked = false;
-      static bool startup_overlays_begun = false;
-      bool opened_start_menu  = false;
       bool pressed            = BIT256_GET(current_bits, RARCH_MENU_TOGGLE)
          && memcmp(settings->arrays.menu_driver, "null", 5) != 0;
       bool core_type_is_dummy = runloop_st->current_core_type == CORE_TYPE_DUMMY;
@@ -7189,10 +7214,10 @@ static enum runloop_state_enum runloop_check_state(
        * game waits, is the first thing shown. The overlays are in the
        * declaration of the design and in the export, so there is no overlay
        * name here. */
-      if (!startup_overlays_begun && !core_type_is_dummy
+      if (!runloop_startup_overlays_begun && !core_type_is_dummy
             && (core_is_running || rarch_is_initialized))
       {
-         startup_overlays_begun = true;
+         runloop_startup_overlays_begun = true;
          if (string_is_equal(settings->arrays.menu_driver, "rmlui"))
          {
             rib_rmlui_begin_overlays();
@@ -7202,26 +7227,7 @@ static enum runloop_state_enum runloop_check_state(
          }
       }
 #endif
-      if (!startup_overlay_checked && !core_type_is_dummy && core_is_running)
-      {
-         const char *start_at_menu = getenv(RIB_ENV_START_AT_MENU);
-         bool keep_menu_open = start_at_menu && string_is_equal(start_at_menu, "1");
-#ifdef HAVE_CHEEVOS
-         /* We already showed the startup menu at the autosave gate. Pressing
-          * Continue must not open it again when the core first advances. */
-         keep_menu_open = keep_menu_open && !rib_startup_keep_menu;
-#endif
-         startup_overlay_checked = true;
-         if (keep_menu_open &&
-             memcmp(settings->arrays.menu_driver, "null", 5) != 0 &&
-             !(menu_st->flags & MENU_ST_FLAG_ALIVE))
-         {
-            retroarch_menu_running();
-            opened_start_menu = true;
-         }
-      }
-
-      if (!opened_start_menu && pressed && !old_pressed
+      if (pressed && !old_pressed
 #ifdef HAVE_CHEEVOS
           && !rib_achievements_startup_gate_active()
 #endif
@@ -8687,16 +8693,18 @@ static void rib_startup_restore_poll(settings_t *settings,
       struct menu_state *menu_st = menu_state_get_ptr();
       if (!rib_startup_menu_recorded)
       {
-         const char *start_at_menu = getenv(RIB_ENV_START_AT_MENU);
          rib_startup_keep_menu =
                (menu_st->flags & MENU_ST_FLAG_ALIVE) ||
-               (start_at_menu && string_is_equal(start_at_menu, "1"));
+               runloop_starts_at_menu();
          rib_startup_menu_recorded = true;
       }
-      if (!(menu_st->flags & MENU_ST_FLAG_ALIVE))
+      if (!(menu_st->flags & MENU_ST_FLAG_ALIVE) && runloop_splash_over())
       {
          retroarch_menu_running();
          rib_startup_opened_menu = true;
+         /* It stays open once the state is restored, as the start menu. */
+         if (rib_startup_keep_menu)
+            runloop_start_menu_shown = true;
       }
    }
 #endif
@@ -9167,6 +9175,21 @@ int runloop_iterate(void)
             goto end;
          }
 #endif
+#ifdef HAVE_MENU
+         /* A game that starts at its menu opens it before its first frame. */
+         if (     !runloop_start_menu_shown
+               && !(runloop_st->flags & RUNLOOP_FLAG_CORE_RUNNING)
+               && runloop_st->current_core_type != CORE_TYPE_DUMMY
+               && runloop_starts_at_menu()
+               && memcmp(settings->arrays.menu_driver, "null", 5) != 0)
+         {
+            runloop_start_menu_shown = true;
+            retroarch_menu_running();
+            goto end;
+         }
+#endif
+         if (!(runloop_st->flags & RUNLOOP_FLAG_CORE_RUNNING))
+            RARCH_LOG("[Core] First frame.\n");
          runloop_st->flags       |= RUNLOOP_FLAG_CORE_RUNNING;
          break;
    }
