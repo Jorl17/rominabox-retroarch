@@ -6,7 +6,7 @@ extern "C" {
 #endif
 /* The C userdata belongs to the driver, and the C++ state returned here
  * belongs to the menu. We destroy it before we free the wrapper in RetroArch. */
-enum rib_key { RIB_KEY_NOOP, RIB_KEY_UP, RIB_KEY_DOWN, RIB_KEY_LEFT, RIB_KEY_RIGHT, RIB_KEY_OK, RIB_KEY_CANCEL, RIB_KEY_SELECT, RIB_KEY_START, RIB_KEY_TOGGLE, RIB_KEY_RESUME };
+enum rib_key { RIB_KEY_NOOP, RIB_KEY_UP, RIB_KEY_DOWN, RIB_KEY_LEFT, RIB_KEY_RIGHT, RIB_KEY_OK, RIB_KEY_CANCEL, RIB_KEY_SELECT, RIB_KEY_START, RIB_KEY_TOGGLE, RIB_KEY_RESUME, RIB_KEY_PREVIOUS_PAGE, RIB_KEY_NEXT_PAGE };
 void *rib_menu_create(void);
 void rib_menu_destroy(void *menu);
 void rib_menu_context_destroy(void *menu);

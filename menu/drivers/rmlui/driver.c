@@ -82,6 +82,8 @@ static int driver_action(void *data, menu_entry_t *entry, size_t index, enum men
       case MENU_ACTION_START: key = RIB_KEY_START; break;
       case MENU_ACTION_TOGGLE: key = RIB_KEY_TOGGLE; break;
       case MENU_ACTION_RESUME: key = RIB_KEY_RESUME; break;
+      case MENU_ACTION_SCROLL_UP: key = RIB_KEY_PREVIOUS_PAGE; break;
+      case MENU_ACTION_SCROLL_DOWN: key = RIB_KEY_NEXT_PAGE; break;
       default: break;
    }
    return data ? rib_menu_key(((rib_driver*)data)->menu, key) : 0;

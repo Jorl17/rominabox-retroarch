@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <string>
 #include <retro_miscellaneous.h>
+#include <libretro.h>
 #include <file/file_path.h>
 #include <file/config_file.h>
 #include <streams/file_stream.h>
@@ -188,7 +189,10 @@ void rib_rmlui_menu_buttons(uint32_t *buttons, unsigned ok, unsigned cancel)
       return;
    const rib::HotkeyBindings& bindings = active_menu->hotkeys.read();
    const bool keys = !rib_rmlui_typing();
-   uint32_t read_here = (1u << ok) | (1u << cancel);
+   /* RetroArch's menu turns a page on L and R, and on L2 and R2. */
+   uint32_t read_here = (1u << ok) | (1u << cancel)
+         | (1u << RETRO_DEVICE_ID_JOYPAD_L) | (1u << RETRO_DEVICE_ID_JOYPAD_R)
+         | (1u << RETRO_DEVICE_ID_JOYPAD_L2) | (1u << RETRO_DEVICE_ID_JOYPAD_R2);
    for (unsigned bind : bindings.menu_pad_binds())
       if (bind < 16)
          read_here |= 1u << bind;
@@ -197,6 +201,10 @@ void rib_rmlui_menu_buttons(uint32_t *buttons, unsigned ok, unsigned cancel)
       *buttons |= 1u << ok;
    if (bindings.held(rib::Hotkey::Back, keys))
       *buttons |= 1u << cancel;
+   if (bindings.held(rib::Hotkey::PreviousPage, keys))
+      *buttons |= 1u << RETRO_DEVICE_ID_JOYPAD_L;
+   if (bindings.held(rib::Hotkey::NextPage, keys))
+      *buttons |= 1u << RETRO_DEVICE_ID_JOYPAD_R;
 }
 
 bool rib_rmlui_menu_hotkey_key(unsigned code)

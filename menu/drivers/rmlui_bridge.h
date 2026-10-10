@@ -39,6 +39,7 @@ unsigned rib_rmlui_menu_keys(unsigned *codes, unsigned capacity);
 bool rib_rmlui_menu_pad_held(void);
 /* The RetroPad buttons of the menu, the first word of the RetroArch input
  * bits, as we read them in the menu: `ok` is CONFIRM down and `cancel` is BACK
+ * down, L is PREVIOUS PAGE down and R is NEXT PAGE down, L2 and R2 are never
  * down, and a position bound to a hotkey for the menu is only that hotkey. We
  * count keys unless the text entry has the keyboard. */
 void rib_rmlui_menu_buttons(uint32_t *buttons, unsigned ok, unsigned cancel);

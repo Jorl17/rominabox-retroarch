@@ -277,6 +277,16 @@ Event Navigation::key(rib_key action)
          if (screens.showing(ScreenRole::Controls))
             return RIB_RMLUI_ACTION_CONTROLS_RESET;
          return {};
+      case RIB_KEY_PREVIOUS_PAGE:
+      case RIB_KEY_NEXT_PAGE:
+         /* Behind an open dialog the pages stay as they are. */
+         if (!focus.trapped()
+               && turn_page(action == RIB_KEY_NEXT_PAGE ? 1 : -1, focus.current()))
+         {
+            play_move_sound(action == RIB_KEY_PREVIOUS_PAGE);
+            focus.paint();
+         }
+         return {};
       default:
          return {};
    }

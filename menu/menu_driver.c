@@ -7223,7 +7223,13 @@ MENU_NOINLINE static int menu_input_post_iterate(
             size_t selection      = menu_st->selection_ptr;
             last_left_action_time = current_time;
             ret                   = menu_entry_action(
-                  &entry, selection, MENU_ACTION_LEFT);
+                  &entry, selection,
+#ifdef HAVE_RMLUI
+                  /* ROM-in-a-Box: in our menu a tilt turns the page. */
+                  menu_driver_is_rmlui(menu_st->driver_data)
+                  ? MENU_ACTION_SCROLL_UP :
+#endif
+                  MENU_ACTION_LEFT);
          }
       }
 
@@ -7238,7 +7244,12 @@ MENU_NOINLINE static int menu_input_post_iterate(
             size_t selection       = menu_st->selection_ptr;
             last_right_action_time = current_time;
             ret                    = menu_entry_action(
-                  &entry, selection, MENU_ACTION_RIGHT);
+                  &entry, selection,
+#ifdef HAVE_RMLUI
+                  menu_driver_is_rmlui(menu_st->driver_data)
+                  ? MENU_ACTION_SCROLL_DOWN :
+#endif
+                  MENU_ACTION_RIGHT);
          }
       }
    }
