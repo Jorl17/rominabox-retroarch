@@ -106,7 +106,7 @@ bool PlayerSettings::slide(const char *control, float fraction, bool persist)
    const int to = level_position_at(*level, fraction);
    if (to != from || persist)
       set(*level, level->values[to], persist);
-   if (to != from)
+   if (to != from && level_steps_heard(*level))
       play_level_sound(to > from);
    paint();
    return true;

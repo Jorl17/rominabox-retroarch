@@ -79,6 +79,18 @@ std::string level_readout(const SettingDeclaration& level, float value)
    }
 }
 
+bool level_steps_heard(const SettingDeclaration& level)
+{
+   switch (level.key)
+   {
+#define RIB_SETTING_STEP_SOUND(name) \
+      case RIB_SETTING_##name: return true;
+#include "settings.inc"
+      default:
+         return false;
+   }
+}
+
 void paint_setting(Rml::Element *root, const SettingDeclaration& setting, float value,
       bool used, SliderPainter& sliders)
 {

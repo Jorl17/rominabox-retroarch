@@ -24,6 +24,9 @@ float level_fraction_at(const SettingDeclaration& level, int position);
  * declared as one in settings.inc (RIB_SETTING_PERCENT), and empty for any
  * other. */
 std::string level_readout(const SettingDeclaration& level, float value);
+/* Whether a step of a level plays the level cue, which only a level declared
+ * so in settings.inc (RIB_SETTING_STEP_SOUND) does. */
+bool level_steps_heard(const SettingDeclaration& level);
 
 /* Whether a switch is on at `value`, a value of the key that may mean off
  * when the switch shows on (`inverted`). */

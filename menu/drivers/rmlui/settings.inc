@@ -18,6 +18,9 @@
  * RIB_SETTING_PERCENT(name)
  *    A level whose value we show in the readout of its slider as a
  *    percentage, 1.2 as 120%.
+ * RIB_SETTING_STEP_SOUND(name)
+ *    A level whose slider plays the level cue at each step. Any other level
+ *    moves in silence.
  * RIB_SETTING_PARAMETER(name, "PARAMETER")
  *    A key we apply as a parameter of our pass after the game's shader
  *    (video.c), and the parameter's name in that pass. In the exporter we
@@ -35,12 +38,16 @@
 #ifndef RIB_SETTING_PERCENT
 #define RIB_SETTING_PERCENT(name)
 #endif
+#ifndef RIB_SETTING_STEP_SOUND
+#define RIB_SETTING_STEP_SOUND(name)
+#endif
 #ifndef RIB_SETTING_PARAMETER
 #define RIB_SETTING_PARAMETER(name, parameter)
 #endif
 
-/* The game's volume, in decibels. */
+/* The game's volume, in decibels. Each step is heard at the level chosen. */
 RIB_SETTING_KEY(AudioVolume, "audio_volume")
+RIB_SETTING_STEP_SOUND(AudioVolume)
 /* Whether the game pauses while its window is in the background. */
 RIB_SETTING_KEY(PauseNonactive, "pause_nonactive")
 /* Whether a pad rumbles when the game asks it to. */
@@ -73,4 +80,5 @@ RIB_SETTING_KIND(Choice, "choice")
 #undef RIB_SETTING_KIND
 #undef RIB_SETTING_POSITIONS
 #undef RIB_SETTING_PERCENT
+#undef RIB_SETTING_STEP_SOUND
 #undef RIB_SETTING_PARAMETER
