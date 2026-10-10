@@ -39,6 +39,13 @@ const char * Controls::console_name(int index) const
    return catalog.entries[index].id.c_str();
 }
 
+/* Whether a line from rib_host_bind_lines is a pad input, in the form of
+ * RetroArch's config. */
+static bool pad_line(const char *kind)
+{
+   return std::strcmp(kind, "PAD") == 0 || std::strcmp(kind, "AXIS") == 0;
+}
+
 std::vector<GameInput> Controls::game_inputs() const
 {
    std::vector<GameInput> inputs;
@@ -54,7 +61,7 @@ std::vector<GameInput> Controls::game_inputs() const
       rib_host_bind_key(catalog.entries[index].bind_index, &input.key);
       rib_host_bind_lines(catalog.entries[index].bind_index, details, kinds, &lines);
       for (int line = 0; line < lines; ++line)
-         if (std::strcmp(kinds[line], "PAD") == 0 || std::strcmp(kinds[line], "AXIS") == 0)
+         if (pad_line(kinds[line]))
             input.pads.push_back(details[line]);
       inputs.push_back(input);
    }
@@ -375,7 +382,7 @@ void Controls::bind_lines(unsigned bind_index, char details[][64], char kinds[][
    for (int line = before; line < *lines; ++line)
       if (std::strcmp(kinds[line], "KEY") == 0)
          strlcpy(details[line], key_word(details[line]).c_str(), sizeof(details[line]));
-      else if (std::strcmp(kinds[line], "PAD") == 0 || std::strcmp(kinds[line], "AXIS") == 0)
+      else if (pad_line(kinds[line]))
          strlcpy(details[line], names.input(details[line]).c_str(), sizeof(details[line]));
 }
 

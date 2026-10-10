@@ -86,10 +86,9 @@ static bool held_by(const input_device_driver_t *joypad, unsigned pad,
          && ((float)abs(joypad->axis(pad, bound->joyaxis)) / 0x8000) > threshold;
 }
 
-/* The joypad index of every pad that plays as player 1, ended by MAX_USERS.
- * That is each port below input_max_users that is mapped to player 1 in the
- * remap (input_remap_port_pN), through the joypad index of that port in
- * RetroArch. */
+/* Every port that plays as player 1, ended by MAX_USERS: each port below
+ * input_max_users that is mapped to player 1 in the remap
+ * (input_remap_port_pN). */
 static void player_one_ports(unsigned *ports)
 {
    settings_t *settings = config_get_ptr();
@@ -106,6 +105,8 @@ static void player_one_ports(unsigned *ports)
    ports[count] = MAX_USERS;
 }
 
+/* The joypad index in RetroArch of the pad at each of those ports, ended by
+ * MAX_USERS. */
 static void player_one_pads(unsigned *pads)
 {
    settings_t *settings = config_get_ptr();
