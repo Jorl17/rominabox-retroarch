@@ -50,8 +50,8 @@ RIB_WORD(BindingRemoved, "binding-removed", "BINDING REMOVED")
 RIB_WORD(BindingSwapped, "binding-swapped", "SWAPPED WITH {control}")
 RIB_WORD(BindingMoved, "binding-moved", "TAKEN FROM {control}")
 RIB_WORD(BindingNoRoom, "binding-no-room", "NO ROOM IN {control}")
-RIB_WORD(BindingNeeded, "binding-needed", "{control} MUST KEEP A BINDING")
-RIB_WORD(KeyNeeded, "key-needed", "{control} MUST KEEP A KEY")
+RIB_WORD(BindingNeeded, "binding-needed", "{control} MUST HAVE A BINDING")
+RIB_WORD(KeyNeeded, "key-needed", "{control} MUST HAVE A KEY")
 RIB_WORD(BindingUnusable, "binding-unusable", "USE A KEY OR A PAD BUTTON")
 /* A hotkey that acts while the game plays refused what the game reads:
  * {control} is the game's control, as CONTROLS shows it. */
