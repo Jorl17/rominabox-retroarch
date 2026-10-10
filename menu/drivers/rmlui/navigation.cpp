@@ -117,9 +117,10 @@ void Navigation::back()
    show(opener != openers.end() ? opener->second : screens.with_role(ScreenRole::Pause));
 }
 
-bool Navigation::turn_page(int delta, Rml::Element *from)
+bool Navigation::turn_page(int delta, Rml::Element *from, Rml::Element *list)
 {
-   Rml::Element *list = paging::list_of(from);
+   if (!list)
+      list = paging::list_of(from);
    if (lists.turn_list_page(delta, list) < 0)
       return false;
    /* When the player turns the page with an arrow, we keep the focus on it,
@@ -138,6 +139,34 @@ bool Navigation::turn_page(int delta, Rml::Element *from)
    }
    focus.set(to);
    return true;
+}
+
+Rml::Element *Navigation::page_target() const
+{
+   return paging::page_target(focus.trapped() ? focus.trapped() : document.root(), focus.current());
+}
+
+void Navigation::mark_page_target()
+{
+   const auto observed = [](Rml::Element *element) {
+      return element ? element->GetObserverPtr() : Rml::ObserverPtr<Rml::Element>();
+   };
+   Rml::Element *focused = focus.current();
+   if (document.root() == marked.document.get() && focused == marked.focused.get()
+         && focus.trapped() == marked.dialog.get() && screens.current() == marked.screen)
+      return;
+   marked.document = observed(document.root());
+   marked.focused = observed(focused);
+   marked.dialog = observed(focus.trapped());
+   marked.screen = screens.current();
+   Rml::Element *list = page_target();
+   if (list == marked.list.get())
+      return;
+   if (marked.list)
+      marked.list->SetClass(document_contract::PageTarget, false);
+   if (list)
+      list->SetClass(document_contract::PageTarget, true);
+   marked.list = observed(list);
 }
 
 void Navigation::hold(Rml::Element *dialog)
@@ -279,9 +308,8 @@ Event Navigation::key(rib_key action)
          return {};
       case RIB_KEY_PREVIOUS_PAGE:
       case RIB_KEY_NEXT_PAGE:
-         /* Behind an open dialog the pages stay as they are. */
-         if (!focus.trapped()
-               && turn_page(action == RIB_KEY_NEXT_PAGE ? 1 : -1, focus.current()))
+         if (Rml::Element *list = page_target();
+               list && turn_page(action == RIB_KEY_NEXT_PAGE ? 1 : -1, focus.current(), list))
          {
             play_move_sound(action == RIB_KEY_PREVIOUS_PAGE);
             focus.paint();

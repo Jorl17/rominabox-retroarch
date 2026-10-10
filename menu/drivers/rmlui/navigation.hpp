@@ -87,7 +87,12 @@ public:
    void enter();
    /* Turn the list with `from` (or the visible one) and focus the first stop
     * on the new page. */
-   bool turn_page(int delta, Rml::Element *from = nullptr);
+   /* Turn `list`, or else the list of `from`, or else the first list shown. */
+   bool turn_page(int delta, Rml::Element *from = nullptr, Rml::Element *list = nullptr);
+   /* Mark the list that PREVIOUS PAGE and NEXT PAGE turn now (PageTarget).
+    * We look for it again only when the focus, the dialog or the screen
+    * changes. */
+   void mark_page_target();
    /* While a dialog is open, the arrows stay in it, and when it closes we put
     * the focus back where it was. nullptr when no dialog is open. */
    void hold(Rml::Element *dialog);
@@ -98,6 +103,7 @@ private:
    Event back_key();
    Rml::Element *panel() const;
    Rml::Element *element(const std::string& id) const;
+   Rml::Element *page_target() const;
    Focus& focus;
    Screens& screens;
    Controls& controls;
@@ -110,5 +116,11 @@ private:
    std::map<std::string, std::string> openers;
    std::string before_dialog;
    bool dialog_held = false;
+   /* The list we marked as the page target, and what we found it from. */
+   struct PageTarget
+   {
+      Rml::ObserverPtr<Rml::Element> list, document, focused, dialog;
+      std::string screen;
+   } marked;
 };
 }

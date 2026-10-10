@@ -105,6 +105,20 @@ Rml::Element *list_of(Rml::Element *element)
    return nullptr;
 }
 
+Rml::Element *first_shown(Rml::Element *scope)
+{
+   for (auto *list : lists_in(scope))
+      if (!hidden(list))
+         return list;
+   return nullptr;
+}
+
+Rml::Element *page_target(Rml::Element *scope, Rml::Element *focused)
+{
+   Rml::Element *list = list_of(focused);
+   return list ? list : first_shown(scope);
+}
+
 Rml::Element *page_of(Rml::Element *element)
 {
    for (auto *at = element; at; at = at->GetParentNode())

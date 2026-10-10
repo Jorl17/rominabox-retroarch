@@ -103,10 +103,7 @@ void Lists::wire_lists(Rml::Element *scope)
 
 Rml::Element *Lists::visible_list() const
 {
-   if (!document.root()) return nullptr;
-   for (auto *list : paging::lists_in(document.root()))
-      if (!hidden(list)) return list;
-   return nullptr;
+   return paging::first_shown(document.root());
 }
 
 int Lists::turn_list_page(int delta, Rml::Element *list) const

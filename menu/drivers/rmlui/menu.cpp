@@ -326,6 +326,7 @@ static void settle_focus(Menu *menu)
    menu->focus.paint();
    menu->focus.press(!capturing(menu)
          && menu->hotkeys.read().held(rib::Hotkey::Confirm, !rib_rmlui_typing()));
+   menu->navigation.mark_page_target();
 }
 
 /* The words of a binding of the hotkey `id`: one of the kind of input in

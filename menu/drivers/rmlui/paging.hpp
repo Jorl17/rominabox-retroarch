@@ -13,6 +13,12 @@ namespace paging {
 std::vector<Rml::Element*> lists_in(Rml::Element *scope);
 /* The paged list that contains `element`, or nullptr. */
 Rml::Element *list_of(Rml::Element *element);
+/* The first paged list shown in `scope`, or nullptr. */
+Rml::Element *first_shown(Rml::Element *scope);
+/* The list that PREVIOUS PAGE and NEXT PAGE turn: the list of `focused`, or
+ * else the first list shown in `scope`, the dialog that holds the focus or
+ * the whole document. */
+Rml::Element *page_target(Rml::Element *scope, Rml::Element *focused);
 /* The list page that contains `element`, or nullptr. A pager is on no page. */
 Rml::Element *page_of(Rml::Element *element);
 /* Every row on the pages of `list`, in order. The prototype row of a

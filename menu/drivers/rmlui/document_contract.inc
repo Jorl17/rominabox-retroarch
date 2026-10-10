@@ -310,6 +310,10 @@ RIB_CLASS(Leaving, "leaving", State, Optional)
 RIB_CLASS(Overlay, "overlay", State, Optional)
 /* A list row whose picture is still on its way. */
 RIB_CLASS(BadgeLoading, "badge-loading", State, Optional)
+/* The list that PREVIOUS PAGE and NEXT PAGE turn now: the list of the
+ * focus, or else the first list shown in the dialog that holds the focus or
+ * in the whole menu (paging::page_target). */
+RIB_CLASS(PageTarget, "page-target", State, Optional)
 /* Beside an open dialog or picker: the shared navigation part makes it no
  * stop, so the arrows stay inside. */
 RIB_CLASS(NavOutside, "nav-outside", State, Optional)
