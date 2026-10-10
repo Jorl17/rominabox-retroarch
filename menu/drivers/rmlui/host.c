@@ -583,13 +583,7 @@ void rib_host_write_bind(config_file_t *config, const char *id, unsigned index)
 
 bool rib_host_bind_conflicts(unsigned left, unsigned right)
 {
-   const struct retro_keybind *changed = &input_config_binds[0][left];
-   const struct retro_keybind *candidate = &input_config_binds[0][right];
-   return (RETRO_KEYBIND_KEY(changed) != RETROK_UNKNOWN
-            && RETRO_KEYBIND_KEY(changed) == RETRO_KEYBIND_KEY(candidate)) ||
-          (changed->joykey != NO_BTN && changed->joykey == candidate->joykey) ||
-          (changed->joyaxis != AXIS_NONE && changed->joyaxis == candidate->joyaxis) ||
-          (changed->mbutton != NO_BTN && changed->mbutton == candidate->mbutton);
+   return rib_pad_input_binds_conflict(left, right);
 }
 
 void rib_host_bind_lines(unsigned index, char details[][64], char kinds[][8], int *lines)

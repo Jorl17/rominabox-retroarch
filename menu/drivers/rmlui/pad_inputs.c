@@ -310,3 +310,14 @@ unsigned rib_pad_input_captured_pad(void)
 {
    return menu_input_rib_captured_pad();
 }
+
+bool rib_pad_input_binds_conflict(unsigned left, unsigned right)
+{
+   const struct retro_keybind *changed = &input_config_binds[0][left];
+   const struct retro_keybind *candidate = &input_config_binds[0][right];
+   return (RETRO_KEYBIND_KEY(changed) != RETROK_UNKNOWN
+            && RETRO_KEYBIND_KEY(changed) == RETRO_KEYBIND_KEY(candidate)) ||
+          (changed->joykey != NO_BTN && changed->joykey == candidate->joykey) ||
+          (changed->joyaxis != AXIS_NONE && changed->joyaxis == candidate->joyaxis) ||
+          (changed->mbutton != NO_BTN && changed->mbutton == candidate->mbutton);
+}

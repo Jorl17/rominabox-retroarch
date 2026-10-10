@@ -9,11 +9,14 @@
 extern "C" {
 #endif
 
-/* The pad inputs in a binding to a hotkey (hotkeys.inc). Each is a position
- * of the standard pad, or Home, the menu button of the pad. Each is a
- * RetroArch bind, and we read it from every pad assigned to player 1 through
- * the buttons for that bind in its RetroArch profile, never through the
- * button numbers of the pad, so we read any pad with a profile the same way. */
+/* The pad inputs of the menu, read through RetroArch. A pad input in a
+ * binding to a hotkey (hotkeys.inc) is a position of the standard pad, or
+ * Home, the menu button of the pad, which we read on every pad assigned to
+ * player 1 through the bind for it in the profile of that pad. It can also be
+ * an input with no position, in the form of RetroArch's config, which we read
+ * as itself. Here we also start the captures of HOTKEYS and CONTROLS, find the
+ * names of pad inputs for the menu, and compare the binds of player 1 on
+ * CONTROLS. */
 
 /* The bind with the name `id`: the bind of a position (input_player1_<id>), or for
  * Home the bind for the menu button in the profile of the pad. Returns false
@@ -53,6 +56,9 @@ bool rib_pad_input_capture_start(struct retro_keybind *output, unsigned seconds)
 bool rib_pad_input_bind_start(unsigned index, unsigned seconds);
 /* The joypad index of the pad we last captured from. */
 unsigned rib_pad_input_captured_pad(void);
+/* Whether the binds `left` and `right` of player 1 share an input, on
+ * CONTROLS. */
+bool rib_pad_input_binds_conflict(unsigned left, unsigned right);
 
 #ifdef __cplusplus
 }
