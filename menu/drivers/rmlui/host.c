@@ -658,6 +658,10 @@ bool rib_host_pad_value(const char *value)
    return rib_pad_input_parse(value, &joykey, &joyaxis);
 }
 bool rib_host_pad_value_down(const char *value) { return rib_pad_input_value_down(value); }
+bool rib_host_pad_input_value(const char *id, char *value, size_t size)
+{
+   return rib_pad_input_value_of(id, value, size);
+}
 bool rib_host_pad_name(unsigned bind, char *name, size_t size)
 {
    return rib_pad_input_name(bind, name, size);

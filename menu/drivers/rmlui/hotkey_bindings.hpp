@@ -54,14 +54,15 @@ struct HotkeyBinding
    bool operator==(const HotkeyBinding& other) const { return text() == other.text(); }
 };
 
-/* The inputs of one control of the game: the code of its key (0 for none),
- * and the id of its pad position, with the label we show for it on CONTROLS.
- * A hotkey for use during play may have none of these. */
+/* The inputs of one control of the game as we read them, with the label we
+ * show for it on CONTROLS: the code of its key (0 for none), and its pad
+ * inputs in the form of RetroArch's config ("13", "h0up", "+3"). A hotkey
+ * for use during play may have none of these. */
 struct GameInput
 {
    std::string label;
    unsigned key = 0;
-   std::string position;
+   std::vector<std::string> pads;
 };
 
 /* Read a binding in the format of hotkeys.inc through the host. Returns

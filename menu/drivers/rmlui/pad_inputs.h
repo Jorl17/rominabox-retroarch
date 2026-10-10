@@ -42,6 +42,11 @@ bool rib_pad_input_on(unsigned pad, uint16_t joykey, uint32_t joyaxis, unsigned 
 bool rib_pad_input_value(uint16_t joykey, uint32_t joyaxis, char *value, size_t size);
 /* The input in `value`, in that form. False for any other text. */
 bool rib_pad_input_parse(const char *value, uint16_t *joykey, uint32_t *joyaxis);
+/* The input we read for the pad input `id` of a binding to a hotkey on the
+ * pad of the first player, in that form: for a position or Home, its input
+ * in the profile of that pad, and for an input with no position, the input
+ * itself. */
+bool rib_pad_input_value_of(const char *id, char *value, size_t size);
 /* Whether the input in `value`, in that form, is down on any pad that plays
  * as player 1. We read that same input on every pad, whatever its profile. */
 bool rib_pad_input_value_down(const char *value);

@@ -271,6 +271,21 @@ bool rib_pad_input_parse(const char *value, uint16_t *joykey, uint32_t *joyaxis)
    return true;
 }
 
+bool rib_pad_input_value_of(const char *id, char *value, size_t size)
+{
+   const unsigned pad = first_pad();
+   uint16_t joykey;
+   uint32_t joyaxis;
+   unsigned bind;
+
+   if (rib_pad_input_parse(id, &joykey, &joyaxis))
+      return rib_pad_input_value(joykey, joyaxis, value, size);
+   if (!rib_pad_input_bind(id, &bind) || pad >= MAX_USERS)
+      return false;
+   return rib_pad_input_value(input_autoconf_binds[pad][bind].joykey, AXIS_NONE, value, size)
+         || rib_pad_input_value(NO_BTN, input_autoconf_binds[pad][bind].joyaxis, value, size);
+}
+
 bool rib_pad_input_name(unsigned bind, char *name, size_t size)
 {
    const unsigned pad = first_pad();

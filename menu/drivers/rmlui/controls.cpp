@@ -47,9 +47,15 @@ std::vector<GameInput> Controls::game_inputs() const
       if (!active(index))
          continue;
       GameInput input;
+      char details[RIB_HOST_BIND_LINE_MAX][64];
+      char kinds[RIB_HOST_BIND_LINE_MAX][8];
+      int lines = 0;
       input.label = console_name(index);
       rib_host_bind_key(catalog.entries[index].bind_index, &input.key);
-      input.position = catalog.entries[index].slot;
+      rib_host_bind_lines(catalog.entries[index].bind_index, details, kinds, &lines);
+      for (int line = 0; line < lines; ++line)
+         if (std::strcmp(kinds[line], "PAD") == 0 || std::strcmp(kinds[line], "AXIS") == 0)
+            input.pads.push_back(details[line]);
       inputs.push_back(input);
    }
    return inputs;

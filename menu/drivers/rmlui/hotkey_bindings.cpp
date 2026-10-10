@@ -119,14 +119,18 @@ bool holds(const std::vector<HotkeyBinding>& list, const HotkeyBinding& binding)
    return std::find(list.begin(), list.end(), binding) != list.end();
 }
 
-/* Return the input of `game` that `binding` is, if any. That is a single key
- * or a single pad position from the game inputs. */
+/* Return the input of `game` that `binding` is, if any: a single key, or a
+ * single pad input, which we compare as the input we read for it on the pad
+ * of the first player. */
 const GameInput *game_input(const HotkeyBinding& binding, const std::vector<GameInput>& game)
 {
+   char value[RIB_HOST_PAD_VALUE_MAX];
+   const bool pad = !is_key(binding) && binding.pads.size() == 1
+         && rib_host_pad_input_value(binding.pads[0].id.c_str(), value, sizeof(value));
    for (const GameInput& input : game)
    {
       if (is_key(binding) ? input.key && input.key == binding.code
-            : binding.pads.size() == 1 && binding.pads[0].id == input.position)
+            : pad && std::find(input.pads.begin(), input.pads.end(), value) != input.pads.end())
          return &input;
    }
    return nullptr;

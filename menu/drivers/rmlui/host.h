@@ -54,6 +54,13 @@ bool rib_host_pad_down(unsigned bind);
  * player 1. */
 bool rib_host_pad_value(const char *value);
 bool rib_host_pad_value_down(const char *value);
+/* The input we read for the pad input `id` of a binding to a hotkey, on the
+ * pad of the first player, in the form of RetroArch's config: for a position
+ * or Home, its input in the profile of that pad, and for an input with no
+ * position, the input itself. `value` has at least RIB_HOST_PAD_VALUE_MAX
+ * bytes. */
+#define RIB_HOST_PAD_VALUE_MAX 16
+bool rib_host_pad_input_value(const char *id, char *value, size_t size);
 /* The id of the position or Home `bind`, as in pad_inputs.h, or NULL. */
 const char *rib_host_pad_input_id(unsigned bind);
 /* The name of the position or Home `bind` in the profile of the first
