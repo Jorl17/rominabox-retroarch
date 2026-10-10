@@ -116,7 +116,11 @@ bool rib_pad_input_down(unsigned bind)
 
 bool rib_pad_input_of(uint16_t joykey, uint32_t joyaxis, unsigned *bind)
 {
-   const unsigned pad = first_pad();
+   return rib_pad_input_on(first_pad(), joykey, joyaxis, bind);
+}
+
+bool rib_pad_input_on(unsigned pad, uint16_t joykey, uint32_t joyaxis, unsigned *bind)
+{
    unsigned home;
    unsigned index;
 
@@ -153,4 +157,14 @@ static bool is_pad_input(uint16_t joykey, uint32_t joyaxis)
 bool rib_pad_input_capture_start(struct retro_keybind *output, unsigned seconds)
 {
    return menu_input_rib_capture_start(output, is_pad_input, seconds);
+}
+
+bool rib_pad_input_bind_start(unsigned index, unsigned seconds)
+{
+   return menu_input_rib_bind_start(index, seconds);
+}
+
+unsigned rib_pad_input_captured_pad(void)
+{
+   return first_pad();
 }

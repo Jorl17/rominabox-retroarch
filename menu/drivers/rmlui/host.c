@@ -636,7 +636,7 @@ void rib_host_bind_lines(unsigned index, char details[][64], char kinds[][8], in
 
 bool rib_host_capture_start(unsigned index, unsigned seconds)
 {
-   return menu_input_rib_bind_start(index, seconds);
+   return rib_pad_input_bind_start(index, seconds);
 }
 
 void rib_host_capture_cancel(void) { menu_input_rib_bind_cancel(); }
@@ -722,7 +722,7 @@ void rib_host_captured_input(char *binding, size_t length)
       return;
    }
    rib_host_restore_keyboard_mapping();
-   if (rib_pad_input_of(input->joykey, input->joyaxis, &bind))
+   if (rib_pad_input_on(rib_pad_input_captured_pad(), input->joykey, input->joyaxis, &bind))
       snprintf(binding, length, "%s%s", Pad_prefix, rib_pad_input_id(bind));
 }
 

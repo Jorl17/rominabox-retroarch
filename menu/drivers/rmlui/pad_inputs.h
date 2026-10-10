@@ -28,9 +28,16 @@ bool rib_pad_input_down(unsigned bind);
  * profile. False when the profile maps it to no position and no menu
  * button. */
 bool rib_pad_input_of(uint16_t joykey, uint32_t joyaxis, unsigned *bind);
+/* As rib_pad_input_of, through the profile of the pad at joypad index `pad`. */
+bool rib_pad_input_on(unsigned pad, uint16_t joykey, uint32_t joyaxis, unsigned *bind);
 /* Start capturing into `output` an input for a hotkey, for `seconds`. */
 struct retro_keybind;
 bool rib_pad_input_capture_start(struct retro_keybind *output, unsigned seconds);
+/* Start capturing an input into the bind `index` of player 1, on CONTROLS,
+ * for `seconds`. */
+bool rib_pad_input_bind_start(unsigned index, unsigned seconds);
+/* The joypad index of the pad a finished capture came from. */
+unsigned rib_pad_input_captured_pad(void);
 
 #ifdef __cplusplus
 }
