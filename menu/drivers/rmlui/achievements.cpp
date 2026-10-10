@@ -200,8 +200,9 @@ void Achievements::paint()
    document.set_shown(document_contract::AchievementsConfirmation, confirming);
    document.set_element_text(document_contract::AchievementsEndSession,
          say(pending_exit == Exit::Quit ? Word::QuitAnyway : Word::SignOutAnyway).c_str());
-   document.set_shown(document_contract::AchievementsStartup, snapshot.startup_waiting);
-   document.set_shown(document_contract::AchievementsStartupRetry, snapshot.startup_waiting && failed);
+   const bool startup = snapshot.startup_waiting && menu_open;
+   document.set_shown(document_contract::AchievementsStartup, startup);
+   document.set_shown(document_contract::AchievementsStartupRetry, startup && failed);
    document.set_element_text(document_contract::AchievementsStartupStatus, failed ? snapshot.error :
          say((snapshot.startup_skipped || snapshot.status == RIB_ACHIEVEMENTS_ACTIVE)
                ? Word::RestoringGame : Word::Connecting).c_str());
@@ -214,15 +215,20 @@ void Achievements::update()
    auto *list = document.root()->GetElementById(document_contract::AchievementsList);
    rib_achievements_list_shown(list && !hidden(list));
    rib_achievements_get_snapshot(&snapshot);
-   if (snapshot.revision != revision) {
+   const bool changed = snapshot.revision != revision;
+   const bool reopened = rib_host_menu_open() != menu_open;
+   if (changed) {
       revision = snapshot.revision;
       if (account != snapshot.account) { overlays.clear_notification(); account = snapshot.account; }
       if (form && (snapshot.status == RIB_ACHIEVEMENTS_ACTIVE ||
             snapshot.status == RIB_ACHIEVEMENTS_UNAVAILABLE ||
             (snapshot.status == RIB_ACHIEVEMENTS_ERROR && snapshot.account[0]))) show_form(false);
+   }
+   if (changed || reopened) {
+      menu_open = rib_host_menu_open();
       paint();
-      paint_rows();
-      if (snapshot.startup_waiting) focus_dialog(document, document_contract::AchievementsStartup);
+      if (changed) paint_rows();
+      if (snapshot.startup_waiting && menu_open) focus_dialog(document, document_contract::AchievementsStartup);
    }
    text.update();
    if (!overlays.notification_active()) {

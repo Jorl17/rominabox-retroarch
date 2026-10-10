@@ -46,6 +46,9 @@ private:
    TextEntry text;
    rib_achievements_snapshot_t snapshot{};
    uint32_t revision = UINT32_MAX;
+   /* Whether the menu was open when we painted. The startup dialog is part of
+    * the open menu, and is not drawn over the splash or the game. */
+   bool menu_open = false;
    /* The achievement whose popup is shown without its badge, or 0. */
    uint32_t popup_waiting = 0;
    bool form = false, confirming = false, exit_approved = false;
