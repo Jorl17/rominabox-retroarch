@@ -65,6 +65,9 @@ private:
    void paint_notification();
    Notification notification;
    int64_t notification_until = 0;
+   rib_overlay_state notification_state = RIB_OVERLAY_HIDDEN;
+   /* Until the end of the frame the notice came up in. */
+   bool arriving = false;
    /* The design's DesignDeclarations::notice_row_leave_ms. */
    int notice_row_leave_ms = 0;
    bool running = false;

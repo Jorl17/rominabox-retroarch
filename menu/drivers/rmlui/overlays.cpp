@@ -5,7 +5,11 @@
 namespace rib {
 void Overlays::load(const DesignDeclarations& design)
 {
-   if (notification_active()) paint_notification();
+   if (notification_active())
+   {
+      paint_notification();
+      paint_overlay(document, document_contract::UnlockRow, notification_state);
+   }
    document.set_class(document_contract::Body, document_contract::PausedInBackground, waiting);
    overlays.clear();
    for (const OverlayDeclaration& declaration : design.overlays)
@@ -109,8 +113,23 @@ void Overlays::update(bool script_pending)
          pending = true;
    }
    running = pending || script_pending;
-   if (notification_until && now >= notification_until)
-      clear_notification();
+   if (notification_until)
+   {
+      /* Drawn for a frame before it is showing, so the design can animate
+       * its arrival, and leaving for the design's time before it goes. */
+      rib_overlay_state want = now < notification_until ? RIB_OVERLAY_SHOWING
+            : now < notification_until + (int64_t)notice_row_leave_ms * 1000 ? RIB_OVERLAY_LEAVING
+            : RIB_OVERLAY_HIDDEN;
+      if (want == RIB_OVERLAY_HIDDEN)
+         clear_notification();
+      else if (arriving)
+         arriving = false;
+      else if (want != notification_state)
+      {
+         notification_state = want;
+         paint_overlay(document, document_contract::UnlockRow, want);
+      }
+   }
    if (!drawing() && !script_pending)
       rib_host_overlay_frames(false);
 }
@@ -143,6 +162,9 @@ void Overlays::notify(const Notification& next)
    };
    notification = next;
    notification_until = rib_host_time_us() + holds_ms[static_cast<size_t>(next.notice)] * 1000;
+   notification_state = RIB_OVERLAY_HIDDEN;
+   arriving = true;
+   paint_overlay(document, document_contract::UnlockRow, notification_state);
    paint_notification();
    rib_host_overlay_frames(true);
 }
@@ -156,6 +178,8 @@ void Overlays::clear_notification()
 {
    notification_until = 0;
    notification = {};
+   notification_state = RIB_OVERLAY_HIDDEN;
+   paint_overlay(document, document_contract::UnlockRow, notification_state);
    document.set_shown(document_contract::UnlockRow, false);
 }
 }
