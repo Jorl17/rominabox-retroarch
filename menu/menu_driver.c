@@ -1865,6 +1865,7 @@ static void menu_input_key_bind_hold_unnamed(
    state->unnamed.pad     = pad;
    state->unnamed.joykey  = joykey;
    state->unnamed.joyaxis = joyaxis;
+   state->unnamed.trigger = AXIS_NONE;
 }
 
 static bool menu_input_key_bind_unnamed_down(
@@ -1887,7 +1888,9 @@ static bool menu_input_key_bind_unnamed_down(
 /* A trigger can be a button and an axis at once, as on a DualSense through
  * DirectInput, with a name in its profile for the axis only. While the player
  * holds a button with no name, we take a named axis that the player moves off
- * the end it rests at for that same trigger. */
+ * the end it rests at for that same trigger. We capture it when the player
+ * lets go: the axis is held only when pulled most of the way, and the rest
+ * of a press that ended the capture at a touch would act on what it bound. */
 static bool menu_input_key_bind_trigger_of_unnamed(
       const struct menu_bind_state *state,
       const struct menu_bind_state_port *n,
@@ -2049,18 +2052,22 @@ static bool menu_input_key_bind_poll_find_trigger_pad(
       uint32_t joyaxis = AXIS_NONE;
 
       if (     new_state->unnamed.joyaxis == AXIS_NONE
+            && new_state->unnamed.trigger  == AXIS_NONE
             && menu_input_key_bind_trigger_of_unnamed(new_state, n, p, &joyaxis))
+         new_state->unnamed.trigger = joyaxis;
+      if (menu_input_key_bind_unnamed_down(n, &new_state->unnamed))
+         return false;
+
+      if (new_state->unnamed.trigger != AXIS_NONE)
       {
-         output->joyaxis = joyaxis;
+         output->joyaxis = new_state->unnamed.trigger;
          output->joykey  = NO_BTN;
       }
-      else if (!menu_input_key_bind_unnamed_down(n, &new_state->unnamed))
+      else
       {
          output->joykey  = new_state->unnamed.joykey;
          output->joyaxis = new_state->unnamed.joyaxis;
       }
-      else
-         return false;
 
       new_state->unnamed.held = false;
       new_state->captured_pad = p;

@@ -185,6 +185,9 @@ struct menu_rib_unnamed_input
    unsigned pad;
    uint16_t joykey;
    uint32_t joyaxis;
+   /* The named axis of the same trigger, which we capture when the player
+    * lets go, or AXIS_NONE. */
+   uint32_t trigger;
 };
 
 struct menu_bind_state
