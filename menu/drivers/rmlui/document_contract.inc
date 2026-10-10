@@ -102,8 +102,16 @@ RIB_CLASS(Toggle, "toggle", Menu, Optional)
  * drawn as an Options entry. */
 RIB_CLASS(Switch, "switch", Menu, Optional)
 /* In a hint, such as the footer's "[ESC]  BACK", the key it names: the
- * words in brackets, written as their own element for a design to style. */
+ * words in brackets, written as their own element for a design to style. A
+ * hint names a hotkey in braces, "{back}  BACK", and its element then shows
+ * that hotkey's binding (BindingAttribute). */
 RIB_CLASS(HintKey, "hint-key", Menu, Optional)
+/* An element marked data-binding="<hotkey>" shows the words of a binding of
+ * that hotkey (hotkeys.inc): one of the kind of input in use (data-input),
+ * or else of the other kind. Its own text is what a preview shows. With no
+ * binding at all, it is empty and has the class `unbound`. */
+RIB_ATTRIBUTE(BindingAttribute, "data-binding", Menu, Optional)
+RIB_CLASS(Unbound, "unbound", State, Optional)
 
 /* The pause screen, and its save slots. */
 RIB_ELEMENT(PausePanel, "pause-panel", Pause, Required)

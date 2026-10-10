@@ -56,9 +56,10 @@ bool rib_pad_input_value_of(const char *id, char *value, size_t size);
 /* Whether the input in `value`, in that form, is down on any pad that plays
  * as player 1. We read that same input on every pad, whatever its profile. */
 bool rib_pad_input_value_down(const char *value);
-/* The name of the position or Home `bind` in the profile of the first
- * player's pad, when the profile has one. */
-bool rib_pad_input_name(unsigned bind, char *name, size_t size);
+/* The name of the position or Home `bind` in the profile of the pad at
+ * joypad index `pad`, or of the first player's pad for a `pad` of MAX_USERS
+ * or more, when the profile has one. */
+bool rib_pad_input_name(unsigned pad, unsigned bind, char *name, size_t size);
 /* Start capturing into `output` an input for a hotkey, for `seconds`. */
 struct retro_keybind;
 bool rib_pad_input_capture_start(struct retro_keybind *output, unsigned seconds);

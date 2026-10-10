@@ -336,13 +336,14 @@ bool rib_pad_input_value_of(const char *id, char *value, size_t size)
          || rib_pad_input_value(NO_BTN, input_autoconf_binds[pad][bind].joyaxis, value, size);
 }
 
-bool rib_pad_input_name(unsigned bind, char *name, size_t size)
+bool rib_pad_input_name(unsigned pad, unsigned bind, char *name, size_t size)
 {
-   const unsigned pad = first_pad();
    const struct retro_keybind *bound;
    const struct input_bind_label *label;
    const char *text = NULL;
 
+   if (pad >= MAX_USERS)
+      pad = first_pad();
    if (!name || !size || pad >= MAX_USERS || bind >= RARCH_BIND_LIST_END)
       return false;
    bound = &input_autoconf_binds[pad][bind];

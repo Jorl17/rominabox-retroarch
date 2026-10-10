@@ -67,9 +67,10 @@ bool rib_host_pad_value_down(const char *value);
 bool rib_host_pad_input_value(const char *id, char *value, size_t size);
 /* The id of the position or Home `bind`, as in pad_inputs.h, or NULL. */
 const char *rib_host_pad_input_id(unsigned bind);
-/* The name of the position or Home `bind` in the profile of the first
- * player's pad, when the profile has one. */
-bool rib_host_pad_name(unsigned bind, char *name, size_t size);
+/* The name of the position or Home `bind` in the profile of the pad at
+ * joypad index `pad`, or of the first player's pad for a `pad` of MAX_USERS
+ * or more, when the profile has one. */
+bool rib_host_pad_name(unsigned pad, unsigned bind, char *name, size_t size);
 /* The position or Home, as a bind, of a pad input in the form of RetroArch's
  * config ("13", "h0up", "+3") on the first player's pad, when it is one. */
 bool rib_host_pad_value_input(const char *value, unsigned *bind);

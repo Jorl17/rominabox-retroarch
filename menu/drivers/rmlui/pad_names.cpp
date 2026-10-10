@@ -7,6 +7,7 @@
 #include "words.hpp"
 #include <file/config_file.h>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 
 namespace rib {
@@ -18,11 +19,25 @@ namespace {
 void PadNames::load(const char *assets)
 {
    standard.clear();
+   by_place.clear();
    const std::string defaults = std::string(assets ? assets : "") + "/" + files::HotkeysDefaults;
    config_file_t *config = config_file_new_from_path_to_string(defaults.c_str());
    if (!config)
       return;
    const std::string word = keys::PadWord("");
+   char *placed = nullptr;
+   if (config_get_string(config, keys::PadWordsByPlace, &placed) && placed)
+   {
+      for (const char *at = placed; *at;)
+      {
+         const char *end = std::strchr(at, ' ');
+         const size_t length = end ? (size_t)(end - at) : std::strlen(at);
+         if (length)
+            by_place.insert(std::string(at, length));
+         at += length + (end ? 1 : 0);
+      }
+      free(placed);
+   }
    struct config_file_entry entry;
    for (bool present = config_get_entry_list_head(config, &entry); present;
          present = config_get_entry_list_next(&entry))
@@ -35,7 +50,8 @@ std::string PadNames::position(const std::string& id) const
 {
    unsigned bind = 0;
    char name[64];
-   if (rib_host_pad_input(id.c_str(), &bind) && rib_host_pad_name(bind, name, sizeof(name)))
+   if (!by_place.count(id) && rib_host_pad_input(id.c_str(), &bind)
+         && rib_host_pad_name(pad, bind, name, sizeof(name)))
       return name;
    const auto found = standard.find(id);
    return found != standard.end() ? found->second : id;

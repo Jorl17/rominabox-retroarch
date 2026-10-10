@@ -2,6 +2,7 @@
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/SystemInterface.h>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -41,6 +42,14 @@ public:
    void set_element_text(const char *id, const char *text, const char *into = nullptr);
    /* A hint's words, its key in brackets (write_hint). */
    void set_hint(const char *id, const char *hint);
+   /* The words of a binding of the hotkey `id`, false when it has none. We
+    * fill every element marked data-binding with them (fill_bindings). */
+   using BindingWords = std::function<bool(const std::string& id, std::string& words)>;
+   void on_binding_words(BindingWords words) { binding_words = std::move(words); }
+   /* Show the words of its binding in every element marked data-binding, or
+    * nothing and the class `unbound` for a hotkey with none. We do this after
+    * every hint we write, and when the bindings or the input in use change. */
+   void fill_bindings() const;
    /* Show `text` in every element that shows `fact` (data-fact). */
    void show_fact(const char *fact, const std::string& text);
    /* The proportions of the running game, width over height. We state them
@@ -88,6 +97,7 @@ private:
    } system;
    /* Documents, style sheets, fonts and pictures: file_layer.hpp. */
    FileLayer file_layer;
+   BindingWords binding_words;
    void write_capture(int width, int height);
    std::unique_ptr<RominaboxRenderer> renderer;
    std::unique_ptr<TextInputPlatform> text_input;

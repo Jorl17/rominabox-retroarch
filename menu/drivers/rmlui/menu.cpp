@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <algorithm>
 #include <new>
 #include <stdint.h>
 #include <string>
@@ -327,16 +328,41 @@ static void settle_focus(Menu *menu)
          && menu->hotkeys.read().held(rib::Hotkey::Confirm, !rib_rmlui_typing()));
 }
 
-/* Read what we show of the running game when the menu opens. That is the
- * aspect ratio of the game, which can change while it runs, and the slots,
- * which a save by hotkey can change. */
-/* The kind of input the player used last, on the document. */
+/* The words of a binding of the hotkey `id`: one of the kind of input in
+ * use, or else of the other kind. False for a hotkey with none. */
+static bool binding_words(Menu *menu, const std::string& id, std::string& words)
+{
+   rib::Hotkey hotkey;
+   if (!rib::hotkey_named(id, hotkey) || !menu->hotkeys.read().offered(hotkey))
+      return false;
+   const std::vector<rib::HotkeyBinding>& list = menu->hotkeys.read().of(hotkey);
+   const rib::HotkeyBinding::Kind wanted = menu->inputs.kind() == rib::Inputs::Kind::Pad
+         ? rib::HotkeyBinding::Kind::Pad : rib::HotkeyBinding::Kind::Key;
+   const auto chosen = std::find_if(list.begin(), list.end(),
+         [&](const rib::HotkeyBinding& binding) { return binding.kind == wanted; });
+   if (list.empty())
+      return false;
+   words = menu->pad_names.binding(chosen != list.end() ? *chosen : list.front());
+   return true;
+}
+
+/* The kind of input the player used last, on the document, and the words of
+ * the pad in use on HOTKEYS, on CONTROLS and wherever a design names a hotkey,
+ * which Hotkeys::refresh fills. */
 static void show_input(Menu *menu)
 {
    menu->view.document.show_input(menu->inputs.kind() == rib::Inputs::Kind::Pad
          ? rib::document_contract::InputPad : rib::document_contract::InputKeyboard);
+   menu->pad_names.use_pad(menu->inputs.pad());
+   if (!menu->initialized)
+      return;
+   menu->hotkeys.refresh();
+   menu->controls.refresh();
 }
 
+/* Read what we show of the running game when the menu opens. That is the
+ * aspect ratio of the game, which can change while it runs, and the slots,
+ * which a save by hotkey can change. */
 static void read_game(Menu *menu)
 {
    menu->view.document.show_game_shape(rib_host_game_aspect());
@@ -461,6 +487,9 @@ void *rib_menu_create(void)
    if (!menu)
       return nullptr;
    menu->navigation.on_shown([menu] { screen_shown(menu); });
+   menu->view.document.on_binding_words([menu](const std::string& id, std::string& words) {
+      return binding_words(menu, id, words);
+   });
    menu->inputs.on_change([menu] { show_input(menu); });
    menu->navigation.on_capturing([menu] { return capturing(menu); });
    {

@@ -80,7 +80,9 @@ inline void write_text(Rml::Element *element, const std::string& text)
 
 /* The words of a hint, such as "[ESC]  BACK". We write each word in brackets,
  * the name of a key, as a separate element (`hint-key`) for the design to
- * style, and the rest as it is. */
+ * style, and the rest as it is. A hotkey in braces, "{back}" or with words to
+ * show until we read its binding, "{back:Escape}", is such an element marked
+ * data-binding="back" (document_contract.inc, BindingAttribute). */
 inline void write_hint(Rml::Element *element, const std::string& hint)
 {
    if (!element)
@@ -88,16 +90,28 @@ inline void write_hint(Rml::Element *element, const std::string& hint)
    Rml::String markup;
    for (size_t at = 0; at < hint.size();)
    {
-      const size_t open = hint.find('[', at);
-      const size_t close = open == std::string::npos ? std::string::npos : hint.find(']', open);
+      const size_t open = hint.find_first_of("[{", at);
+      const char closing = open == std::string::npos ? ']' : (hint[open] == '[' ? ']' : '}');
+      const size_t close = open == std::string::npos ? std::string::npos : hint.find(closing, open);
       if (close == std::string::npos)
       {
          markup += Rml::StringUtilities::EncodeRml(hint.substr(at));
          break;
       }
       markup += Rml::StringUtilities::EncodeRml(hint.substr(at, open - at));
-      markup += std::string("<span class=\"") + document_contract::HintKey + "\">"
-            + Rml::StringUtilities::EncodeRml(hint.substr(open + 1, close - open - 1)) + "</span>";
+      std::string inside = hint.substr(open + 1, close - open - 1);
+      std::string binding;
+      if (closing == '}')
+      {
+         const size_t colon = inside.find(':');
+         binding = inside.substr(0, colon);
+         inside = colon == std::string::npos ? std::string() : inside.substr(colon + 1);
+      }
+      markup += std::string("<span class=\"") + document_contract::HintKey + "\"";
+      if (!binding.empty())
+         markup += std::string(" ") + document_contract::BindingAttribute + "=\""
+               + Rml::StringUtilities::EncodeRml(binding) + "\"";
+      markup += ">" + Rml::StringUtilities::EncodeRml(inside) + "</span>";
       at = close + 1;
    }
    if (element->GetInnerRML() != markup)

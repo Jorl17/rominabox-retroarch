@@ -348,6 +348,23 @@ void Document::set_hint(const char *id, const char *hint)
 {
    if (root() && id && *id)
       write_hint(root()->GetElementById(id), hint ? hint : "");
+   fill_bindings();
+}
+
+void Document::fill_bindings() const
+{
+   if (!root() || !binding_words)
+      return;
+   Rml::ElementList marked;
+   root()->QuerySelectorAll(marked, std::string("[") + document_contract::BindingAttribute + "]");
+   for (Rml::Element *element : marked)
+   {
+      std::string words;
+      const bool bound = binding_words(
+            element->GetAttribute<Rml::String>(document_contract::BindingAttribute, ""), words);
+      write_text(element, words);
+      element->SetClass(document_contract::Unbound, !bound);
+   }
 }
 
 void Document::show_fact(const char *fact, const std::string& text)

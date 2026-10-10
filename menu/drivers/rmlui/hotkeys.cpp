@@ -156,6 +156,8 @@ void Hotkeys::refresh()
       document.set_class(shown.add.c_str(), document_contract::Capturing,
             capture.active && capture.hotkey == shown.hotkey);
    }
+   /* A change of binding changes the words wherever we name a hotkey. */
+   document.fill_bindings();
    if (rows.empty())
       return;
    document.set_class(document_contract::HotkeysCancel, document_contract::Capturing,

@@ -104,6 +104,10 @@ RIB_FILE(HotkeysDefaults, "hotkeys-defaults.cfg")
 RIB_DATA_FILE(Hotkeys, "hotkeys.cfg")
 RIB_KEYS(HotkeyList, "hotkey_")
 RIB_KEYS(PadWord, "pad_word_")
+/* The positions we name with their word above and never with the word in a
+ * pad's profile, by id, separated by spaces: the shoulder buttons, the
+ * triggers and the clicks of the sticks, in the same place on every pad. */
+RIB_KEY(PadWordsByPlace, "pad_words_by_place")
 /* The hotkeys a game does not have, by id, separated by spaces: their rows
  * are disabled and they act for nothing. */
 RIB_KEY(HotkeysAbsent, "hotkeys_absent")

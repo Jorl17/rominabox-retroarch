@@ -72,6 +72,7 @@ bool Screens::show_screen(const std::string& id)
    events.clear();
    hovered = RIB_RMLUI_ACTION_NONE;
    display_screen(document.root(), screens, *wanted);
+   document.fill_bindings();
    return true;
 }
 

@@ -664,9 +664,9 @@ bool rib_host_pad_input_value(const char *id, char *value, size_t size)
 {
    return rib_pad_input_value_of(id, value, size);
 }
-bool rib_host_pad_name(unsigned bind, char *name, size_t size)
+bool rib_host_pad_name(unsigned pad, unsigned bind, char *name, size_t size)
 {
-   return rib_pad_input_name(bind, name, size);
+   return rib_pad_input_name(pad, bind, name, size);
 }
 bool rib_host_pad_value_input(const char *value, unsigned *bind)
 {
