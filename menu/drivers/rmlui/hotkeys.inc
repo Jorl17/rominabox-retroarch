@@ -87,8 +87,8 @@ RIB_HOTKEY(Menu, "menu", Key, Both)
 RIB_HOTKEY(Confirm, "confirm", Binding, InMenu)
 /* Goes back, or closes the menu from the pause screen. */
 RIB_HOTKEY(Back, "back", Binding, InMenu)
-/* The page before and the page after, of the list with focus or else of the
- * screen's only list. */
+/* The page before and the page after, of the list with the focus or else of
+ * the first list shown (paging::page_target). */
 RIB_HOTKEY(PreviousPage, "previous-page", Nothing, InMenu)
 RIB_HOTKEY(NextPage, "next-page", Nothing, InMenu)
 /* Saves to the slot the menu has selected, as its SAVE does. */

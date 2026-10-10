@@ -337,12 +337,12 @@ static bool binding_words(Menu *menu, const std::string& id, std::string& words)
    if (!rib::hotkey_named(id, hotkey) || !menu->hotkeys.read().offered(hotkey))
       return false;
    const std::vector<rib::HotkeyBinding>& list = menu->hotkeys.read().of(hotkey);
+   if (list.empty())
+      return false;
    const rib::HotkeyBinding::Kind wanted = menu->inputs.kind() == rib::Inputs::Kind::Pad
          ? rib::HotkeyBinding::Kind::Pad : rib::HotkeyBinding::Kind::Key;
    const auto chosen = std::find_if(list.begin(), list.end(),
          [&](const rib::HotkeyBinding& binding) { return binding.kind == wanted; });
-   if (list.empty())
-      return false;
    words = menu->pad_names.binding(chosen != list.end() ? *chosen : list.front());
    return true;
 }
