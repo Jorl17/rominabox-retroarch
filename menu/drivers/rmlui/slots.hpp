@@ -67,11 +67,13 @@ public:
     * is nothing to load from an empty slot. False for anything else. */
    bool handle(const Event& event);
    /* Follow a finished save or load. For a save right after a load from the
-    * menu, we copy the picture of the loaded slot to the saved one, and
-    * return true. Then we must not take a picture of the game for it. */
+    * menu, or before the game has run from its autosave, we copy the picture
+    * of that slot or autosave to the saved one, and return true. Then we must
+    * not take a picture of the game for it. */
    bool notify_task(const char *path, int slot, bool is_save, bool success);
    /* See loaded_without_frames. */
    void forget_load() { loaded_without_frames = 0; }
+   void resume_autosave() { loaded_without_frames = kAutoSave; }
    void paint() const;
    /* The slot the player chose last, which we keep in the data folder `data`
     * of the game, or the first. We keep each later choice there too. */
@@ -136,11 +138,15 @@ private:
    int selected_slot = 1;
    /* Where we keep the chosen slot, or empty when there is no data folder. */
    std::string choice_path;
-   /* The slot the player loaded from the menu, when we have run no frame of
-    * the game since, or 0. While the menu is open we run no frame, so the
-    * last frame is not a frame of the loaded state, and on the Mega Drive it
-    * is black. */
+   /* The slot the player loaded from the menu, or kAutoSave for the autosave
+    * the game resumed, when we have run no frame of the game since, or 0.
+    * While the menu is open we run no frame, so the last frame is not a frame
+    * of the loaded state, and on the Mega Drive it is black. */
    int loaded_without_frames = 0;
+   /* RetroArch's number for the autosave, which has a picture as a slot does. */
+   static constexpr int kAutoSave = -1;
+   /* Whether the slot or autosave `source` has a picture to give a save. */
+   bool has_picture(int source) const;
    SlotState slots[kSlotCount];
 };
 }

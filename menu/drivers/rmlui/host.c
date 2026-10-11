@@ -39,10 +39,6 @@ bool rib_host_menu_open(void)
    return menu_st && (menu_st->flags & MENU_ST_FLAG_ALIVE);
 }
 
-/* Keep frames going to the menu driver while the menu is closed. In every video
- * driver we skip the menu while it is closed, so without this we would never
- * draw an overlay. We use the same switch as for drawing the menu, so there is
- * no code for overlays in the video drivers. */
 bool rib_host_game_waits_in_background(void)
 {
    settings_t *settings           = config_get_ptr();
@@ -53,6 +49,26 @@ bool rib_host_game_waits_in_background(void)
          && !rib_host_menu_open();
 }
 
+bool rib_host_game_has_run(void)
+{
+   return !!(runloop_state_get_ptr()->flags & RUNLOOP_FLAG_CORE_RUNNING);
+}
+
+bool rib_host_resumed_autosave(void)
+{
+   char path[PATH_MAX_LENGTH];
+   settings_t *settings = config_get_ptr();
+   runloop_state_t *state = runloop_state_get_ptr();
+   if (!settings || !settings->bools.savestate_auto_load || !state->name.savestate[0])
+      return false;
+   fill_pathname_join_delim(path, state->name.savestate, "auto", '.', sizeof(path));
+   return path_is_valid(path);
+}
+
+/* Keep frames going to the menu driver while the menu is closed. In every video
+ * driver we skip the menu while it is closed, so without this we would never
+ * draw an overlay. We use the same switch as for drawing the menu, so there is
+ * no code for overlays in the video drivers. */
 void rib_host_overlay_frames(bool on)
 {
    video_driver_state_t *video_st = video_state_get_ptr();

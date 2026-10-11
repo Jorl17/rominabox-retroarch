@@ -104,6 +104,10 @@ void rib_host_overlay_frames(bool on);
  * the player keeps it from playing there (pause_nonactive), its window has
  * no focus, and the menu is closed. */
 bool rib_host_game_waits_in_background(void);
+/* Whether the game has run a frame since it was loaded. */
+bool rib_host_game_has_run(void);
+/* Whether the game resumes its autosave, which it loads at launch. */
+bool rib_host_resumed_autosave(void);
 bool rib_host_has_settings(void);
 bool rib_host_bind_index(const char *id, unsigned *resolved);
 void rib_host_restore_keyboard_mapping(void);

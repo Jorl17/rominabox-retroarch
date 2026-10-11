@@ -78,11 +78,12 @@ bool Slots::notify_task(const char *path, int slot, bool is_save, bool success)
    finished = {true, {transfer.kind, transfer.asker, transfer.slot, success}};
    if (success && !is_save && transfer.asker == Asker::Menu)
       loaded_without_frames = transfer.slot;
-   /* For a save right after a load from the menu, we give the saved slot the
-    * picture of the loaded slot. When the player saved over the loaded slot,
-    * it already has that picture. */
+   /* For a save right after a load from the menu, or before the game has run
+    * from its autosave, we give the saved slot the picture of that slot or
+    * autosave. When the player saved over the loaded slot, it already has
+    * that picture. */
    const bool pictured = success && is_save && valid_slot(transfer.slot)
-         && valid_slot(loaded_without_frames) && has_thumbnail(loaded_without_frames)
+         && has_picture(loaded_without_frames)
          && (loaded_without_frames == transfer.slot
                || rib_host_copy_picture(loaded_without_frames, transfer.slot));
    /* Read the slots after the task. We take the picture of a save after we
@@ -99,6 +100,15 @@ bool Slots::notify_task(const char *path, int slot, bool is_save, bool success)
    else
       status.set_main(say(is_save ? Word::SaveFailed : Word::LoadFailed).c_str());
    return pictured;
+}
+
+bool Slots::has_picture(int source) const
+{
+   char path[PATH_MAX_LENGTH];
+   if (source != kAutoSave)
+      return has_thumbnail(source);
+   rib_host_thumbnail(kAutoSave, path, sizeof(path));
+   return path[0] != '\0';
 }
 
 bool Slots::take_finished(Finished& out)

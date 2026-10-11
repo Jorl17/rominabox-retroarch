@@ -409,9 +409,17 @@ static void reset_interaction(Menu *menu, bool opening)
 void rib_menu_toggle(void *userdata, bool on)
 {
    /* When the menu opens or closes, we have run or will run frames of the
-    * game, so the frame we take a picture of is the game as it is now. */
+    * game, so the frame we take a picture of is the game as it is now. When
+    * it opens before the game's first frame, there is no such frame, and a
+    * game that resumes its autosave is where that save left it. */
    if (userdata)
-      ((Menu*)userdata)->slots.forget_load();
+   {
+      rib::Slots& slots = ((Menu*)userdata)->slots;
+      if (!on || rib_host_game_has_run())
+         slots.forget_load();
+      else if (rib_host_resumed_autosave())
+         slots.resume_autosave();
+   }
    reset_interaction((Menu*)userdata, on);
    rib_host_show_pointer(on);
 }
