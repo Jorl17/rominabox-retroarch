@@ -326,6 +326,9 @@ RIB_CLASS(NavOutside, "nav-outside", State, Optional)
  * the element with focus, so a design can style anything by what has focus:
  * [data-focus=save] .slot.selected is the slot SAVE is about to use. */
 RIB_ATTRIBUTE(FocusAttribute, "data-focus", State, Optional)
+/* The id of the screen showing, which the player sets on the document. A
+ * design styles anything by it, as with data-focus. */
+RIB_ATTRIBUTE(ScreenAttribute, "data-screen", State, Optional)
 /* The screen a button shows, which the player writes on it. */
 RIB_ATTRIBUTE(ScreenTargetAttribute, "data-screen-target", State, Optional)
 /* A status line's own words, kept while the player writes a message over
