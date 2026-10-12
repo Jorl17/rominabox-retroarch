@@ -31,16 +31,30 @@ void Shaders::load(const char *asset_directory, const char *data_directory)
                catalog.entries[index].brightness.c_str());
 }
 
-void Shaders::show_running() const
+int Shaders::running() const
 {
    const char *relatives[RIB_SHADER_MAX];
    if (catalog.count <= 0)
-      return;
+      return -1;
    for (int index = 0; index < catalog.count; ++index)
       relatives[index] = catalog.entries[index].preset.c_str();
-   const int matched = rib_shader_mark_index(rib_host_current_shader(), relatives, catalog.count);
+   return rib_shader_mark_index(rib_host_current_shader(), relatives, catalog.count);
+}
+
+void Shaders::show_running() const
+{
+   if (catalog.count <= 0)
+      return;
+   const int matched = running();
    lists.mark_row(matched < 0 ? "" : catalog.entries[matched].id.c_str(),
          say(Word::ShaderMark).c_str(), "");
+}
+
+void Shaders::focused(const char *row)
+{
+   const int matched = running();
+   if (row && !(matched >= 0 && catalog.entries[matched].id == row))
+      choose(row);
 }
 
 bool Shaders::choose(const char *id)

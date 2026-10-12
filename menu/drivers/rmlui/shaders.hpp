@@ -20,8 +20,12 @@ public:
    void shown() override { show_running(); }
    /* Apply the shader in the row and remember it for the next launch. */
    bool choose(const char *row) override;
+   /* Apply the shader in the row, so the player sees the game through it. */
+   void focused(const char *row) override;
 private:
    void show_running() const;
+   /* The index in the catalog of the running shader, or -1. */
+   int running() const;
    Lists& lists;
    rib_shader_catalog catalog{};
    std::string assets, data;

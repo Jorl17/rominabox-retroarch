@@ -75,6 +75,10 @@ struct Menu
    /* Whether a capture on CONTROLS or HOTKEYS was in progress at the end of
     * the previous frame. */
    bool was_capturing = false;
+   /* The id of the element that had the focus when we last settled it, and
+    * whether it was a row of a list. */
+   std::string settled_focus;
+   bool settled_on_row = false;
    rib::Slots& slots = view.slots;
    rib::Navigation navigation{focus, screens, controls,
          view.document, view.lists, view.parts};
@@ -318,6 +322,25 @@ static Rml::Element *open_dialog(Menu *menu)
    return nullptr;
 }
 
+/* When the player has moved the focus from one row of the list on the
+ * screen showing to another, tell that list. Entering the screen moves the
+ * focus onto a row from elsewhere, which we do not report. */
+static void follow_focus(Menu *menu)
+{
+   Rml::Element *focused = menu->focus.current();
+   const std::string id = focused ? focused->GetId() : std::string();
+   if (id == menu->settled_focus)
+      return;
+   const bool on_row = focused && focused->IsClassSet(rib::document_contract::ListRow);
+   const bool from_row = menu->settled_on_row;
+   menu->settled_focus = id;
+   menu->settled_on_row = on_row;
+   if (!on_row || !from_row)
+      return;
+   if (rib::ListOwner *owner = showing_list(menu))
+      owner->focused(id.c_str());
+}
+
 /* Call after anything that can move the focus. Keep it in an open dialog,
  * and mark it. */
 static void settle_focus(Menu *menu)
@@ -329,6 +352,7 @@ static void settle_focus(Menu *menu)
       if (!menu->focus.stop(focused))
          menu->navigation.enter();
    menu->focus.paint();
+   follow_focus(menu);
    menu->focus.press(!capturing(menu)
          && menu->hotkeys.read().held(rib::Hotkey::Confirm, !rib_rmlui_typing()));
    menu->navigation.mark_page_target();

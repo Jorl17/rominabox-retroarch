@@ -18,6 +18,8 @@ public:
    virtual void shown() {}
    /* The player chose a row. Returns true when we acted, to play the sound. */
    virtual bool choose(const char *row) = 0;
+   /* The player moved the focus onto a row. */
+   virtual void focused(const char *row) { (void)row; }
    /* The player pressed one of the buttons of the screen. */
    virtual bool act(const char *id) { (void)id; return false; }
    /* The role of the screen to show after the last choice, or None to stay.
