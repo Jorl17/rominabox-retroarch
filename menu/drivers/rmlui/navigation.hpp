@@ -15,9 +15,19 @@ class Document;
 class Lists;
 class Parts;
 
-/* Move the focus for an arrow with the RmlUi navigation, from the focused
- * element to the next stop on screen, or not at all at an edge, without a
- * sound. Returns whether the focus moved. */
+/* The stop that Up or Down reaches from `from` inside its page of a list,
+ * when the design leaves that move to the layout (`nav-up` or `nav-down` is
+ * auto). In RmlUi any stop that overlaps `from` sideways wins over every
+ * stop that does not, however far away it is, so the buttons below a list
+ * could win over the next row of the list. We look in the page first, by
+ * the same measure. Returns `from` when the move is RmlUi's to make: outside
+ * a list, when the design decides it, or at the edge of the page. */
+Rml::Element *row_stop(Rml::Element *from, bool down);
+
+/* Move the focus for an arrow from the focused element to the next stop on
+ * screen, or not at all at an edge, without a sound: Up and Down inside a
+ * page of a list by `row_stop`, and everything else with the RmlUi
+ * navigation. Returns whether the focus moved. */
 inline bool step(Rml::Context *context, rib_key key)
 {
    Rml::Input::KeyIdentifier identifier;
@@ -34,6 +44,16 @@ inline bool step(Rml::Context *context, rib_key key)
    /* We search by layout boxes, and a panel shown in this frame has none yet. */
    context->Update();
    Rml::Element *before = context->GetFocusElement();
+   if (key == RIB_KEY_UP || key == RIB_KEY_DOWN)
+   {
+      Rml::Element *next = row_stop(before, key == RIB_KEY_DOWN);
+      if (next && next != before)
+      {
+         if (next->Focus(true))
+            next->ScrollIntoView(Rml::ScrollAlignment::Adaptive);
+         return context->GetFocusElement() != before;
+      }
+   }
    context->ProcessKeyDown(identifier, 0);
    context->ProcessKeyUp(identifier, 0);
    return context->GetFocusElement() != before;
