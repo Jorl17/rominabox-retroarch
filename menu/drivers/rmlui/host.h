@@ -100,6 +100,9 @@ void rib_host_script_finished(void);
 bool rib_host_script_press(const char *name);
 bool rib_host_menu_open(void);
 void rib_host_overlay_frames(bool on);
+/* Run the game for one frame behind the menu, so it draws its picture again
+ * after the video driver restarts. */
+void rib_host_redraw_game(void);
 /* Whether the game waits, paused, because its window is in the background:
  * the player keeps it from playing there (pause_nonactive), its window has
  * no focus, and the menu is closed. */

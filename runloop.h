@@ -782,6 +782,11 @@ void runloop_frame_work_set(unsigned bit, bool on);
  * iterate. */
 void runloop_msg_queue_drain_deferred(void);
 
+/* Runs the core for one frame on the next iterate with the menu open, with
+ * its input blocked, so a core that renders with the GPU draws its picture
+ * again after the video driver restarts. */
+void runloop_request_core_frame(void);
+
 RETRO_BEGIN_DECLS
 
 void runloop_path_fill_names(void);

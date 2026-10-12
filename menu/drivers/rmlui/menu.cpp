@@ -592,6 +592,11 @@ void rib_menu_context_reset(void *data)
    Menu *menu = (Menu*)data;
    if (menu)
       menu->initialized = false;
+   /* The video driver restarted with the menu open. A game that draws with
+    * the graphics card lost its picture with the old driver, so it draws it
+    * again behind the menu. */
+   if (menu && !menu->resume_screen.empty())
+      rib_host_redraw_game();
    /* With a new video driver the menu is switched off, so for anything still
     * drawn over the game we ask for frames again. This happens, for example,
     * when the player goes fullscreen during an overlay. */

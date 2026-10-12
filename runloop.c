@@ -6381,6 +6381,13 @@ void runloop_msg_queue_push(
 
 #ifdef HAVE_MENU
 /* Display the libretro core's framebuffer onscreen. */
+static bool runloop_core_frame_requested = false;
+
+void runloop_request_core_frame(void)
+{
+   runloop_core_frame_requested = true;
+}
+
 static bool display_menu_libretro(
       runloop_state_t *runloop_st,
       input_driver_state_t *input_st,
@@ -7759,12 +7766,20 @@ static enum runloop_state_enum runloop_check_state(
 
             if (      (menu_st->flags & MENU_ST_FLAG_ALIVE)
                   && !(runloop_st->flags & RUNLOOP_FLAG_IDLE))
+            {
+               bool run_core = libretro_running && core_due;
+               if (runloop_core_frame_requested)
+               {
+                  run_core                     = true;
+                  runloop_core_frame_requested = false;
+               }
                /* A frame the core is not due presents the last one it
                 * made, with the menu over it */
                if (display_menu_libretro(runloop_st, input_st,
                         settings->floats.slowmotion_ratio,
-                        libretro_running && core_due, current_time))
+                        run_core, current_time))
                   video_driver_cached_frame();
+            }
 
             /* Core execution inside display_menu_libretro() can trigger
              * a driver reinit (e.g. RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO

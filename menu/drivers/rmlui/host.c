@@ -69,6 +69,11 @@ bool rib_host_resumed_autosave(void)
  * driver we skip the menu while it is closed, so without this we would never
  * draw an overlay. We use the same switch as for drawing the menu, so there is
  * no code for overlays in the video drivers. */
+void rib_host_redraw_game(void)
+{
+   runloop_request_core_frame();
+}
+
 void rib_host_overlay_frames(bool on)
 {
    video_driver_state_t *video_st = video_state_get_ptr();
