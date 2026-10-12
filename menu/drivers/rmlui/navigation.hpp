@@ -1,6 +1,7 @@
 #pragma once
 #include "events.h"
 #include "menu_api.h"
+#include "row_stop.hpp"
 #include "sounds.hpp"
 #include <RmlUi/Core.h>
 #include <functional>
@@ -14,15 +15,6 @@ class Controls;
 class Document;
 class Lists;
 class Parts;
-
-/* The stop that Up or Down reaches from `from` inside its page of a list,
- * when the design leaves that move to the layout (`nav-up` or `nav-down` is
- * auto). In RmlUi any stop that overlaps `from` sideways wins over every
- * stop that does not, however far away it is, so the buttons below a list
- * could win over the next row of the list. We look in the page first, by
- * the same measure. Returns `from` when the move is RmlUi's to make: outside
- * a list, when the design decides it, or at the edge of the page. */
-Rml::Element *row_stop(Rml::Element *from, bool down);
 
 /* Move the focus for an arrow from the focused element to the next stop on
  * screen, or not at all at an edge, without a sound: Up and Down inside a
