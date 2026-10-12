@@ -79,6 +79,9 @@ struct Menu
     * whether it was a row of a list. */
    std::string settled_focus;
    bool settled_on_row = false;
+   /* The screen and the element with the focus when the video driver went
+    * away with the menu open, to show again once the menu has loaded. */
+   std::string resume_screen, resume_focus;
    rib::Slots& slots = view.slots;
    rib::Navigation navigation{focus, screens, controls,
          view.document, view.lists, view.parts};
@@ -570,6 +573,12 @@ void rib_menu_destroy(void *data)
 void rib_menu_context_destroy(void *data)
 {
    Menu *menu = (Menu*)data;
+   if (menu && menu->initialized && !menu->overlay_mode)
+   {
+      Rml::Element *focused = menu->focus.current();
+      menu->resume_screen = menu->screens.current();
+      menu->resume_focus = focused ? focused->GetId() : std::string();
+   }
    if (menu)
       cancel_captures(menu);
    if (menu) menu->achievements.context_lost();
@@ -618,6 +627,13 @@ static bool initialize(Menu *menu, const char *assets, int width, int height)
    menu->slots.paint();
    read_game(menu);
    menu->navigation.open();
+   if (!menu->resume_screen.empty())
+   {
+      menu->navigation.show(menu->resume_screen);
+      menu->focus.set(menu->resume_focus.c_str());
+      menu->resume_screen.clear();
+      menu->resume_focus.clear();
+   }
    if (!menu->controls.loaded)
    {
       menu->controls.load(assets, data);
