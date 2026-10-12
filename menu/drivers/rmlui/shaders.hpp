@@ -22,6 +22,9 @@ public:
    bool choose(const char *row) override;
    /* Apply the shader in the row, so the player sees the game through it. */
    void focused(const char *row) override;
+   /* Apply the shader `by` rows after the running one, wrapping around the
+    * list, and remember it. */
+   void step(int by);
 private:
    void show_running() const;
    /* The index in the catalog of the running shader, or -1. */

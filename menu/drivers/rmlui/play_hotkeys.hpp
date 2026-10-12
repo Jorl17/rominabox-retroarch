@@ -5,14 +5,16 @@
 
 namespace rib {
 class Overlays;
+class Shaders;
 class Slots;
 
 /* The hotkeys for use during play (hotkeys.inc, InGame and Both). With QUICK
  * SAVE and QUICK LOAD the player saves to and loads the slot selected in the
  * menu, as with SAVE and LOAD there. With PREVIOUS SLOT and NEXT SLOT the
  * player changes that selection, from the last slot to the first and back.
- * With FULLSCREEN the player switches between fullscreen and a window, in
- * the menu too. We act once per press and report the result of a save, a
+ * With PREVIOUS SHADER and NEXT SHADER the player applies the shader before
+ * or after the running one. With FULLSCREEN the player switches between
+ * fullscreen and a window, in the menu too. We act once per press and report the result of a save, a
  * load or a change of slot in the notice row. */
 class PlayHotkeys
 {
@@ -24,8 +26,8 @@ public:
     * pad bindings. While the player chooses a binding, we give every press to
     * the capture and act on no hotkey. */
    enum class Doing { Playing, Waiting, Typing, Capturing };
-   PlayHotkeys(const HotkeyBindings& bindings, Slots& slots, Overlays& overlays)
-      : bindings(bindings), slots(slots), overlays(overlays) {}
+   PlayHotkeys(const HotkeyBindings& bindings, Slots& slots, Shaders& shaders, Overlays& overlays)
+      : bindings(bindings), slots(slots), shaders(shaders), overlays(overlays) {}
    /* Call once a frame. A press that started while we could not act on its
     * hotkey counts only after release and a new press. We report a finished
     * save or load from a hotkey whatever the player is doing. */
@@ -40,6 +42,7 @@ private:
    void notice(Word word, int slot);
    const HotkeyBindings& bindings;
    Slots& slots;
+   Shaders& shaders;
    Overlays& overlays;
    /* For each hotkey, whether it was held in the frame before, and whether
     * the game was running then. */

@@ -2,6 +2,7 @@
 
 #include "host.h"
 #include "overlays.hpp"
+#include "shaders.hpp"
 #include "slots.hpp"
 #include <string>
 
@@ -41,6 +42,12 @@ void PlayHotkeys::act(Hotkey hotkey)
          notice(Word::QuickSlot, slots.selected());
          break;
       }
+      case Hotkey::PreviousShader:
+         shaders.step(-1);
+         break;
+      case Hotkey::NextShader:
+         shaders.step(1);
+         break;
       default:
          break;
    }

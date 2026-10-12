@@ -50,6 +50,15 @@ void Shaders::show_running() const
          say(Word::ShaderMark).c_str(), "");
 }
 
+void Shaders::step(int by)
+{
+   if (catalog.count <= 0)
+      return;
+   const int from = running() < 0 ? 0 : running();
+   const int to = ((from + by) % catalog.count + catalog.count) % catalog.count;
+   choose(catalog.entries[to].id.c_str());
+}
+
 void Shaders::focused(const char *row)
 {
    const int matched = running();

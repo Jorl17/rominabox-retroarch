@@ -67,7 +67,7 @@ struct Menu
          view.lists, view.status, view.hovered, capture_pointer, pad_names};
    rib::Hotkeys hotkeys{view.document, focus, screens, view.status,
          view.intents, view.hovered, capture_pointer, controls, pad_names};
-   rib::PlayHotkeys play_hotkeys{hotkeys.read(), view.slots, overlays};
+   rib::PlayHotkeys play_hotkeys{hotkeys.read(), view.slots, shaders, overlays};
    rib::Inputs inputs;
    bool pointer_pressed;
    /* Where the pointer was in the frame before, before the first frame none. */

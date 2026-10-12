@@ -99,6 +99,12 @@ RIB_HOTKEY(QuickLoad, "quick-load", Nothing, InGame)
 RIB_HOTKEY(PreviousSlot, "previous-slot", Nothing, InGame)
 /* Selects the slot after the selected one, the first after the last. */
 RIB_HOTKEY(NextSlot, "next-slot", Nothing, InGame)
+/* Applies the shader before the running one in the game's list, the last
+ * after the first, and remembers it as choosing it on SHADERS does; offered
+ * only in a game with shaders. */
+RIB_HOTKEY(PreviousShader, "previous-shader", Nothing, InGame)
+/* Applies the shader after the running one, the first after the last. */
+RIB_HOTKEY(NextShader, "next-shader", Nothing, InGame)
 /* Runs the game fast while it is held, or from one press to the next, as
  * the player chooses; offered only in a game whose author turned fast
  * forward on. */
